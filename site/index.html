@@ -299,33 +299,45 @@ $('#pop-share').onclick = async () => {
 $('#mac-menu').onclick = e => { const a = e.target.closest('[data-file]'); if (a) location.href = REL + a.dataset.file; };
 document.addEventListener('click', e => { if (!e.target.closest('.mac')) $('#mac-menu').classList.remove('open'); });
 
-// Live counters: real activity on top of a starting baseline (3 visits, 2 downloads).
+// Live counters, both counted on this page (once per browser) so downloads can never exceed visits.
+// Shown = baseline + real (3 visits, 2 downloads). Free Abacus counter, no account; it has no uptime
+// promise, so requests time out fast and fall back to the last values seen.
 const BASE = { visits: 3, downloads: 2 };
+const COUNTER = (op, key) => `https://abacus.jasoncameron.dev/${op}/deolsahil-datadojo/${key}`;
 function countTo(el, to) {
-  const from = +el.textContent || 0, t0 = performance.now();
+  const from = +el.textContent.replace(/,/g, '') || 0, t0 = performance.now();
   const step = t => { const k = Math.min(1, (t - t0) / 900); el.textContent = Math.round(from + (to - from) * (1 - (1 - k) ** 3)).toLocaleString();
     if (k < 1) requestAnimationFrame(step); };
   requestAnimationFrame(step);
 }
-// Visits: free Abacus counter (no account). Each browser counts once, so refreshes don't inflate it.
-// It's a free service with no uptime promise: time out fast and fall back to the last value seen.
-const COUNTER = 'https://abacus.jasoncameron.dev/%s/deolsahil-datadojo/visits';
-const lastVisits = +localStorage.getItem('dd-visits-last') || 0;
-if (lastVisits) $('#st-visits').textContent = (BASE.visits + lastVisits).toLocaleString();
-const seen = localStorage.getItem('dd-visited');
-fetch(COUNTER.replace('%s', seen ? 'get' : 'hit'), { signal: AbortSignal.timeout(4000) })
-  .then(r => r.ok ? r.json() : Promise.reject())
-  .then(d => {
-    localStorage.setItem('dd-visited', '1');               // only once the hit is confirmed, so failures retry next visit
-    localStorage.setItem('dd-visits-last', d.value || 0);
-    countTo($('#st-visits'), BASE.visits + (d.value || 0));
-  }).catch(() => {});
-// Downloads: GitHub's own download counts for every installer, across all releases.
-fetch('https://api.github.com/repos/deolsahil/datadojo/releases?per_page=100').then(r => r.ok ? r.json() : [])
-  .then(rels => {
-    if (rels.length) $('#dl-version').textContent = `Version ${rels[0].tag_name.replace(/^v/, '')} · free`;
-    countTo($('#st-dls'), BASE.downloads + rels.flatMap(r => r.assets).reduce((a, x) => a + x.download_count, 0));
-  }).catch(() => {});
+const last = { visits: +localStorage.getItem('dd-last-visits') || 0, downloads: +localStorage.getItem('dd-last-downloads') || 0 };
+function show(v, d) {  // keep the pair consistent: downloads never above visits
+  v = Math.max(v, d);
+  countTo($('#st-visits'), BASE.visits + v); countTo($('#st-dls'), BASE.downloads + d);
+}
+show(last.visits, last.downloads);
+async function count(key, add) {
+  const r = await fetch(COUNTER(add ? 'hit' : 'get', key), { signal: AbortSignal.timeout(4000), keepalive: add });
+  if (r.status === 404) return 0;                          // counter not created yet
+  if (!r.ok) throw new Error(r.status);
+  return (await r.json()).value || 0;
+}
+const visited = localStorage.getItem('dd-visited');
+Promise.all([count('visits', !visited), count('downloads', false)]).then(([v, d]) => {
+  localStorage.setItem('dd-visited', '1');                 // only once confirmed, so failures retry next visit
+  localStorage.setItem('dd-last-visits', v); localStorage.setItem('dd-last-downloads', d);
+  last.visits = v; last.downloads = d; show(v, d);
+}).catch(() => {});
+function countDownload() {
+  if (isMobile || localStorage.getItem('dd-downloaded')) return;
+  localStorage.setItem('dd-downloaded', '1');
+  last.downloads += 1; show(last.visits, last.downloads);   // instant feedback
+  count('downloads', true).then(d => { localStorage.setItem('dd-last-downloads', d); }).catch(() => localStorage.removeItem('dd-downloaded'));
+}
+document.querySelectorAll('.dbtn[data-file], #dl-mac').forEach(b => b.addEventListener('click', e => { if (!e.target.closest('.caret')) countDownload(); }));
+$('#mac-menu').addEventListener('click', countDownload);
+fetch('https://api.github.com/repos/deolsahil/datadojo/releases/latest').then(r => r.ok ? r.json() : null)
+  .then(r => { if (r) $('#dl-version').textContent = `Version ${r.tag_name.replace(/^v/, '')} · free`; }).catch(() => {});
 
 // Tour tabs
 const TITLES = { workspace: 'sql/joins/customers-without-orders · Duck', home: 'Home · Sensei', design: 'system-design/cdc-into-a-lakehouse · Sensei', games: 'games/join-size · Sensei' };
