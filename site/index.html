@@ -303,20 +303,30 @@ $('#pop-share').onclick = async () => {
 $('#mac-menu').onclick = e => { if (isMobile && e.target.closest('[data-file]')) { e.preventDefault(); openPop(); } };
 document.addEventListener('click', e => { if (!e.target.closest('.mac')) $('#mac-menu').classList.remove('open'); });
 
-// Real download count: GitHub's own counter for every installer file, across all releases (no baseline).
+// Real download count: counted by our own counter (Vercel function + Upstash) when a Download button
+// is clicked, at most once per visitor per day. Starts at 0 and hides itself until there is a download.
+const COUNTER_API = 'https://datadojo-site.vercel.app/api/downloads';
 function countTo(el, to) {
-  const t0 = performance.now();
-  const step = t => { const k = Math.min(1, (t - t0) / 900); el.textContent = Math.round(to * (1 - (1 - k) ** 3)).toLocaleString();
+  const from = +el.textContent.replace(/,/g, '') || 0, t0 = performance.now();
+  const step = t => { const k = Math.min(1, (t - t0) / 700); el.textContent = Math.round(from + (to - from) * (1 - (1 - k) ** 3)).toLocaleString();
     if (k < 1) requestAnimationFrame(step); };
   requestAnimationFrame(step);
 }
-fetch('https://api.github.com/repos/deolsahil/datadojo/releases?per_page=100').then(r => r.ok ? r.json() : [])
-  .then(rels => {
-    if (!rels.length) return;
-    $('#dl-version').textContent = `Version ${rels[0].tag_name.replace(/^v/, '')} · free`;
-    const n = rels.flatMap(r => r.assets).reduce((a, x) => a + x.download_count, 0);
-    if (n > 0) { $('#st-pill').hidden = false; $('#st-word').textContent = n === 1 ? 'download' : 'downloads'; countTo($('#st-dls'), n); }
-  }).catch(() => {});
+function showCount(n) {
+  if (!(n > 0)) return;
+  $('#st-pill').hidden = false; $('#st-word').textContent = n === 1 ? 'download' : 'downloads'; countTo($('#st-dls'), n);
+}
+fetch(COUNTER_API, { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : null).then(d => d && showCount(d.count)).catch(() => {});
+function countDownload() {
+  if (isMobile || localStorage.getItem('dd-downloaded')) return;
+  localStorage.setItem('dd-downloaded', '1');
+  fetch(COUNTER_API, { method: 'POST', keepalive: true }).then(r => r.ok ? r.json() : Promise.reject())
+    .then(d => showCount(d.count)).catch(() => localStorage.removeItem('dd-downloaded'));
+}
+document.querySelectorAll('.dbtn[data-file], #nav-dl').forEach(b => b.addEventListener('click', e => { if (!e.target.closest('.caret')) countDownload(); }));
+$('#mac-menu').addEventListener('click', e => { if (e.target.closest('[data-file]')) countDownload(); });
+fetch('https://api.github.com/repos/deolsahil/datadojo/releases/latest').then(r => r.ok ? r.json() : null)
+  .then(r => { if (r) $('#dl-version').textContent = `Version ${r.tag_name.replace(/^v/, '')} · free`; }).catch(() => {});
 
 // Tour tabs
 const TITLES = { workspace: 'sql/joins/customers-without-orders · Duck', home: 'Home · Sensei', design: 'system-design/cdc-into-a-lakehouse · Sensei', games: 'games/join-size · Sensei' };
