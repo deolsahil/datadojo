@@ -7,7 +7,22 @@ Data System Design course with 32 lessons and case studies, brain games, streaks
 Coaches (Sensei, Duck, Pip and Sparky) give hints instead of answers, powered by your own API key
 (Claude, OpenAI or Gemini) or a free local model through Ollama.
 
-## Install
+## Download
+
+**[deolsahil.github.io/datadojo](https://deolsahil.github.io/datadojo/)**, or grab the latest installer directly:
+
+| Mac (Apple Silicon) | Mac (Intel) | Windows |
+|---|---|---|
+| [DataDojo-macOS-arm64.dmg](https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg) | [DataDojo-macOS-x64.dmg](https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-x64.dmg) | [DataDojo-Windows-Setup.exe](https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-Windows-Setup.exe) |
+
+The installers aren't code-signed yet, so the first open needs one extra click:
+
+- **macOS:** open DataDojo, click **Done** on the warning, then **System Settings → Privacy & Security → Open Anyway**.
+- **Windows:** on the SmartScreen prompt click **More info → Run anyway**.
+
+The app opens in its own window. PySpark (about 350 MB) downloads itself the first time you open a PySpark problem.
+
+## Install from the terminal (Mac, Windows, Linux)
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) (one command; it manages Python for you).
 2. Install DataDojo:
@@ -65,6 +80,14 @@ words; where a problem follows a well-known public one, it links to the source.
     uv run datadojo check              # every reference solution passes its tests; every starter fails
     uv run datadojo check sql-joins    # one pattern, problem id, or lang
     uv run datadojo content            # validate design lessons and game items
+
+### Building the desktop installers
+
+    uv run --extra desktop --with pyinstaller --with pillow python packaging/build.py
+
+builds `dist/release/DataDojo-macOS-<arch>.dmg` on macOS or `DataDojo-Windows-Setup.exe` on Windows (needs Inno Setup).
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds all three installers and attaches them to the
+GitHub release. `site/` is the download page, published to GitHub Pages by `.github/workflows/pages.yml`.
 
 ### Engines and versions
 

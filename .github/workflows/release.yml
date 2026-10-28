@@ -1,0 +1,40 @@
+# Builds the desktop installers and attaches them to the GitHub release for the tag.
+# Release a version:  bump datadojo/__init__.py, then  git tag v0.2.0 && git push origin v0.2.0
+name: Build desktop apps
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:   # manual run: builds and uploads artifacts without publishing a release
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest        # Apple Silicon -> DataDojo-macOS-arm64.dmg
+          - os: macos-15-intel      # Intel         -> DataDojo-macOS-x64.dmg
+          - os: windows-latest      # x64           -> DataDojo-Windows-Setup.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        run: choco install innosetup -y --no-progress
+      - name: Build app and installer
+        run: uv run --extra desktop --with pyinstaller --with pillow python packaging/build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DataDojo-${{ matrix.os }}
+          path: dist/release/*
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/release/*
+          generate_release_notes: true

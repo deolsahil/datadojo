@@ -458,10 +458,27 @@ async function workspace(id) {
   const engKey = 'engine:' + p.lang;
   api('/api/engines').then(all => {
     const opts = all[p.lang], saved = localStorage.getItem(engKey);
+    if (!opts.length) return sparkSetup(all);
     const pick = opts.some(o => o.id === saved) ? saved : all.default[p.lang];
     $('#engine').innerHTML = opts.map(o => `<option value="${o.id}" ${o.id === pick ? 'selected' : ''}>${esc(o.label)}${o.id === all.default[p.lang] ? ' · default' : ''}</option>`).join('');
   });
   $('#engine').onchange = () => localStorage.setItem(engKey, $('#engine').value);
+  function sparkSetup(all) {  // desktop app: PySpark is downloaded the first time it's needed
+    $('#run').disabled = true; $('#engine').innerHTML = '<option>PySpark not installed</option>';
+    const draw = st => {
+      $('#out').innerHTML = `<div class="callout warn"><b>One-time download: PySpark</b>
+        <p class="dim">PySpark problems need Spark (about 350 MB). It's installed into your DataDojo folder and only once.</p>
+        ${all.java ? '' : '<p class="fail">Java isn\'t installed yet. Spark needs Java 17: get it free from <a href="https://adoptium.net" target="_blank" rel="noreferrer">adoptium.net</a>, then reopen DataDojo.</p>'}
+        ${st.status === 'error' ? `<p class="fail">${esc(st.error)}</p>` : ''}
+        ${['idle', 'error'].includes(st.status) ? '<button class="primary" id="spark-go">Download PySpark</button>'
+          : st.status === 'done' ? '<p class="pass">✓ Installed! Loading…</p>' : `<p><span class="spinner"></span>${esc(st.status)}… this takes a minute or two.</p>`}</div>`;
+      if ($('#spark-go')) $('#spark-go').onclick = async () => { draw(await api('/api/setup/pyspark', {})); poll(); };
+    };
+    const poll = () => { const t = setInterval(async () => { const a = await api('/api/engines');
+      if (a.pyspark.length) { clearInterval(t); route(); } else draw(a.spark_install); }, 2500); cleanups.push(() => clearInterval(t)); };
+    draw(all.spark_install);
+    if (!['idle', 'error', 'done'].includes(all.spark_install.status)) poll();
+  }
 
   // editor
   const code = () => inst ? inst.getValue() : $('#fallback').value;
@@ -1131,4 +1148,6 @@ async function route() {
 window.onhashchange = route;
 renderThemeToggle();
 blobReady.then(renderMe);
+api('/api/version').then(v => { if (v.update) $('#nav-update').outerHTML = `<a class="pill-update" href="${esc(v.url)}" target="_blank" rel="noreferrer"
+  title="You have ${esc(v.version)}">✨ Update to ${esc(v.latest)}</a>`; });
 route();

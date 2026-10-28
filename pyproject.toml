@@ -13,6 +13,9 @@ dependencies = [
     "anthropic>=0.70",
 ]
 
+[project.optional-dependencies]
+desktop = ["pywebview>=5"]  # native window for the packaged app; `datadojo` itself uses the browser
+
 [project.scripts]
 datadojo = "datadojo.__main__:main"
 

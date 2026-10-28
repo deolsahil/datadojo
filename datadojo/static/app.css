@@ -485,3 +485,4 @@ select.field { max-width: none; padding: 10px 12px }
 .su-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width .4s }
 .nm-coach { display: block; margin: 0 0 14px; color: var(--acc); font-size: 12.5px }
 .gh-link { color: var(--acc); text-decoration: underline; font-weight: 700 }
+.pill-update { padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--on-acc); background: var(--acc); box-shadow: var(--glow); animation: pop .4s both }

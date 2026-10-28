@@ -1,7 +1,9 @@
 """Runs one piece of code over every test of a problem, in a fresh process.
 
-stdin:  {"problem": {...}, "code": "...", "engine": "duckdb"}
-stdout: last line is {"outputs": [{"value": ...} | {"error": "..."}], "stdout": "...", "translated": "..."?}
+usage:  runner.py REQUEST.json RESULT.json
+request {"problem": {...}, "code": "...", "engine": "duckdb"}
+result  {"outputs": [{"value": ...} | {"error": "..."}], "stdout": "...", "translated": "..."?}
+Files rather than stdin/stdout: a windowed desktop build has no console streams.
 
 Grading happens in server.py. This file must stay stdlib-only at import time: it is also
 run by other Python versions and other PySpark environments.
@@ -147,8 +149,10 @@ def run_one(p, code, test, engine):
     raise ValueError(f"unknown lang {lang}")
 
 
-def main():
-    req = json.load(sys.stdin)
+def main(argv=None):
+    req_path, res_path = (argv or sys.argv[1:])[:2]
+    with open(req_path, encoding="utf-8") as f:
+        req = json.load(f)
     p, code, engine = req["problem"], req["code"], req.get("engine") or "duckdb"
     out, outputs = io.StringIO(), []
     for test in p["tests"]:
@@ -162,7 +166,8 @@ def main():
     res = {"outputs": outputs, "stdout": out.getvalue()[-5000:]}
     if TRANSLATED:
         res["translated"] = TRANSLATED[0]
-    print("\n" + json.dumps(res, default=str))
+    with open(res_path, "w", encoding="utf-8") as f:
+        json.dump(res, f, default=str)
 
 
 if __name__ == "__main__":

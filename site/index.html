@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataDojo · practice SQL, Python and PySpark with friendly AI coaches</title>
+<meta name="description" content="Free desktop app for data engineers: 234 SQL, Python and PySpark problems graded by real engines, a data system design course, brain games and AI coaches. Runs on your own computer.">
+<meta property="og:title" content="DataDojo">
+<meta property="og:description" content="Practice SQL, Python and PySpark like the real interview, with friendly AI coaches. Free, runs locally.">
+<meta property="og:image" content="assets/workspace.webp">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="vendor/blobatar/motion.css">
+<link rel="stylesheet" href="vendor/blobatar/gaze.css">
+<style>
+  :root { --bg: #0b0d11; --bg2: #11141a; --card: #151920; --line: #232933; --line2: #2f3744; --text: #e2e6ed; --text2: #c3c9d3;
+          --dim: #8a92a0; --faint: #5a6270; --acc: #7dd3fc; --acc2: #fbbf24; --on-acc: #04121a; --easy: #4ade80; --hard: #f87171;
+          --mono: "JetBrains Mono", ui-monospace, Menlo, monospace }
+  * { box-sizing: border-box }
+  html { scroll-behavior: smooth }
+  body { margin: 0; font: 15px/1.65 var(--mono); color: var(--text); background:
+         radial-gradient(1200px 600px at 80% -10%, rgba(125,211,252,.09), transparent 60%),
+         radial-gradient(900px 500px at 0% 10%, rgba(251,191,36,.06), transparent 60%), var(--bg) }
+  a { color: inherit; text-decoration: none }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px }
+  nav { position: sticky; top: 0; z-index: 5; backdrop-filter: blur(12px); background: rgba(11,13,17,.8); border-bottom: 1px solid var(--line) }
+  nav .wrap { display: flex; align-items: center; gap: 26px; height: 62px }
+  .logo { font-weight: 800; font-size: 19px; color: var(--acc) } .logo span { color: var(--acc2) }
+  nav a.l { color: var(--dim); font-size: 13.5px } nav a.l:hover { color: var(--text) } .sp { flex: 1 }
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 12px 22px; border-radius: 12px; font: 700 15px var(--mono);
+         border: 1px solid var(--line2); background: var(--card); color: var(--text); cursor: pointer; transition: transform .15s, box-shadow .2s, border-color .2s }
+  .btn:hover { transform: translateY(-2px); border-color: var(--acc) }
+  .btn.primary { background: var(--acc); color: var(--on-acc); border-color: var(--acc); box-shadow: 0 12px 34px -12px var(--acc) }
+  .btn.small { padding: 7px 14px; font-size: 13px; border-radius: 9px }
+  .hero { display: grid; grid-template-columns: 1.25fr .75fr; gap: 30px; align-items: center; padding: 70px 0 40px }
+  .kicker { color: var(--acc); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; font-weight: 700 }
+  h1 { font-size: clamp(42px, 6.4vw, 72px); line-height: 1.02; margin: 14px 0 16px; font-weight: 800;
+       background: linear-gradient(90deg, var(--acc), #bfe6f9, var(--acc2), var(--acc)); background-size: 300% 100%;
+       -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 9s linear infinite }
+  h1 i { font-style: normal; -webkit-text-fill-color: var(--acc); animation: caret 1.1s steps(1) infinite }
+  .lead { font-size: 17px; color: var(--text2); max-width: 600px; margin: 0 0 26px }
+  .dl { display: flex; flex-wrap: wrap; gap: 12px; align-items: center }
+  .dl-note { color: var(--faint); font-size: 12.5px; margin-top: 14px } .dl-note a { color: var(--dim); text-decoration: underline }
+  .others { margin-top: 10px; font-size: 13px; color: var(--dim) } .others a { color: var(--acc); margin-right: 14px }
+  .stage { position: relative; height: 340px; display: grid; place-items: center; --mo-track-travel: 4px }
+  .stage .ring { position: absolute; width: 300px; height: 300px; border-radius: 50%; border: 1px dashed rgba(125,211,252,.35); animation: spin 26s linear infinite }
+  .stage .glow { position: absolute; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, rgba(125,211,252,.18), transparent 70%) }
+  .orbit { position: absolute; display: grid; justify-items: center; font-size: 11px; color: var(--dim); animation: bob 5s ease-in-out infinite }
+  .orbit:nth-of-type(1) { top: 12px; left: 22px } .orbit:nth-of-type(2) { top: 30px; right: 6px; animation-delay: -1.5s }
+  .orbit:nth-of-type(3) { bottom: 0; left: 30px; animation-delay: -3s }
+  .bubble { position: absolute; bottom: 54px; right: 0; max-width: 220px; padding: 10px 14px; border-radius: 14px; border-bottom-right-radius: 4px;
+            background: var(--card); border: 1px solid var(--line2); font-size: 12.5px; color: var(--text2); animation: pop .5s both 1s }
+  section.wrap { padding-top: 70px; padding-bottom: 20px }
+  h2 { font-size: 30px; margin: 8px 0 10px } .sub { color: var(--dim); max-width: 680px; margin: 0 0 28px }
+  .tabs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px }
+  .tabs button { padding: 8px 15px; border-radius: 10px; border: 1px solid var(--line2); background: var(--card); color: var(--text2); font: 700 13px var(--mono); cursor: pointer }
+  .tabs button.on { color: var(--acc); border-color: rgba(125,211,252,.55); background: rgba(125,211,252,.08) }
+  .win { border: 1px solid var(--line2); border-radius: 16px; overflow: hidden; background: var(--card); box-shadow: 0 40px 80px -40px rgba(0,0,0,.8), 0 0 0 1px rgba(125,211,252,.04) }
+  .win .bar { display: flex; gap: 8px; align-items: center; padding: 12px 16px; background: var(--bg2); border-bottom: 1px solid var(--line) }
+  .win .bar i { width: 12px; height: 12px; border-radius: 50% } .win .bar i:nth-child(1) { background: #ff5f57 } .win .bar i:nth-child(2) { background: #febc2e }
+  .win .bar i:nth-child(3) { background: #28c840 } .win .bar span { flex: 1; text-align: center; color: var(--faint); font-size: 12px; margin-right: 50px }
+  .win img { display: block; width: 100%; height: auto; animation: fade .4s both }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; transition: transform .2s, border-color .2s }
+  .card:hover { transform: translateY(-3px); border-color: rgba(125,211,252,.45) }
+  .card h3 { margin: 10px 0 6px; font-size: 16px } .card p { margin: 0; color: var(--dim); font-size: 13.5px }
+  .card .ico { font-size: 22px }
+  .coaches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; --mo-track-travel: 3px }
+  .coach { text-align: center } .coach b { display: block; margin-top: 8px } .coach small { color: var(--dim) }
+  .steps { counter-reset: s; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px }
+  .steps .card::before { counter-increment: s; content: "0" counter(s); font-size: 28px; font-weight: 800; color: var(--faint) }
+  pre { background: #0e1116; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow: auto; font-size: 13px; color: var(--text2) }
+  .help { display: grid; grid-template-columns: 1fr 1fr; gap: 16px } .help ol { margin: 8px 0 0; padding-left: 20px; color: var(--text2); font-size: 13.5px }
+  footer { border-top: 1px solid var(--line); padding: 34px 0 50px; color: var(--faint); font-size: 13px }
+  footer .wrap { display: flex; gap: 18px; align-items: center; flex-wrap: wrap } footer a { color: var(--dim) } footer a:hover { color: var(--acc) }
+  .reveal { opacity: 0; transform: translateY(16px); transition: opacity .6s, transform .6s cubic-bezier(.2,.8,.2,1) } .reveal.in { opacity: 1; transform: none }
+  @keyframes shimmer { to { background-position: 300% 0 } } @keyframes caret { 50% { opacity: 0 } }
+  @keyframes spin { to { transform: rotate(360deg) } } @keyframes bob { 50% { translate: 0 -8px } }
+  @keyframes pop { from { opacity: 0; transform: scale(.85) } } @keyframes fade { from { opacity: 0 } }
+  @media (max-width: 900px) { .hero, .help { grid-template-columns: 1fr } .grid, .steps { grid-template-columns: 1fr 1fr } .coaches { grid-template-columns: 1fr 1fr } nav a.l { display: none } }
+  @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important } .reveal { opacity: 1; transform: none } }
+</style>
+</head>
+<body>
+<nav><div class="wrap"><a class="logo" href="#">DATA<span>DOJO</span></a>
+  <a class="l" href="#tour">Tour</a><a class="l" href="#features">Features</a><a class="l" href="#start">Get started</a>
+  <span class="sp"></span><a class="btn small" href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub ★</a>
+  <a class="btn small primary" href="#download" data-dl>Download</a></div></nav>
+
+<header class="wrap hero" id="download">
+  <div>
+    <div class="kicker">Free desktop app · Mac &amp; Windows</div>
+    <h1>DATADOJO<i>_</i></h1>
+    <p class="lead">Practice SQL, Python and PySpark like it's the real interview. 234 problems graded by real engines, a data system design course, brain games, and friendly AI coaches that give hints, not answers. Everything runs on your own computer.</p>
+    <div class="dl"><a class="btn primary" id="dl-main" data-dl href="https://github.com/deolsahil/datadojo/releases/latest">⬇ Download</a>
+      <a class="btn" href="#tour">Take the tour</a></div>
+    <div class="others" id="dl-others"></div>
+    <div class="dl-note"><span id="dl-version">Latest release</span> · free and open source (MIT) · <a href="#first-open">first-open help</a></div>
+  </div>
+  <div class="stage" id="stage"><div class="glow"></div><div class="ring"></div>
+    <span class="orbit" data-seed="duck"><small>Duck · SQL</small></span>
+    <span class="orbit" data-seed="pandas"><small>Pip · Python</small></span>
+    <span class="orbit" data-seed="spark"><small>Sparky · PySpark</small></span>
+    <div id="sensei"></div><div class="bubble">Hi! I'm Sensei. Stuck on a window function? I'll nudge, you'll solve. 🐾</div></div>
+</header>
+
+<section id="tour" class="wrap reveal">
+  <div class="kicker">Tour</div><h2>See it in action</h2>
+  <div class="tabs" id="tabs"><button class="on" data-i="workspace">Coaching workspace</button><button data-i="home">Your dashboard</button>
+    <button data-i="design">System design</button><button data-i="games">Brain games</button></div>
+  <div class="win"><div class="bar"><i></i><i></i><i></i><span id="win-title">sql/joins/customers-without-orders · Duck</span></div>
+    <img id="shot" src="assets/workspace.webp" alt="DataDojo coaching workspace" width="1440" height="900"></div>
+</section>
+
+<section id="features" class="wrap reveal">
+  <div class="kicker">What's inside</div><h2>Everything a data engineer practices</h2>
+  <p class="sub">Problems are graded by actually running your code, the same way an interviewer would check it.</p>
+  <div class="grid">
+    <div class="card"><div class="ico">🧮</div><h3>234 real problems</h3><p>SQL, Python and PySpark by pattern: windows, gaps &amp; islands, CDC, SCD2, joins, parsing and more, plus curated lists.</p></div>
+    <div class="card"><div class="ico">⚙️</div><h3>Any engine</h3><p>DuckDB, SQLite, PostgreSQL, Spark SQL, plus MySQL, Snowflake, BigQuery and SQL Server syntax. Python 3.10 to 3.15, PySpark 3.4 to 4.x.</p></div>
+    <div class="card"><div class="ico">🐾</div><h3>Coaches, not answer keys</h3><p>A six-stage coaching chat (understand → approach → build → edge cases → optimize → review) that reacts to your test runs.</p></div>
+    <div class="card"><div class="ico">🏗️</div><h3>Data system design</h3><p>20 lessons and 12 full case studies (clickstream, CDC to lakehouse, fraud, feature store) with diagrams and quizzes.</p></div>
+    <div class="card"><div class="ico">🎮</div><h3>Brain games</h3><p>60-second sprints: Guess the Output, Join Size, Spot the Bug and Big-O. Scores and streaks tracked.</p></div>
+    <div class="card"><div class="ico">🔒</div><h3>Private by design</h3><p>Runs locally. Bring your own Claude, OpenAI or Gemini key, or run Gemma for free with Ollama, and nothing leaves your laptop.</p></div>
+  </div>
+</section>
+
+<section class="wrap reveal">
+  <div class="kicker">Meet the team</div><h2>Your coaches</h2>
+  <div class="coaches" id="coaches">
+    <div class="card coach" data-seed="sensei-sql" data-mood="love"><b>Sensei</b><small>head coach</small></div>
+    <div class="card coach" data-seed="duck" data-mood="happy"><b>Duck</b><small>SQL coach</small></div>
+    <div class="card coach" data-seed="pandas" data-mood="wink"><b>Pip</b><small>Python coach</small></div>
+    <div class="card coach" data-seed="spark" data-mood="surprised"><b>Sparky</b><small>PySpark coach</small></div>
+  </div>
+</section>
+
+<section id="start" class="wrap reveal">
+  <div class="kicker">Get started</div><h2>Up and running in two minutes</h2>
+  <div class="steps">
+    <div class="card"><h3>Download &amp; open</h3><p>Grab the installer for your computer above. On Mac, drag DataDojo into Applications.</p></div>
+    <div class="card"><h3>Connect a coach</h3><p>Paste an API key, or pick a local Gemma model and DataDojo walks you through Ollama.</p></div>
+    <div class="card"><h3>Practice daily</h3><p>Pick a pattern, start a session, keep the streak. PySpark downloads itself the first time you need it.</p></div>
+  </div>
+  <div class="help" id="first-open" style="margin-top:26px">
+    <div class="card"><h3> macOS: first open</h3><p>DataDojo isn't signed by Apple yet, so macOS asks once:</p>
+      <ol><li>Open DataDojo from Applications and click <b>Done</b> on the warning.</li><li>Open <b>System Settings → Privacy &amp; Security</b>.</li>
+        <li>Scroll down and click <b>Open Anyway</b> next to DataDojo, then confirm.</li></ol></div>
+    <div class="card"><h3>⊞ Windows: first open</h3><p>Windows SmartScreen may warn about an unrecognized app:</p>
+      <ol><li>Click <b>More info</b>.</li><li>Click <b>Run anyway</b>.</li><li>Follow the installer; DataDojo appears in the Start menu.</li></ol></div>
+  </div>
+  <p class="sub" style="margin-top:26px">Prefer the terminal? Install with <a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer" style="color:var(--acc)">uv</a> on Mac, Windows or Linux:</p>
+  <pre>uv tool install git+https://github.com/deolsahil/datadojo
+datadojo</pre>
+  <p class="sub">PySpark problems need Java 17 (free from <a href="https://adoptium.net" target="_blank" rel="noreferrer" style="color:var(--acc)">adoptium.net</a>). Everything else works out of the box.</p>
+</section>
+
+<footer><div class="wrap"><span>Built by Sahil Deol</span><a href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub</a>
+  <a href="https://www.linkedin.com/in/sahildeol1998/" target="_blank" rel="noreferrer">LinkedIn</a>
+  <a href="https://github.com/deolsahil/datadojo/issues" target="_blank" rel="noreferrer">Report an issue</a><span class="sp"></span>
+  <span>Mascots by <a href="https://blobatar.dev" target="_blank" rel="noreferrer">blobatar</a> · MIT licensed</span></div></footer>
+
+<script type="module">
+const $ = s => document.querySelector(s);
+const REL = 'https://github.com/deolsahil/datadojo/releases/latest/download/';
+const FILES = { mac: ['DataDojo-macOS-arm64.dmg', 'Mac (Apple Silicon)'], intel: ['DataDojo-macOS-x64.dmg', 'Mac (Intel)'],
+                win: ['DataDojo-Windows-Setup.exe', 'Windows'] };
+
+// Pick the right installer: Apple Silicon vs Intel is visible through the GPU name.
+function platform() {
+  const ua = navigator.userAgent, p = navigator.userAgentData?.platform || navigator.platform || '';
+  if (/win/i.test(p) || /Windows/.test(ua)) return 'win';
+  if (/mac/i.test(p) || /Mac OS X/.test(ua)) {
+    try {
+      const gl = document.createElement('canvas').getContext('webgl'), ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      const gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+      return /Intel|AMD|Radeon/i.test(gpu) ? 'intel' : 'mac';
+    } catch { return 'mac'; }
+  }
+  return 'other';
+}
+const os = platform();
+const main = FILES[os];
+if (main) { $('#dl-main').href = REL + main[0]; $('#dl-main').textContent = `⬇ Download for ${main[1]}`; }
+else { $('#dl-main').textContent = '⬇ See all downloads'; }
+$('#dl-others').innerHTML = 'Also for: ' + Object.entries(FILES).filter(([k]) => k !== os).map(([, [f, n]]) => `<a href="${REL + f}">${n}</a>`).join('')
+  + '<a href="#start">Linux / terminal</a>';
+document.querySelectorAll('[data-dl]').forEach(a => { if (a !== $('#dl-main')) a.href = '#download'; });
+fetch('https://api.github.com/repos/deolsahil/datadojo/releases/latest').then(r => r.ok ? r.json() : null)
+  .then(r => { if (r) $('#dl-version').textContent = `Version ${r.tag_name.replace(/^v/, '')}`; }).catch(() => {});
+
+// Tour tabs
+const TITLES = { workspace: 'sql/joins/customers-without-orders · Duck', home: 'Home · Sensei', design: 'system-design/cdc-into-a-lakehouse · Sensei', games: 'games/join-size · Sensei' };
+$('#tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  $('#shot').src = `assets/${b.dataset.i}.webp`; $('#win-title').textContent = TITLES[b.dataset.i]; };
+
+// Scroll reveal
+const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')), { threshold: .12 });
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+// Live blobatar coaches (same renderer the app uses)
+try {
+  const [I, E, G] = await Promise.all(['internal', 'expression', 'gaze'].map(f => import(`./vendor/blobatar/${f}.js`)));
+  const blob = (seed, size, mood = 'idle') => { const p = I._parts(seed, { animate: 'always', expression: E[mood], background: false });
+    return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" style="${I.serializeVars(p.vars)}" aria-hidden="true"><g class="${p.cls}">${p.inner}</g></svg>`; };
+  $('#sensei').innerHTML = blob('sensei-sql', 170, 'happy');
+  G.gaze($('#sensei svg'), { target: 'pointer' });
+  document.querySelectorAll('.orbit').forEach(o => o.insertAdjacentHTML('afterbegin', blob(o.dataset.seed, 54, 'idle')));
+  document.querySelectorAll('.coach').forEach(c => { c.insertAdjacentHTML('afterbegin', blob(c.dataset.seed, 84, c.dataset.mood)); G.gaze(c.querySelector('svg'), { target: 'pointer' }); });
+} catch {}
+</script>
+</body>
+</html>

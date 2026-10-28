@@ -127,13 +127,17 @@ def sh(*cmd):
 
 @functools.cache
 def engines():
-    import duckdb, pyspark
+    import duckdb
+    try:  # the pip install ships PySpark; the desktop app installs it on demand (see install_pyspark)
+        import pyspark
+        bundled_spark = pyspark.__version__
+    except ImportError:
+        bundled_spark = None
     sql = [{"id": "duckdb", "label": f"DuckDB {duckdb.__version__}", "kind": "native"},
            {"id": "sqlite", "label": f"SQLite {sqlite3.sqlite_version}", "kind": "native"}]
     if shutil.which("pg_ctl") and shutil.which("initdb"):
         sql.append({"id": "postgres", "label": sh("postgres", "--version").replace("postgres (PostgreSQL)", "PostgreSQL"),
                     "kind": "native"})
-    sql.append({"id": "spark-sql", "label": f"Spark SQL {pyspark.__version__}", "kind": "native"})
     sql += [{"id": k, "label": f"{v} (emulated)", "kind": "emulated"} for k, v in EMULATED.items()]
 
     python = []
@@ -143,8 +147,8 @@ def engines():
         if path:
             python.append({"id": v, "label": sh(path, "--version") or f"Python {v}", "kind": "native", "path": path})
 
-    pyspark_envs = [{"id": "default", "label": f"PySpark {pyspark.__version__}", "kind": "native",
-                     "path": sys.executable, "java": None}]
+    pyspark_envs = [{"id": "default", "label": f"PySpark {bundled_spark}", "kind": "native",
+                     "path": sys.executable, "java": None}] if bundled_spark else []
     for env in sorted([*(DATA_HOME / "envs").glob("pyspark-*/bin/python"), *(DATA_HOME / "envs").glob("pyspark-*/Scripts/python.exe")]):
         ver = sh(str(env), "-c", "import pyspark; print(pyspark.__version__)")
         if ver:
@@ -153,7 +157,99 @@ def engines():
                 continue  # Spark 4 needs Java 17+
             pyspark_envs.append({"id": env.parent.parent.name, "label": f"PySpark {ver}" + (" · Java 17" if java else ""),
                                  "kind": "native", "path": str(env), "java": java})
+    if pyspark_envs:  # Spark SQL runs in the first PySpark environment
+        sql.insert(3 if len(sql) > 2 and sql[2]["id"] == "postgres" else 2,
+                   {"id": "spark-sql", "label": pyspark_envs[0]["label"].replace("PySpark", "Spark SQL").split(" ·")[0],
+                    "kind": "native", "path": pyspark_envs[0]["path"], "java": pyspark_envs[0]["java"]})
     return {"sql": sql, "python": python, "pyspark": pyspark_envs}
+
+
+def default_engine(lang):
+    """Reference answers come from this engine. PySpark's is whichever environment exists first."""
+    if lang == "pyspark":
+        envs = engines()["pyspark"]
+        return envs[0]["id"] if envs else None
+    return DEFAULT_ENGINE[lang]
+
+
+spark_install = {"status": "idle"}
+_release = {"checked": 0.0, "data": None}
+
+
+def latest_release():
+    """Current version vs the newest GitHub release (checked at most every 6 hours, never blocks the UI long)."""
+    import time
+    from datadojo import __version__
+    if time.time() - _release["checked"] > 6 * 3600:
+        _release["checked"] = time.time()
+        try:
+            r = json.load(urllib.request.urlopen(urllib.request.Request(
+                "https://api.github.com/repos/deolsahil/datadojo/releases/latest",
+                headers={"Accept": "application/vnd.github+json"}), timeout=4))
+            _release["data"] = {"tag": r["tag_name"], "url": r["html_url"]}
+        except Exception:
+            _release["data"] = None
+    latest = (_release["data"] or {}).get("tag", "").lstrip("v")
+    newer = bool(latest) and tuple(map(int, latest.split("."))) > tuple(map(int, __version__.split(".")))
+    return {"version": __version__, "latest": latest or None, "update": newer, "url": (_release["data"] or {}).get("url")}
+
+
+def uv_binary():
+    """uv on PATH, or a private copy in the data folder (downloaded once from astral-sh/uv releases)."""
+    found = shutil.which("uv")
+    if found:
+        return found
+    exe = DATA_HOME / "bin" / ("uv.exe" if os.name == "nt" else "uv")
+    if exe.exists():
+        return str(exe)
+    import platform, tarfile, zipfile
+    arch = {"arm64": "aarch64", "aarch64": "aarch64"}.get(platform.machine().lower(), "x86_64")
+    target = {"darwin": f"{arch}-apple-darwin", "win32": f"{arch}-pc-windows-msvc"}.get(sys.platform, f"{arch}-unknown-linux-gnu")
+    ext = "zip" if os.name == "nt" else "tar.gz"
+    url = f"https://github.com/astral-sh/uv/releases/latest/download/uv-{target}.{ext}"
+    archive = DATA_HOME / "bin" / f"uv.{ext}"
+    archive.parent.mkdir(exist_ok=True)
+    urllib.request.urlretrieve(url, archive)
+    name = exe.name
+    if ext == "zip":
+        with zipfile.ZipFile(archive) as z:
+            member = next(m for m in z.namelist() if m.endswith("/" + name) or m == name)
+            exe.write_bytes(z.read(member))
+    else:
+        with tarfile.open(archive) as t:
+            member = next(m for m in t.getmembers() if m.name.endswith("/" + name) or m.name == name)
+            exe.write_bytes(t.extractfile(member).read())
+    exe.chmod(0o755)
+    archive.unlink()
+    return str(exe)
+
+
+def install_pyspark():
+    """Create DATA_HOME/envs/pyspark-3.5 (Python 3.12 + PySpark 3.5) in the background; ~350 MB."""
+    if spark_install["status"] in ("downloading uv", "creating environment", "installing pyspark"):
+        return
+
+    def work():
+        env = DATA_HOME / "envs" / "pyspark-3.5"
+        flags = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0), "capture_output": True, "text": True}
+        try:
+            spark_install.update(status="downloading uv", error=None)
+            uv = uv_binary()
+            spark_install["status"] = "creating environment"
+            r = subprocess.run([uv, "venv", "--python", "3.12", str(env)], **flags)
+            if r.returncode:
+                raise RuntimeError(r.stderr[-400:])
+            spark_install["status"] = "installing pyspark"
+            py = env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+            r = subprocess.run([uv, "pip", "install", "--python", str(py), "pyspark==3.5.*"], **flags)
+            if r.returncode:
+                raise RuntimeError(r.stderr[-400:])
+            engines.cache_clear()
+            spark_install["status"] = "done"
+        except Exception as e:
+            spark_install.update(status="error", error=str(e)[:400])
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 def ensure_postgres():
@@ -185,7 +281,7 @@ def execute(p, code, engine):
     python = sys.executable
     if lang == "python":
         python = by_id[engine]["path"]
-    elif lang == "pyspark":
+    elif lang == "pyspark" or engine == "spark-sql":
         python = by_id[engine]["path"]
         if by_id[engine]["java"]:
             env["JAVA_HOME"] = by_id[engine]["java"]
@@ -197,17 +293,20 @@ def execute(p, code, engine):
     env["PYSPARK_PYTHON"] = env["PYSPARK_DRIVER_PYTHON"] = python
     # ponytail: fresh process + timeout only, no memory cap/sandbox; fine for your own code on your own machine
     with tempfile.TemporaryDirectory() as tmp:
+        req, res = Path(tmp) / "request.json", Path(tmp) / "result.json"
+        req.write_text(json.dumps({"problem": p, "code": code, "engine": engine}), encoding="utf-8")
+        # a frozen desktop build has no python to call: it re-runs itself in runner mode
+        cmd = ([sys.executable, "--runner"] if python == sys.executable and getattr(sys, "frozen", False)
+               else [python, "-I", str(ROOT / "runner.py")])
         try:
-            r = subprocess.run([python, "-I", str(ROOT / "runner.py")], cwd=tmp, env=env,
-                               input=json.dumps({"problem": p, "code": code, "engine": engine}),
-                               capture_output=True, text=True, timeout=TIMEOUT[lang])
+            r = subprocess.run(cmd + [str(req), str(res)], cwd=tmp, env=env, capture_output=True, text=True,
+                               timeout=TIMEOUT[lang], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired:
             return {"error": f"Timed out after {TIMEOUT[lang]}s"}
-    last = r.stdout.strip().rsplit("\n", 1)[-1] if r.stdout.strip() else ""
-    try:
-        return json.loads(last)
-    except json.JSONDecodeError:
-        return {"error": (r.stdout + r.stderr)[-4000:] or f"runner exited {r.returncode}"}
+        try:
+            return json.loads(res.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"error": (r.stdout + r.stderr)[-4000:] or f"runner exited {r.returncode}"}
 
 
 _expected = {}
@@ -216,7 +315,7 @@ _expected = {}
 def expected(p):
     key = (p["id"], hashlib.sha256(json.dumps([p["solution"], p["tests"]], sort_keys=True).encode()).hexdigest())
     if key not in _expected:
-        res = execute(p, p["solution"], DEFAULT_ENGINE[p["lang"]])
+        res = execute(p, p["solution"], default_engine(p["lang"]))
         if "error" in res:
             return res  # don't cache failures
         _expected[key] = res
@@ -234,7 +333,9 @@ def clip(v, n=50):
 
 
 def run(p, code, engine=None):
-    engine = engine or DEFAULT_ENGINE[p["lang"]]
+    engine = engine or default_engine(p["lang"])
+    if engine is None:
+        return {"error": "PySpark isn't installed yet.", "needs": "pyspark"}
     exp = expected(p)
     if "error" in exp:
         return {"error": "Reference solution failed (this is a problem bug, not yours):\n" + exp["error"]}
@@ -351,7 +452,9 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(load_catalog() | {"problems": summary})
         if parts[1:] == ["engines"]:
             return self.send_json({lang: [{k: e[k] for k in ("id", "label", "kind")} for e in es]
-                                   for lang, es in engines().items()} | {"default": DEFAULT_ENGINE})
+                                   for lang, es in engines().items()}
+                                  | {"default": {lang: default_engine(lang) for lang in DEFAULT_ENGINE},
+                                     "java": bool(shutil.which("java") or os.environ.get("JAVA_HOME")), "spark_install": spark_install})
         if parts[1:] == ["profile"]:
             return self.send_json(tomllib.loads((ROOT / "profile.toml").read_text()))
         if parts[1:] == ["feedback"]:
@@ -379,6 +482,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parts[1:] == ["setup"]:
             return self.send_json({"settings": llm.public(), "ollama": llm.ollama_status(),
                                    "local_models": llm.LOCAL_MODELS, "providers": llm.PROVIDERS})
+        if parts[1:] == ["version"]:
+            return self.send_json(latest_release())
         if parts[1:] == ["stats"]:
             return self.send_json(stats())
         if len(parts) >= 3 and parts[1] == "problems" and parts[2] in probs:
@@ -415,6 +520,9 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/setup/skip":
             llm.save(llm.load() | {"setup_done": True})
             return self.send_json({"ok": True})
+        if self.path == "/api/setup/pyspark":
+            install_pyspark()
+            return self.send_json(spark_install)
         if self.path == "/api/setup/pull":
             if body.get("model") not in {m["id"] for m in llm.LOCAL_MODELS}:
                 return self.send_json({"error": "unknown model"}, 400)
