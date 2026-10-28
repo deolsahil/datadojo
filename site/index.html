@@ -10,6 +10,8 @@
 <meta property="og:image" content="assets/workspace.webp">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://api.github.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap">
 <link rel="stylesheet" href="vendor/blobatar/motion.css">
 <link rel="stylesheet" href="vendor/blobatar/gaze.css">
@@ -94,7 +96,7 @@
   .help { display: grid; grid-template-columns: 1fr 1fr; gap: 16px } .help ol { margin: 8px 0 0; padding-left: 20px; color: var(--text2); font-size: 13.5px }
   footer { border-top: 1px solid var(--line); padding: 34px 0 50px; color: var(--faint); font-size: 13px }
   footer .wrap { display: flex; gap: 18px; align-items: center; flex-wrap: wrap } footer a { color: var(--dim) } footer a:hover { color: var(--acc) }
-  .reveal { opacity: 0; transform: translateY(16px); transition: opacity .6s, transform .6s cubic-bezier(.2,.8,.2,1) } .reveal.in { opacity: 1; transform: none }
+  .js .reveal:not(.in) { opacity: 0; transform: translateY(12px) } .reveal { transition: opacity .35s, transform .35s cubic-bezier(.2,.8,.2,1) }
   @keyframes shimmer { to { background-position: 300% 0 } } @keyframes caret { 50% { opacity: 0 } }
   @keyframes spin { to { transform: rotate(360deg) } } @keyframes bob { 50% { translate: 0 -8px } }
   @keyframes pop { from { opacity: 0; transform: scale(.85) } } @keyframes fade { from { opacity: 0 } }
@@ -151,7 +153,7 @@
 <nav><div class="wrap"><a class="logo" href="#">DATA<span>DOJO</span></a>
   <a class="l" href="#tour">Tour</a><a class="l" href="#features">Features</a><a class="l" href="#start">Get started</a>
   <span class="sp"></span><a class="btn small" href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub ★</a>
-  <a class="btn small primary" href="#download">Download</a></div></nav>
+  <a class="btn small primary" id="nav-dl" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg">Download</a></div></nav>
 
 <header class="wrap hero" id="download">
   <div>
@@ -159,11 +161,11 @@
     <h1>DATADOJO<i>_</i></h1>
     <p class="lead">Practice SQL, Python and PySpark like it's the real interview. 234 problems graded by real engines, a data system design course, brain games, and friendly AI coaches that give hints, not answers. Everything runs on your own computer.</p>
     <div class="dlg">
-      <div class="mac"><a class="dbtn" data-os="mac" id="dl-mac" href="#">⌘ Download for Mac <span class="caret" id="mac-caret" role="button" aria-label="Choose Mac chip">▾</span></a>
-        <div class="menu" id="mac-menu"><a data-file="DataDojo-macOS-arm64.dmg"><b>Apple Silicon</b><small>M1, M2, M3, M4 and later</small></a>
-          <a data-file="DataDojo-macOS-x64.dmg"><b>Intel</b><small>Macs from 2020 and earlier</small></a></div></div>
-      <a class="dbtn" data-os="win" data-file="DataDojo-Windows-Setup.exe">⊞ Download for Windows</a>
-      <a class="dbtn" data-os="linux" data-file="DataDojo-Linux-x64.tar.gz">🐧 Download for Linux</a>
+      <div class="mac"><a class="dbtn" data-os="mac" id="dl-mac" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg" data-file="DataDojo-macOS-arm64.dmg">⌘ Download for Mac <span class="caret" id="mac-caret" role="button" aria-label="Choose Mac chip">▾</span></a>
+        <div class="menu" id="mac-menu"><a href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg" data-file="DataDojo-macOS-arm64.dmg"><b>Apple Silicon</b><small>M1, M2, M3, M4 and later</small></a>
+          <a href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-x64.dmg" data-file="DataDojo-macOS-x64.dmg"><b>Intel</b><small>Macs from 2020 and earlier</small></a></div></div>
+      <a class="dbtn" data-os="win" data-file="DataDojo-Windows-Setup.exe" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-Windows-Setup.exe">⊞ Download for Windows</a>
+      <a class="dbtn" data-os="linux" data-file="DataDojo-Linux-x64.tar.gz" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-Linux-x64.tar.gz">🐧 Download for Linux</a>
     </div>
     <div class="mobile-note">📱 On a phone? Tap a button and we'll help you send DataDojo to your computer.</div>
     <div class="dl-meta"><span class="count" id="st-pill" hidden><span class="dot"></span><b id="st-dls">0</b>&nbsp;<span id="st-word">downloads</span></span>
@@ -181,7 +183,7 @@
   <div class="tabs" id="tabs"><button class="on" data-i="workspace">Coaching workspace</button><button data-i="home">Your dashboard</button>
     <button data-i="design">System design</button><button data-i="games">Brain games</button></div>
   <div class="win"><div class="bar"><i></i><i></i><i></i><span id="win-title">sql/joins/customers-without-orders · Duck</span></div>
-    <img id="shot" src="assets/workspace.webp" alt="DataDojo coaching workspace" width="1440" height="900"></div>
+    <img id="shot" decoding="async" src="assets/workspace.webp" alt="DataDojo coaching workspace" width="1440" height="900"></div>
 </section>
 
 <section id="features" class="wrap reveal">
@@ -269,6 +271,9 @@ document.querySelectorAll('.dbtn').forEach(b => {
   b.classList.toggle('primary', b.dataset.os === os);
   if (b.dataset.file) b.href = REL + b.dataset.file;           // direct download, no extra page
 });
+const navDl = $('#nav-dl'), mineFile = os === 'win' ? 'DataDojo-Windows-Setup.exe' : os === 'linux' ? 'DataDojo-Linux-x64.tar.gz' : $('#dl-mac').dataset.file;
+navDl.href = REL + mineFile;
+if (isMobile) navDl.addEventListener('click', e => { e.preventDefault(); openPop(); });
 const dlg = $('.dlg');                                         // the visitor's OS goes first
 const mine = os === 'mac' ? $('.mac') : document.querySelector(`.dbtn[data-os="${os}"]`);
 if (mine) dlg.prepend(mine);
@@ -295,7 +300,7 @@ $('#pop-share').onclick = async () => {
   if (navigator.share) { try { await navigator.share({ title: 'DataDojo', text: 'Download DataDojo on my computer', url: PAGE }); done('Sent! Open it on your computer ✓'); } catch {} }
   else $('#pop-copy').click();
 };
-$('#mac-menu').onclick = e => { const a = e.target.closest('[data-file]'); if (a) location.href = REL + a.dataset.file; };
+$('#mac-menu').onclick = e => { if (isMobile && e.target.closest('[data-file]')) { e.preventDefault(); openPop(); } };
 document.addEventListener('click', e => { if (!e.target.closest('.mac')) $('#mac-menu').classList.remove('open'); });
 
 // Real download count: GitHub's own counter for every installer file, across all releases (no baseline).
@@ -320,7 +325,8 @@ $('#tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return
   $('#shot').src = `assets/${b.dataset.i}.webp`; $('#win-title').textContent = TITLES[b.dataset.i]; };
 
 // Scroll reveal
-const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')), { threshold: .12 });
+document.documentElement.classList.add('js');
+const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')), { rootMargin: '0px 0px 25% 0px' });
 document.querySelectorAll('.reveal').forEach(el => io.observe(el));
 
 // Live blobatar coaches (same renderer the app uses)
