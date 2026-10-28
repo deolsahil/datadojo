@@ -592,7 +592,7 @@ async function workspace(id) {
       if (r.error) return void ($('#rp-msg').textContent = r.error);
       const issue = ghLink(`Problem report: ${p.title} (${$('#rp-cat .on').dataset.c})`,
         `**Problem:** \`${id}\`\n**Category:** ${$('#rp-cat .on').dataset.c}\n\n${$('#rp-text').value}` + ($('#rp-code').checked ? `\n\n<details><summary>My code</summary>\n\n\`\`\`\n${code().slice(0, 3000)}\n\`\`\`\n</details>` : ''),
-        'Send it to the DataDojo team on GitHub too →');
+        'Send it to the DataDojo team on GitHub too →', 'problem-report');
       modal(`<div class="kicker dot">Saved</div><h3>Thanks for the report!</h3><p class="dim">It's saved on this computer and shown on the problem.</p>${issue ? `<p>${issue}</p>` : ''}`);
       react('love', 2500);
       say(`Thanks for flagging that${me() ? ', ' + me().split(' ')[0] : ''}! I've noted it on this problem. 🙏`, 'love', true);
@@ -613,8 +613,8 @@ async function workspace(id) {
 // (opens in the browser, the learner submits it; no tokens or servers involved).
 let REPO = '';
 api('/api/profile').then(p => { REPO = (p.repo || '').replace(/\/$/, ''); });
-const ghLink = (title, body, label) => REPO ? `<a class="gh-link" target="_blank" rel="noreferrer"
-  href="${REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body + '\n\n— sent from DataDojo')}">${label}</a>` : '';
+const ghLink = (title, body, label, tag) => REPO ? `<a class="gh-link" target="_blank" rel="noreferrer"
+  href="${REPO}/issues/new?title=${encodeURIComponent(title)}&labels=${tag}&body=${encodeURIComponent(body + '\n\n— sent from DataDojo')}">${label}</a>` : '';
 const RATE_MOOD = { 1: 'sad', 2: 'unsure', 3: 'idle', 4: 'happy', 5: 'love' };
 function reviewCard() {
   return `<div class="card review"><div class="review-blob" id="rv-blob">${blob(CAST.sensei.seed, { size: 84, live: true, mood: 'idle' })}</div>
@@ -641,7 +641,7 @@ function bindReview() {
     if (r.error) { $('#rv-msg').textContent = r.error; return setMood(face, 'unsure'); }
     setMood(face, 'love'); confetti($('#rv-send'));
     $('#rv-msg').innerHTML = `Thank you! Your review is saved on this computer. ${ghLink('Review: ' + '★'.repeat(rating) + ' ' + $('#rv-text').value.slice(0, 50),
-      `**Rating:** ${rating}/5\n\n${$('#rv-text').value}`, 'Also send it to the DataDojo team on GitHub →')}`;
+      `**Rating:** ${rating}/5\n\n${$('#rv-text').value}`, 'Also send it to the DataDojo team on GitHub →', 'review')}`;
     $('#rv-text').value = ''; $('#rv-email').value = '';
   };
 }
