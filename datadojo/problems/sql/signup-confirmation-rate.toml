@@ -1,0 +1,49 @@
+title = "Signups confirmed within 24 hours"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-sessions-funnels"
+ordered = true
+statement = """
+Tables `signups(user_id, signup_ts)` (one row per user) and `confirmations(user_id, confirmed_ts)`
+(zero or more rows per user; users sometimes click the email link twice).
+
+A signup is **confirmed** if the user has at least one confirmation within 24 hours of signing up, i.e.
+`signup_ts <= confirmed_ts <= signup_ts + 24 hours`.
+
+For each signup day return `signup_date, signups, confirm_rate`, where `confirm_rate` is the fraction of that
+day's signups that were confirmed, rounded to 2 decimals (e.g. `0.5`). Order by `signup_date`.
+"""
+starter = "SELECT CAST(signup_ts AS DATE) AS signup_date, COUNT(*) AS signups, 0 AS confirm_rate\nFROM signups\nGROUP BY 1\nORDER BY 1\n"
+solution = """
+SELECT CAST(s.signup_ts AS DATE) AS signup_date,
+       COUNT(*) AS signups,
+       ROUND(AVG(CASE WHEN EXISTS (
+         SELECT 1 FROM confirmations c
+         WHERE c.user_id = s.user_id
+           AND c.confirmed_ts BETWEEN s.signup_ts AND s.signup_ts + INTERVAL 24 HOUR
+       ) THEN 1.0 ELSE 0.0 END), 2) AS confirm_rate
+FROM signups s
+GROUP BY 1
+ORDER BY 1
+"""
+hints = [
+  "Decide per signup whether a qualifying confirmation exists, then average a 0/1 flag per day.",
+  "A plain JOIN to confirmations duplicates users who confirmed twice. Use EXISTS, or aggregate confirmations per user first.",
+]
+source_url = "https://datalemur.com/questions/signup-confirmation-rate"
+
+[[tests]]
+tables.signups = { columns = "user_id INT, signup_ts TIMESTAMP", rows = [
+  [1, "2024-05-01 08:00:00"], [2, "2024-05-01 09:00:00"], [3, "2024-05-02 10:00:00"],
+] }
+tables.confirmations = { columns = "user_id INT, confirmed_ts TIMESTAMP", rows = [
+  [1, "2024-05-01 08:30:00"], [3, "2024-05-04 10:00:00"],
+] }
+
+[[tests]]  # double confirmations, exactly-24h boundary, a late confirmation
+tables.signups = { columns = "user_id INT, signup_ts TIMESTAMP", rows = [
+  [1, "2024-06-01 12:00:00"], [2, "2024-06-01 13:00:00"], [3, "2024-06-01 14:00:00"],
+] }
+tables.confirmations = { columns = "user_id INT, confirmed_ts TIMESTAMP", rows = [
+  [1, "2024-06-01 12:05:00"], [1, "2024-06-01 12:06:00"], [2, "2024-06-02 13:00:00"], [3, "2024-06-02 14:00:01"],
+] }

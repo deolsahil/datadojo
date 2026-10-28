@@ -1,0 +1,56 @@
+title = "Pipeline task run order"
+lang = "python"
+difficulty = "medium"
+pattern = "py-graphs"
+lists = ["python-de"]
+function = "run_order"
+ordered = true
+statement = '''
+`run_order(deps)` gets a dict mapping each task to the list of tasks it depends on (its upstreams). A task that only appears inside a dependency list is still a task, with no dependencies of its own. A dependency may be listed more than once.
+
+Return every task in an order where each task comes after all of its dependencies. When several tasks are ready at once, take the **alphabetically smallest** first, so the answer is unique.
+
+If the graph has a cycle (including a task depending on itself), return `[]`.
+
+`{"report": ["clean"], "clean": ["extract"]}` → `["extract", "clean", "report"]`
+'''
+starter = "def run_order(deps):\n    pass\n"
+solution = '''
+import heapq
+
+def run_order(deps):
+    nodes = set(deps) | {d for ds in deps.values() for d in ds}
+    indeg = {n: 0 for n in nodes}
+    down = {n: [] for n in nodes}
+    for task, ds in deps.items():
+        for d in set(ds):
+            indeg[task] += 1
+            down[d].append(task)
+    ready = [n for n in nodes if indeg[n] == 0]
+    heapq.heapify(ready)
+    out = []
+    while ready:
+        n = heapq.heappop(ready)
+        out.append(n)
+        for m in down[n]:
+            indeg[m] -= 1
+            if indeg[m] == 0:
+                heapq.heappush(ready, m)
+    return out if len(out) == len(nodes) else []
+'''
+hints = [
+    "Kahn's algorithm: count unmet dependencies per task, start with the zero-count tasks.",
+    "Use a heap (not a queue) of ready tasks to always pick the smallest name.",
+    "If you emit fewer tasks than exist, something never became ready: a cycle.",
+]
+
+[[tests]]
+args = [{ report = ["clean"], clean = ["extract"] }]
+[[tests]]
+args = [{ dash = ["agg_b", "agg_a"], agg_a = ["raw"], agg_b = ["raw", "raw"], audit = [] }]
+[[tests]]  # cycle
+args = [{ a = ["b"], b = ["c"], c = ["a"], d = [] }]
+[[tests]]  # self-loop
+args = [{ x = ["x"] }]
+[[tests]]
+args = [{}]

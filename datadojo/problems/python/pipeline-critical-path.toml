@@ -1,0 +1,58 @@
+title = "Pipeline critical path"
+lang = "python"
+difficulty = "hard"
+pattern = "py-graphs"
+lists = ["python-de"]
+function = "pipeline_runtime"
+statement = '''
+`pipeline_runtime(tasks)` gets a DAG as a dict: task name → `{"minutes": int, "after": [task names]}` (`after` may be missing, meaning no upstreams). With unlimited parallel workers, a task starts the moment all of its `after` tasks finish; tasks with no upstreams start at minute 0.
+
+Return `{"minutes": total, "path": [...]}`, where `total` is when the last task finishes and `path` is the critical path: the chain of tasks, first to last, that determines that time.
+
+- To build the path, start at the task finishing last and repeatedly step to the upstream that finishes latest. Break ties (both at the end and at each step) by the alphabetically smallest name.
+- If a task lists an upstream that is not a key in `tasks`, or there is a cycle, return `{"minutes": -1, "path": []}`.
+- No tasks: `{"minutes": 0, "path": []}`.
+'''
+starter = "def pipeline_runtime(tasks):\n    pass\n"
+solution = '''
+from graphlib import CycleError, TopologicalSorter
+
+def pipeline_runtime(tasks):
+    bad = {"minutes": -1, "path": []}
+    after = {k: v.get("after") or [] for k, v in tasks.items()}
+    if any(d not in tasks for ds in after.values() for d in ds):
+        return bad
+    try:
+        order = list(TopologicalSorter(after).static_order())
+    except CycleError:
+        return bad
+    if not tasks:
+        return {"minutes": 0, "path": []}
+    finish, prev = {}, {}
+    for n in order:
+        best = min(after[n], key=lambda d: (-finish[d], d)) if after[n] else None
+        finish[n] = (finish[best] if best else 0) + tasks[n]["minutes"]
+        prev[n] = best
+    node = min(finish, key=lambda n: (-finish[n], n))
+    total, path = finish[node], []
+    while node is not None:
+        path.append(node)
+        node = prev[node]
+    return {"minutes": total, "path": path[::-1]}
+'''
+hints = [
+    "Process tasks in topological order; finish(task) = max finish of its upstreams + its minutes.",
+    "Remember which upstream gave the max: that is the back-pointer for the path.",
+    "`graphlib.TopologicalSorter` raises `CycleError` for you; validate unknown upstreams first.",
+]
+
+[[tests]]
+args = [{ extract = { minutes = 10 }, clean = { minutes = 5, after = ["extract"] }, enrich = { minutes = 20, after = ["extract"] }, load = { minutes = 3, after = ["clean", "enrich"] } }]
+[[tests]]  # ties: two independent branches of equal length
+args = [{ b1 = { minutes = 4 }, a1 = { minutes = 4 }, b2 = { minutes = 1, after = ["b1"] }, a2 = { minutes = 1, after = ["a1"] }, solo = { minutes = 2 } }]
+[[tests]]
+args = [{ a = { minutes = 1, after = ["b"] }, b = { minutes = 1, after = ["a"] } }]
+[[tests]]
+args = [{ a = { minutes = 1, after = ["ghost"] } }]
+[[tests]]
+args = [{}]

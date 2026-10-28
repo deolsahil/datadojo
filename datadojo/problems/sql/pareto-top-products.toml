@@ -1,0 +1,46 @@
+title = "Products that make 80% of revenue"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-window-running"
+statement = """
+Table `product_revenue(product_id, revenue)`, one row per product, all revenues positive.
+
+Sort products by `revenue` descending, breaking ties by `product_id` ascending. Walk down the list keeping a
+running total. Return the **shortest prefix** of that list whose running total reaches **at least 80%** of all
+revenue (the product that crosses 80% is included).
+
+Return `product_id, revenue, cum_pct` where `cum_pct` is the running total as a percent of all revenue,
+rounded to 2 decimals. Any row order.
+"""
+starter = "SELECT product_id, revenue, 0 AS cum_pct\nFROM product_revenue\n"
+solution = """
+WITH c AS (
+  SELECT product_id, revenue,
+         SUM(revenue) OVER (ORDER BY revenue DESC, product_id ROWS UNBOUNDED PRECEDING) AS running,
+         SUM(revenue) OVER () AS total
+  FROM product_revenue
+)
+SELECT product_id, revenue, ROUND(100.0 * running / total, 2) AS cum_pct
+FROM c
+WHERE running - revenue < 0.8 * total
+"""
+hints = [
+  "Compute a running SUM ordered by revenue DESC, product_id, plus the grand total with SUM(...) OVER ().",
+  "Keeping rows with running <= 80% drops the product that crosses the line. What was the total just before this row?",
+  "Keep a row when running - revenue < 0.8 * total.",
+]
+
+[[tests]]
+tables.product_revenue = { columns = "product_id INT, revenue DOUBLE", rows = [
+  [1, 500.0], [2, 300.0], [3, 100.0], [4, 60.0], [5, 40.0],
+] }
+
+[[tests]]  # tie broken by product_id; crossing product included; exactly 80% stops
+tables.product_revenue = { columns = "product_id INT, revenue DOUBLE", rows = [
+  [7, 30.0], [3, 30.0], [9, 20.0], [1, 10.0], [2, 10.0],
+] }
+
+[[tests]]  # one dominant product
+tables.product_revenue = { columns = "product_id INT, revenue DOUBLE", rows = [
+  [42, 95.0], [43, 5.0],
+] }

@@ -1,0 +1,46 @@
+title = "Fewest hops between services"
+lang = "python"
+difficulty = "easy"
+pattern = "py-graphs"
+function = "hops"
+statement = '''
+`hops(edges, src, dst)` gets undirected network links as `[a, b]` pairs between service names.
+
+Return the minimum number of links on a path from `src` to `dst`, `0` if `src == dst`, or `-1` if `dst` cannot be reached (including when either name never appears in `edges`). Edges may repeat and may form cycles.
+'''
+starter = "def hops(edges, src, dst):\n    pass\n"
+solution = '''
+from collections import deque
+
+def hops(edges, src, dst):
+    if src == dst:
+        return 0
+    adj = {}
+    for a, b in edges:
+        adj.setdefault(a, set()).add(b)
+        adj.setdefault(b, set()).add(a)
+    seen, q = {src}, deque([(src, 0)])
+    while q:
+        node, d = q.popleft()
+        for nxt in adj.get(node, ()):
+            if nxt == dst:
+                return d + 1
+            if nxt not in seen:
+                seen.add(nxt)
+                q.append((nxt, d + 1))
+    return -1
+'''
+hints = [
+    "Build an adjacency dict, adding both directions.",
+    "Breadth-first search finds the fewest hops; DFS does not.",
+    "Mark nodes visited when you enqueue them so cycles cannot loop forever.",
+]
+
+[[tests]]
+args = [[["api", "auth"], ["auth", "db"], ["api", "cache"], ["cache", "db"], ["db", "queue"]], "api", "queue"]
+[[tests]]  # long way and short way
+args = [[["a", "b"], ["b", "c"], ["c", "d"], ["d", "e"], ["a", "e"], ["a", "b"]], "a", "d"]
+[[tests]]
+args = [[["a", "b"], ["c", "d"]], "a", "d"]
+[[tests]]
+args = [[], "x", "x"]

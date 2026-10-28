@@ -1,0 +1,44 @@
+title = "Deep merge config overrides"
+lang = "python"
+difficulty = "medium"
+pattern = "py-recursion"
+lists = ["python-de"]
+function = "deep_merge"
+statement = '''
+`deep_merge(base, override)` applies an environment override to a base pipeline config and returns the merged dict.
+
+For each key in `override`:
+
+- `null` **deletes** that key from the result (no error if it was absent).
+- A dict merges recursively into the base value when the base value is also a dict. If the base value is missing or not a dict, the override dict replaces it, but is itself merged into `{}` first, so `null`s inside it are dropped too.
+- Anything else (scalars, lists) replaces the base value wholesale. Lists are **not** concatenated.
+
+Keys only in `base` are kept unchanged.
+'''
+starter = "def deep_merge(base, override):\n    pass\n"
+solution = '''
+def deep_merge(base, override):
+    out = dict(base)
+    for k, v in override.items():
+        if v is None:
+            out.pop(k, None)
+        elif isinstance(v, dict):
+            out[k] = deep_merge(out[k] if isinstance(out.get(k), dict) else {}, v)
+        else:
+            out[k] = v
+    return out
+'''
+hints = [
+    "Start from a shallow copy of `base` and walk only the override's keys.",
+    "Three cases per key: null, dict, everything else.",
+    "For a dict with no dict underneath, recurse with `{}` as the base.",
+]
+
+[[tests]]
+args = '''[{"db": {"host": "localhost", "port": 5432, "opts": {"ssl": false}}, "tables": ["a", "b"], "debug": true},
+           {"db": {"host": "prod-db", "opts": {"ssl": true}}, "tables": ["c"], "debug": null}]'''
+[[tests]]
+args = '''[{"retries": 3, "sink": "s3://x"},
+           {"sink": {"bucket": "y", "prefix": null}, "missing": null, "retries": {"max": null}}]'''
+[[tests]]
+args = [{ a = 1 }, {}]

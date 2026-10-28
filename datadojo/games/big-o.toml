@@ -1,0 +1,442 @@
+# Big-O Sprint: time complexity of each snippet. Strings and records are short (constant size) unless noted.
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(ids) = len(blocked); blocked is a list
+def allowed(ids, blocked):
+    return [i for i in ids if i not in blocked]
+'''
+answer = "O(n²)"
+why = "`not in` on a list is a linear scan, and it runs once per id, so the total is n × n."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(ids) = len(blocked)
+def allowed(ids, blocked):
+    blocked = set(blocked)
+    return [i for i in ids if i not in blocked]
+'''
+answer = "O(n)"
+why = "Building the set takes O(n), and after that each membership check is an O(1) average hash lookup."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(scores)
+top3 = []
+for s in scores:
+    top3 = sorted(top3 + [s])[-3:]
+'''
+answer = "O(n)"
+why = "sorted() runs inside the loop, but it never sorts more than 4 items, which is constant work. One pass over n scores gives O(n)."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(words)
+out = ""
+for w in words:
+    out = w + " " + out   # prepend
+'''
+answer = "O(n²)"
+why = "Strings are immutable, so each prepend copies the whole string built so far. Copies of length 1, 2, ..., n add up to O(n²). Use ' '.join(reversed(words))."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(words)
+parts = reversed(words)
+out = " ".join(parts)
+'''
+answer = "O(n)"
+why = "join measures the total length once and copies each piece one time."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(rows); COLS is a fixed list of 5 column names
+for row in rows:
+    for c in COLS:
+        row[c] = row[c].strip()
+'''
+answer = "O(n)"
+why = "The inner loop always runs 5 times, a constant, so the nested loops do 5n steps."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(xs)
+pairs = 0
+for i in range(len(xs)):
+    for j in range(i + 1, len(xs)):
+        pairs += xs[i] + xs[j] == 0
+'''
+answer = "O(n²)"
+why = "Starting j at i + 1 halves the work, but n(n-1)/2 comparisons is still quadratic."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(xs), xs sorted
+def find(xs, target):
+    lo, hi = 0, len(xs) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if xs[mid] == target: return mid
+        if xs[mid] < target: lo = mid + 1
+        else: hi = mid - 1
+    return -1
+'''
+answer = "O(log n)"
+why = "Binary search halves the remaining range on every step, so it takes about log2(n) steps."
+
+[[items]]
+lang = "python"
+code = '''
+import bisect
+# n = len(stream)
+seen = []
+for x in stream:
+    bisect.insort(seen, x)
+'''
+answer = "O(n²)"
+why = "insort finds the position in O(log n), but inserting into a list shifts everything after it, which is O(n) per insert. Over n inserts that is O(n²)."
+
+[[items]]
+lang = "python"
+code = '''
+import heapq
+# n = len(nums)
+heap = []
+for x in nums:
+    heapq.heappush(heap, x)
+ordered = [heapq.heappop(heap) for _ in range(len(heap))]
+'''
+answer = "O(n log n)"
+why = "Each push and each pop costs O(log n) on a heap of up to n items, and there are n of each."
+
+[[items]]
+lang = "python"
+code = '''
+import heapq
+# n = len(nums)
+heapq.heapify(nums)
+smallest = nums[0]
+'''
+answer = "O(n)"
+why = "heapify builds the heap bottom-up in linear time, which is cheaper than n pushes, and reading nums[0] is O(1)."
+
+[[items]]
+lang = "python"
+code = '''
+# n is the argument
+def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+'''
+answer = "O(2ⁿ)"
+why = "Every call branches into two more and the same subproblems are recomputed again and again, so the call tree grows exponentially. The tight bound is about 1.6ⁿ, which is still in the exponential class."
+
+[[items]]
+lang = "python"
+code = '''
+from functools import lru_cache
+# n is the argument
+@lru_cache(maxsize=None)
+def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+'''
+answer = "O(n)"
+why = "With memoization each value from 0 to n is computed once, and repeat calls are cache hits."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(prices), a dict of sku -> price
+def price_of(prices, sku):
+    return prices.get(sku, 0.0)
+'''
+answer = "O(1)"
+why = "A dict lookup hashes the key and goes straight to its slot, taking O(1) on average however big the dict is."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(xs)
+def total(xs):
+    if not xs:
+        return 0
+    return xs[0] + total(xs[1:])
+'''
+answer = "O(n²)"
+why = "xs[1:] copies the rest of the list on every call, so the copies have length n-1, n-2, ..., 1, which adds up to quadratic."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(xs)
+def total(xs, i=0):
+    if i == len(xs):
+        return 0
+    return xs[i] + total(xs, i + 1)
+'''
+answer = "O(n)"
+why = "Passing an index instead of a slice avoids copying, so each of the n calls does O(1) work."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(xs), xs sorted ascending
+def has_pair_sum(xs, target):
+    i, j = 0, len(xs) - 1
+    while i < j:
+        s = xs[i] + xs[j]
+        if s == target: return True
+        if s < target: i += 1
+        else: j -= 1
+    return False
+'''
+answer = "O(n)"
+why = "Every step moves one of the two pointers inward, and they meet after at most n steps."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(xs), xs unsorted
+def has_pair_sum(xs, target):
+    xs = sorted(xs)
+    i, j = 0, len(xs) - 1
+    while i < j:
+        s = xs[i] + xs[j]
+        if s == target: return True
+        i, j = (i + 1, j) if s < target else (i, j - 1)
+    return False
+'''
+answer = "O(n log n)"
+why = "The two-pointer scan is O(n), but sorting first costs O(n log n), and the sort is the larger term."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(queue), a list
+while queue:
+    job = queue.pop(0)
+    run(job)  # O(1)
+'''
+answer = "O(n²)"
+why = "list.pop(0) shifts every remaining element left, which is O(n) per pop. Use collections.deque."
+
+[[items]]
+lang = "python"
+code = '''
+from collections import deque
+# n = len(jobs)
+queue = deque(jobs)
+while queue:
+    run(queue.popleft())  # run is O(1)
+'''
+answer = "O(n)"
+why = "deque.popleft() is O(1), so draining n jobs is linear."
+
+[[items]]
+lang = "python"
+code = '''
+# n is the starting value
+steps = 0
+while n > 1:
+    n //= 2
+    steps += 1
+'''
+answer = "O(log n)"
+why = "Halving n on each iteration reaches 1 after about log2(n) iterations."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(xs)
+def count_subsets(xs, target, i=0):
+    if i == len(xs):
+        return int(target == 0)
+    return (count_subsets(xs, target - xs[i], i + 1)
+            + count_subsets(xs, target, i + 1))
+'''
+answer = "O(2ⁿ)"
+why = "Each element is either taken or skipped, so the recursion visits all 2ⁿ subsets."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(a) = len(b)
+def common(a, b):
+    return set(a) & set(b)
+'''
+answer = "O(n)"
+why = "Building both sets is linear, and the intersection does one O(1) average lookup per element of the smaller set."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(users), a dict of user_id -> profile
+def is_user(users, uid):
+    return uid in users.keys()
+'''
+answer = "O(1)"
+why = "dict.keys() is a view backed by the hash table, not a list copy, so `in` on it is an O(1) average lookup."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(users), a dict of user_id -> email
+def email_taken(users, email):
+    return email in users.values()
+'''
+answer = "O(n)"
+why = "Values are not hashed for lookup, so `in` on .values() checks each value in turn."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(xs)
+winners = []
+for x in xs:
+    if x == max(xs):
+        winners.append(x)
+'''
+answer = "O(n²)"
+why = "max(xs) rescans the whole list on every iteration. Computing it once before the loop would make this O(n)."
+
+[[items]]
+lang = "python"
+code = '''
+from collections import Counter
+# n = len(events)
+counts = Counter(e["type"] for e in events)
+top = counts.most_common(1)
+'''
+answer = "O(n)"
+why = "Counting is one pass of O(1) dict updates, and most_common(1) uses max() over the distinct keys, which is at most n."
+
+[[items]]
+lang = "python"
+code = '''
+# n = len(ids)
+unique = set(ids)
+unique_sorted = sorted(unique)
+'''
+answer = "O(n log n)"
+why = "Deduplicating is O(n), and comparison-sorting up to n distinct values is O(n log n), which dominates."
+
+[[items]]
+lang = "python"
+code = '''
+# n is the argument
+grid = [[0] * n for _ in range(n)]
+grid[0][0] = 1
+'''
+answer = "O(n²)"
+why = "It creates n rows of n cells each, n² cells in total."
+
+[[items]]
+lang = "python"
+code = '''
+# n = exponent e; b is a float, count multiplications
+def power(b, e):
+    if e == 0:
+        return 1.0
+    half = power(b, e // 2)
+    return half * half * (b if e % 2 else 1.0)
+'''
+answer = "O(log n)"
+why = "Exponentiation by squaring halves the exponent on each call, so it takes about log2(n) calls with a constant number of multiplications each."
+
+[[items]]
+lang = "sql"
+code = '''
+-- n = rows in orders; PostgreSQL, B-tree primary key on id
+SELECT *
+FROM orders
+WHERE id = 42;
+'''
+answer = "O(log n)"
+why = "A B-tree index lookup walks from root to leaf, and the tree is O(log n) levels deep."
+
+[[items]]
+lang = "sql"
+code = '''
+-- n = rows in orders; no index on status
+SELECT COUNT(*)
+FROM orders
+WHERE status = 'paid';
+'''
+answer = "O(n)"
+why = "With no index the engine must scan every row and test the predicate on each one."
+
+[[items]]
+lang = "sql"
+code = '''
+-- n = rows in events
+SELECT a.id, b.id
+FROM events a
+JOIN events b ON a.ts < b.ts;
+'''
+answer = "O(n²)"
+why = "An inequality self-join can produce about n²/2 rows, and the work is at least the size of the output."
+
+[[items]]
+lang = "sql"
+code = '''
+-- n = rows in orders; no index on amount
+SELECT id, amount
+FROM orders
+ORDER BY amount;
+'''
+answer = "O(n log n)"
+why = "Returning all n rows in order needs a full comparison sort."
+
+[[items]]
+lang = "sql"
+code = '''
+-- n = rows in orders = rows in customers; each order matches one customer (hash join)
+SELECT o.id, c.name
+FROM orders o
+JOIN customers c ON c.id = o.customer_id;
+'''
+answer = "O(n)"
+why = "A hash join builds a hash table on one side in O(n), then probes it once per row of the other side in O(1) average."
+
+[[items]]
+lang = "pyspark"
+code = '''
+# n = rows in df (total work, ignoring parallelism)
+rows = df.collect()
+ids = [r["id"] for r in rows]
+dupes = [i for i in ids if ids.count(i) > 1]
+'''
+answer = "O(n²)"
+why = "list.count scans all n ids and runs once per id. A Counter, or df.groupBy('id').count(), would be linear."
+
+[[items]]
+lang = "pyspark"
+code = '''
+# n = rows in df (total work, ignoring parallelism)
+counts = df.groupBy("country").count()
+counts.write.parquet("s3://lake/country_counts/")
+'''
+answer = "O(n)"
+why = "A hash aggregate touches each row once with O(1) average work per update, the shuffle is linear in n, and the output is at most n rows."
+
+[[items]]
+lang = "pyspark"
+code = '''
+from pyspark.sql import Window, functions as F
+# n = rows in df, all in one partition (total work)
+w = Window.orderBy("ts")
+df = df.withColumn("rn", F.row_number().over(w))
+'''
+answer = "O(n log n)"
+why = "To number rows by ts, Spark must first sort all n rows, and the sort dominates. The numbering pass after it is linear."

@@ -1,0 +1,50 @@
+title = "Match candidates to job skills"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-nested"
+function = "solve"
+statement = """
+A recruiting pipeline has `jobs(job_id, required)` and `candidates(cand_id, skills)`, both
+`ARRAY<STRING>` columns typed in by humans: casing and surrounding spaces vary, entries repeat,
+and a candidate's `skills` can be NULL.
+
+Write `solve(spark, jobs, candidates)` returning `job_id, cand_id, matched, missing_count` for every
+job/candidate pair that shares **at least one** skill:
+
+- Compare skills after trimming and lower-casing.
+- `matched` is the distinct required skills the candidate has, normalized and sorted ascending.
+- `missing_count` is how many distinct required skills the candidate lacks.
+- A NULL `skills` array means the candidate has no skills.
+"""
+hints = [
+  "Normalize array elements with a higher-order function: `F.transform(col, lambda x: F.lower(F.trim(x)))`, then `F.array_distinct`.",
+  "Every job is compared with every candidate: `crossJoin`.",
+  "`F.array_intersect` and `F.array_except` do the set math; sort with `F.array_sort`.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, jobs, candidates):
+    return jobs
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def norm(c):
+    return F.array_distinct(F.transform(c, lambda x: F.lower(F.trim(x))))
+
+def solve(spark, jobs, candidates):
+    j = jobs.select("job_id", norm("required").alias("r"))
+    c = candidates.select("cand_id", F.coalesce(norm("skills"), F.array().cast("array<string>")).alias("s"))
+    p = j.crossJoin(c).select("job_id", "cand_id",
+                              F.array_sort(F.array_intersect("r", "s")).alias("matched"),
+                              F.size(F.array_except("r", "s")).alias("missing_count"))
+    return p.filter(F.size("matched") > 0)
+"""
+
+[[tests]]
+tables.jobs = { columns = "job_id INT, required ARRAY<STRING>", rows = '''[
+  [10, ["Spark", "SQL", "python"]], [20, ["Airflow"]], [30, ["sql", " SQL "]]]''' }
+tables.candidates = { columns = "cand_id INT, skills ARRAY<STRING>", rows = '''[
+  [1, ["sql", "Spark "]], [2, ["PYTHON", "java", "python"]], [3, null],
+  [4, ["airflow", "spark", "sql", "python"]], [5, ["Go"]]]''' }

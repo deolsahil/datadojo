@@ -1,0 +1,51 @@
+title = "New, retained and resurrected users per month"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-sessions-funnels"
+ordered = true
+statement = """
+Table `activity(user_id, active_date)`, one row per user action (many per month is normal).
+
+For every calendar month in which anyone was active, classify each user active that month as:
+
+- **new**: this is the user's first-ever active month
+- **retained**: the user was also active in the immediately preceding calendar month
+- **resurrected**: the user was active at some earlier month, but not the preceding one
+
+Return `month, new_users, retained_users, resurrected_users`, where `month` is the first day of the month
+(a DATE). Order by `month`.
+"""
+starter = "SELECT CAST(DATE_TRUNC('month', active_date) AS DATE) AS month, COUNT(DISTINCT user_id) AS new_users, 0 AS retained_users, 0 AS resurrected_users\nFROM activity\nGROUP BY 1\nORDER BY 1\n"
+solution = """
+WITH um AS (
+  SELECT DISTINCT user_id, CAST(DATE_TRUNC('month', active_date) AS DATE) AS month FROM activity
+), k AS (
+  SELECT month,
+         LAG(month) OVER (PARTITION BY user_id ORDER BY month) AS prev_month
+  FROM um
+)
+SELECT month,
+       SUM(CASE WHEN prev_month IS NULL THEN 1 ELSE 0 END) AS new_users,
+       SUM(CASE WHEN prev_month = month - INTERVAL 1 MONTH THEN 1 ELSE 0 END) AS retained_users,
+       SUM(CASE WHEN prev_month < month - INTERVAL 1 MONTH THEN 1 ELSE 0 END) AS resurrected_users
+FROM k
+GROUP BY month
+ORDER BY month
+"""
+hints = [
+  "Reduce to one row per (user, month) first, or repeated actions get counted many times.",
+  "LAG(month) per user gives the user's previous active month. NULL means new.",
+  "Retained when prev_month = month - INTERVAL 1 MONTH, resurrected when it is earlier than that. Count with SUM(CASE ...).",
+]
+
+[[tests]]
+tables.activity = { columns = "user_id INT, active_date DATE", rows = [
+  [1, "2024-01-03"], [1, "2024-01-20"], [1, "2024-02-02"], [2, "2024-01-15"], [2, "2024-03-01"],
+  [3, "2024-02-28"], [3, "2024-03-31"],
+] }
+
+[[tests]]  # year boundary, a month with nobody new, a long absence
+tables.activity = { columns = "user_id INT, active_date DATE", rows = [
+  [1, "2023-11-30"], [1, "2023-12-01"], [1, "2024-01-01"], [2, "2023-12-15"], [2, "2023-12-16"],
+  [2, "2024-06-10"], [1, "2024-06-11"], [3, "2024-06-12"],
+] }

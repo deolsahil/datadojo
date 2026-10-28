@@ -1,0 +1,165 @@
+title = "Design CDC from an OLTP Database into a Lakehouse"
+section = "ds-cases-pipelines"
+order = 2
+kind = "case_study"
+difficulty = "hard"
+companies = ["Shopify", "Netflix", "Robinhood"]
+big_idea = "Read the database's own transaction log, keep the ordered change stream in Kafka, and apply it to lakehouse tables with keyed MERGE so the lake converges to the source without ever querying production."
+summary = """The business runs on Postgres or MySQL, and analysts need those tables in the lakehouse within minutes, not from a nightly full dump that hammers the primary and is 24 hours stale.
+
+**Change data capture** with Debezium reads the write-ahead log (Postgres) or binlog (MySQL), turning every insert, update and delete into an event keyed by primary key. Events flow through Kafka to Spark or Flink, which **upserts** them into Iceberg, Delta or Hudi tables. The hard parts are the initial snapshot, ordering per key, deletes, schema changes, and keeping MERGE cheap as tables grow."""
+diagram = """flowchart LR
+  pg[("Postgres primary")] -- WAL --> dbz[Debezium on Kafka Connect]
+  dbz --> k[("Kafka: one topic per table")]
+  sr[Schema Registry] --> dbz
+  k --> raw[("Raw changelog table")]
+  k --> merge[Spark or Flink MERGE job]
+  merge --> lake[("Iceberg mirror tables")]
+  lake --> maint[Compaction and snapshot expiry]
+  lake --> q["Trino, Spark, Snowflake"]
+  raw --> recon[Reconciliation job]
+  pg -- row counts and checksums --> recon"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- Which database and version? Can we enable logical replication (Postgres `wal_level=logical`) or row-based binlog (MySQL `binlog_format=ROW`)?
+- How many tables, how big, and what is the change rate? Do all tables have primary keys?
+- What freshness is needed: minutes, or is hourly fine?
+- Do consumers need the current state only, full history of changes, or both?
+- Are hard deletes used? Must deletes propagate (often yes, for privacy)?
+- How often does the schema change and who controls migrations?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Mirror ~200 production tables into the lakehouse with inserts, updates and deletes applied.
+- Keep an append-only changelog for history and audit.
+- Support adding new tables and re-snapshotting a table without downtime.
+
+**Non-functional**
+- Freshness under 15 minutes at p95.
+- No noticeable load on the primary; no long-running queries against it.
+- Per-key ordering preserved; the mirror must converge to exactly the source state.
+- Survive connector restarts without data loss (at-least-once delivery with idempotent apply).
+- Backward-compatible schema changes flow through automatically; breaking ones are caught."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- Source: 200 tables, 10 TB total, largest table 2 TB (orders, 3B rows).
+- Change rate: ~5K row changes/s average, ~20K/s peak.
+- Changes/day: 5K x 86,400 = **432M changes/day**.
+- Debezium event size: ~2 KB (before image + after image + source metadata), so 432M x 2 KB = **~864 GB/day** through Kafka. Average throughput 5K x 2 KB = ~10 MB/s, trivially handled by a small cluster.
+- Kafka retention 7 days: ~6 TB x 3 replicas = **~18 TB**.
+- Changelog in Parquet at ~5x compression: ~173 GB/day, **~63 TB/year**.
+- MERGE batches every 5 minutes: 5K x 300 s = **1.5M changed rows per batch** spread over 200 tables.
+
+The volume is modest; the difficulty is correctness and keeping 1.5M-row MERGEs from rewriting terabytes."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Capture**: Debezium connectors on Kafka Connect read from a Postgres logical replication slot (pgoutput plugin) or the MySQL binlog. Ideally attach to a replica if the database supports logical decoding there, to protect the primary.
+2. **Initial snapshot**: Debezium's incremental snapshot reads tables in primary-key chunks while streaming continues, interleaving snapshot rows with live changes so there is no global lock.
+3. **Transport**: one Kafka topic per table, keyed by primary key so all changes to a row stay in one partition and stay ordered. Avro with Confluent/Apicurio Schema Registry.
+4. **Raw changelog**: a sink appends every event (op, before, after, LSN/binlog position, ts) to a bronze table. This is the replay source.
+5. **Apply**: a Spark Structured Streaming job (or Flink) runs every few minutes per table: dedupe the micro-batch to the latest event per key by log position, then `MERGE INTO` the Iceberg mirror (update matched, insert unmatched, delete when op = d).
+6. **Maintenance**: scheduled compaction, sort/cluster by key, snapshot expiry and orphan-file cleanup.
+7. **Reconciliation**: a daily job compares row counts and per-chunk checksums between source (read from a replica) and mirror."""
+
+[[blocks]]
+heading = "Data model"
+body = """**Kafka topic `cdc.public.orders`**: key = `{order_id}`; value = `{before, after, op (c/u/d/r), source: {lsn, txId, ts_ms, table}, ts_ms}`. A tombstone (null value) follows deletes for topic compaction.
+
+**`bronze.orders_changelog`** (grain: one row per change event): order_id, op, after columns flattened, `_lsn`, `_tx_id`, `_source_ts`, `_ingested_at`. Partitioned by ingest date.
+
+**`mirror.orders`** (grain: one row per live order_id, matching the source): all source columns plus `_lsn` of the last applied change and `_updated_at`. Partitioned by a bucket of order_id or by created month, sorted by order_id.
+
+**Optional `history.orders_scd2`**: valid_from, valid_to, is_current, derived from the changelog for point-in-time queries."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Ordering and idempotent apply.** Within a micro-batch there may be several changes for one key. Keep only the one with the highest log position (`_lsn`), then MERGE with a guard: update only if `source._lsn > target._lsn`. That makes replays and duplicates harmless, because applying an old event never overwrites a newer one. Never order by wall-clock `ts_ms` alone; two changes in the same millisecond are common.
+
+**Snapshot plus stream.** The mirror must start from a consistent point. Debezium's incremental snapshot uses watermarks in the log to resolve conflicts: if a row is changed while its chunk is being read, the streamed change wins. Snapshot rows carry op = r and the same MERGE logic handles them. Re-snapshotting one table later is a signal to the connector, not a full restart.
+
+**Keeping MERGE cheap.** A MERGE rewrites every data file that contains a matched key (copy-on-write). If updates hit random old orders and the table is partitioned only by date, each batch may touch thousands of files. Mitigations: lay out the table by key buckets so a batch touches few files; use merge-on-read (Iceberg position/equality deletes, Delta deletion vectors, Hudi MOR) so writes are cheap and compaction folds deletes in later; batch less often for cold tables.
+
+**Schema evolution.** Adding a nullable column flows through: Debezium emits the new schema, the registry checks compatibility, and the apply job evolves the Iceberg schema (adds are metadata-only). Renames and type narrowing are breaking; enforce migration review so they are done as add-new-column, backfill, drop-old."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **Log-based CDC vs. query-based polling** (`WHERE updated_at > last_run`): polling is simple but misses hard deletes, depends on every writer maintaining `updated_at`, and adds query load. Log-based CDC captures everything in commit order.
+- **Copy-on-write vs. merge-on-read**: COW gives fastest reads and simplest readers; MOR gives cheap frequent writes at the cost of compaction and slightly slower reads. High-churn tables favor MOR.
+- **Flink streaming apply vs. Spark micro-batch**: Flink gives lower latency and native changelog semantics; Spark micro-batches every few minutes are easier to operate and usually meet a 15-minute SLA.
+- **Managed (Fivetran, AWS DMS, Snowflake connectors) vs. Debezium**: managed tools are faster to start; Debezium gives control, raw changelogs and lower cost at high volume.
+- **Mirror only vs. mirror + changelog**: keeping the changelog costs storage but enables history, replays, and audits."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Replication slot growth**: if the connector stops, Postgres keeps WAL for the slot and can fill the primary's disk. Alert on slot lag in bytes; have a runbook to drop and re-snapshot if needed.
+- **Connector restarts** replay from the last committed offset, creating duplicates; the LSN guard makes them harmless.
+- **Lost binlog**: if MySQL purges binlogs before the connector catches up, the only fix is a re-snapshot. Set binlog retention above the longest expected outage.
+- **Drift**: reconciliation counts and chunk checksums catch missed deletes or bugs; alert on any mismatch above a tiny tolerance.
+- **Small files and snapshot bloat** from frequent commits: monitor file counts per partition and metadata size; schedule compaction and expiry.
+- **Freshness**: emit end-to-end lag (now minus source commit time of the last applied event) per table."""
+
+key_points = [
+  "Read the transaction log, not the tables: it captures every change, including hard deletes, in commit order.",
+  "Key Kafka topics by primary key so changes to a row stay in one ordered partition.",
+  "Dedupe each batch to the latest change per key by log position, and guard MERGE with a source LSN greater than target LSN check.",
+  "Use incremental snapshots so the initial load and live changes merge without locking the source.",
+  "MERGE cost depends on how many files contain the touched keys; lay out tables by key or use merge-on-read.",
+  "Monitor replication slot lag, end-to-end freshness, and daily source-to-lake reconciliation.",
+]
+common_mistakes = [
+  "Polling with updated_at and silently missing hard deletes.",
+  "Ordering changes by timestamp instead of log sequence number.",
+  "Forgetting that an abandoned Postgres replication slot can fill the primary's disk.",
+  "Running MERGE directly on raw events without deduplicating the batch, which fails or produces nondeterministic results when a key appears twice.",
+  "Never compacting, leaving millions of small files and delete files that slow every query.",
+]
+interview_questions = [
+  "How do you add a new 2 TB table to the pipeline without impacting production?",
+  "A developer renames a column in Postgres. What happens downstream and how do you protect against it?",
+  "How would you give analysts the state of an order as of any past timestamp?",
+  "What breaks if a table has no primary key, and what would you do about it?",
+  "How do you preserve transaction boundaries if consumers need multi-table consistency?",
+]
+
+[[quiz]]
+q = "Why is log-based CDC preferred over polling with WHERE updated_at > last_run?"
+options = [
+  "Polling cannot run more often than once a day",
+  "Log-based CDC captures hard deletes and every change in commit order without relying on application columns",
+  "Polling requires Kafka",
+  "Log-based CDC does not need a primary key",
+]
+answer = 1
+why = "A deleted row simply disappears from a polling query, and polling depends on every writer setting updated_at. The log records inserts, updates and deletes as they commit."
+
+[[quiz]]
+q = "A connector restart replays events already applied to the mirror. What makes the MERGE safe?"
+options = [
+  "Running MERGE with INSERT OVERWRITE",
+  "Kafka exactly-once transactions in Debezium",
+  "Updating a row only when the incoming log position is greater than the stored one",
+  "Sorting the batch by ts_ms",
+]
+answer = 2
+why = "A monotonic log-position guard makes apply idempotent: replayed or out-of-order old events cannot overwrite newer state."
+
+[[quiz]]
+q = "At 5K row changes/s and 2 KB per Debezium event, roughly how much data passes through Kafka per day?"
+options = ["~86 GB", "~432 GB", "~864 GB", "~8.6 TB"]
+answer = 2
+why = "5K x 86,400 = 432M events/day; 432M x 2 KB = 864 GB/day."
+
+[[quiz]]
+q = "A 5-minute MERGE batch of 1.5M updates rewrites terabytes of a copy-on-write table. What is the most direct fix?"
+options = [
+  "Increase the Spark cluster size",
+  "Cluster the table by the merge key or switch to merge-on-read deletes",
+  "Partition by ingest date",
+  "Disable schema evolution",
+]
+answer = 1
+why = "Copy-on-write rewrites every file containing a matched key. Clustering by key concentrates touched keys into fewer files, and merge-on-read avoids rewrites at write time."

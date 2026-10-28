@@ -1,0 +1,57 @@
+title = "Get a value by dotted path"
+lang = "python"
+difficulty = "medium"
+pattern = "py-recursion"
+lists = ["python-de"]
+function = "get_path"
+statement = '''
+`get_path(data, path, default)` reads a value out of nested JSON (dicts and lists) using a path like `order.items[0].sku`.
+
+- The path is dot-separated segments. Each segment is a non-empty key name (no `.`, `[` or `]`), optionally followed by one or more `[n]` list indexes with non-negative integers: `matrix[1][0]`.
+- A key step requires the current value to be a dict containing that key. An index step requires a list with that index in range.
+- If any step fails, or the path is malformed (`a..b`, `a[x]`, `a[`), return `default`.
+- An empty path returns `data` itself.
+- A value that exists but is `null` is returned as `null`, not replaced by `default`.
+'''
+starter = "def get_path(data, path, default):\n    pass\n"
+solution = '''
+import re
+
+def get_path(data, path, default):
+    if path == "":
+        return data
+    steps = []
+    for seg in path.split("."):
+        m = re.fullmatch(r"([^\[\]]+)((?:\[\d+\])*)", seg)
+        if not m:
+            return default
+        steps.append(m.group(1))
+        steps += [int(x) for x in re.findall(r"\[(\d+)\]", m.group(2))]
+    cur = data
+    for s in steps:
+        if isinstance(s, int):
+            if not isinstance(cur, list) or s >= len(cur):
+                return default
+        elif not isinstance(cur, dict) or s not in cur:
+            return default
+        cur = cur[s]
+    return cur
+'''
+hints = [
+    "Parse the path into a list of steps first: strings for keys, ints for indexes.",
+    "Check the container type at each step; a dict key `\"0\"` is not a list index.",
+    "Don't use `cur.get(k) or default`: that turns a real `null` (or 0) into the default.",
+]
+
+[[tests]]
+args = '''[{"order": {"items": [{"sku": "A1", "qty": 2}, {"sku": "B2", "qty": 0}]}}, "order.items[1].qty", -1]'''
+[[tests]]
+args = '''[{"order": {"items": [{"sku": "A1"}], "note": null}}, "order.note", "missing"]'''
+[[tests]]
+args = '''[{"m": [[1, 2], [3, 4]], "d": {"0": "zero"}}, "m[1][0]", null]'''
+[[tests]]  # out of range, wrong type, malformed
+args = '''[{"a": [1], "b": {"c": 1}}, "a[3]", "D"]'''
+[[tests]]
+args = '''[{"a": [1], "b": {"c": 1}}, "b[0]", "D"]'''
+[[tests]]
+args = '''[{"a": {"b": 1}}, "a..b", "D"]'''

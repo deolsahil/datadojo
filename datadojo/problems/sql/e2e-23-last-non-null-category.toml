@@ -1,0 +1,39 @@
+title = "Populate Category with Last Non-Null Value"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-running"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `brands(id, category, brand_name)` lists products in display order (`id`). The category is only written on the
+first row of each block; the rows below it have a NULL `category` and belong to the same category.
+
+Return `category, brand_name` for every row, with each NULL `category` filled with the most recent non-NULL category
+at or before that row (by `id`). Rows before the first non-NULL category stay NULL. Any row order.
+"""
+starter = "SELECT category, brand_name\nFROM brands\n"
+solution = """
+WITH g AS (
+  SELECT *, COUNT(category) OVER (ORDER BY id) AS grp
+  FROM brands
+)
+SELECT MAX(category) OVER (PARTITION BY grp) AS category, brand_name
+FROM g
+"""
+hints = [
+  "COUNT(category) skips NULLs. As a running count ordered by id, it stays constant across a block of NULL rows.",
+  "That running count is a group number: every row in a group shares the one non-NULL category that started it.",
+  "Fill with MAX(category) OVER (PARTITION BY grp). (DuckDB also has LAST_VALUE(category IGNORE NULLS).)",
+]
+
+[[tests]]
+tables.brands = { columns = "id INT, category STRING, brand_name STRING", rows = '''[
+  [1, "chocolates", "5-star"], [2, null, "dairy milk"], [3, null, "perk"], [4, null, "eclair"],
+  [5, "Biscuits", "britannia"], [6, null, "good day"], [7, null, "boost"]
+]''' }
+
+[[tests]]  # leading NULLs stay NULL, back-to-back categories, rows stored out of id order
+tables.brands = { columns = "id INT, category STRING, brand_name STRING", rows = '''[
+  [5, null, "kitkat"], [1, null, "orphan"], [2, "chips", "lays"], [3, "drinks", "coke"],
+  [4, "chocolates", "mars"], [6, null, "twix"], [7, "chips", "pringles"], [8, null, "doritos"]
+]''' }

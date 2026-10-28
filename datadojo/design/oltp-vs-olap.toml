@@ -1,0 +1,102 @@
+title = "OLTP vs OLAP"
+section = "ds-foundations"
+order = 2
+kind = "lesson"
+big_idea = "OLTP systems are built to run the business one row at a time; OLAP systems are built to understand the business by scanning millions of rows at once, and data engineering is largely the job of moving data from the first to the second."
+summary = """**OLTP** (online transaction processing) databases like Postgres, MySQL, or DynamoDB power applications: insert an order, update a balance, read one user's profile. Queries touch a few rows, need millisecond latency, run thousands of times per second, and must be correct under concurrent writes.
+
+**OLAP** (online analytical processing) systems like Snowflake, BigQuery, Redshift, ClickHouse, or Spark on a lakehouse answer questions such as "revenue by region by week for the last two years". Queries scan huge amounts of data but only a few columns, run less often, and tolerate seconds of latency.
+
+The two workloads want opposite physical designs: row storage and B-tree indexes for OLTP, columnar storage, compression, and massively parallel scans for OLAP. Running heavy analytics on the production OLTP database is one of the most common reasons data teams get built in the first place."""
+diagram = """flowchart LR
+  app[Application] --> oltp[("OLTP DB - rows")]
+  oltp -- CDC or nightly extract --> pipe[Pipeline]
+  pipe --> olap[("OLAP store - columns")]
+  olap --> bi[Dashboards]
+  olap --> ds[Analysts and ML]"""
+
+[[blocks]]
+heading = "How they differ"
+body = """| | OLTP | OLAP |
+|---|---|---|
+| Typical query | Read/write a few rows by key | Aggregate millions to billions of rows |
+| Storage layout | Row-oriented | Column-oriented |
+| Latency target | Single-digit milliseconds | Hundreds of ms to minutes |
+| Concurrency | Thousands of small transactions/s | Tens to hundreds of large queries |
+| Schema | Normalized (3NF) to avoid update anomalies | Denormalized (star schema, wide tables) for fast reads |
+| Data | Current state | History, often years |
+
+Columnar storage wins for analytics because a query that reads 3 of 100 columns only reads ~3% of the bytes, and values in one column compress very well together (often 5-10×)."""
+
+[[blocks]]
+heading = "Moving data between them"
+body = """- **Batch extract:** nightly `SELECT *` or incremental `WHERE updated_at > last_run`. Simple, but misses hard deletes and puts load on the source; run it against a read replica.
+- **Change data capture (CDC):** tools such as Debezium read the database's write-ahead log or binlog and emit every insert/update/delete as an event, usually into Kafka. Captures deletes and intermediate states with low source impact.
+- **Application events:** the app publishes domain events directly. Clean semantics, but requires engineering discipline and can drift from the database's truth (the dual-write problem)."""
+
+[[blocks]]
+heading = "Gray areas"
+body = """Some systems blur the line. **HTAP** databases (for example TiDB, SingleStore, or AlloyDB with columnar features) try to serve both. Real-time OLAP engines like ClickHouse, Druid, and Pinot serve analytical queries with sub-second latency to many users, for example user-facing analytics. In an interview, it is fine to mention them, but default to the classic split unless the requirements push you there: one system rarely does both workloads best at scale."""
+
+[[blocks]]
+heading = "In an interview"
+body = """When the prompt mentions a production database as the source, say explicitly: "we will not run analytics on the primary; we will replicate via CDC into the lake/warehouse." Mention read replicas for batch extracts, and that CDC captures deletes. If asked to serve analytics to end users with low latency, consider a real-time OLAP store or precomputed aggregates in a key-value store rather than querying the warehouse per request."""
+
+key_points = [
+  "OLTP: many small, concurrent, row-level reads and writes with strict transactional correctness.",
+  "OLAP: few large scans and aggregations over history, optimized with columnar storage and parallelism.",
+  "Normalized schemas suit OLTP writes; denormalized star schemas suit OLAP reads.",
+  "CDC from the database log is the usual low-impact way to feed OLAP from OLTP, and it captures deletes.",
+  "Real-time OLAP engines (ClickHouse, Druid, Pinot) cover user-facing, low-latency analytics.",
+]
+common_mistakes = [
+  "Pointing BI dashboards straight at the production OLTP database.",
+  "Using incremental `updated_at` extracts and silently missing hard deletes.",
+  "Assuming a warehouse can serve thousands of per-user API requests per second cheaply.",
+  "Fully normalizing the analytics model and forcing analysts into 12-way joins.",
+]
+interview_questions = [
+  "Why is columnar storage faster for analytical queries?",
+  "How would you replicate a production Postgres database into a warehouse without hurting the app?",
+  "When would you choose ClickHouse or Druid over Snowflake or BigQuery?",
+  "What are the downsides of incremental extraction based on an updated_at column?",
+]
+
+[[quiz]]
+q = "A query computes average order value by month over 3 years, reading 4 of 80 columns. Which storage layout is best?"
+options = ["Row-oriented with a B-tree index", "Column-oriented", "Key-value store", "Document store"]
+answer = 1
+why = "Columnar storage reads only the 4 needed columns and compresses them well, cutting I/O by roughly 20× versus reading full rows."
+
+[[quiz]]
+q = "Which extraction approach captures hard deletes from the source database?"
+options = [
+  "Incremental SELECT where updated_at is greater than the last run",
+  "Log-based change data capture",
+  "Querying the primary more frequently",
+  "Adding an index on updated_at",
+]
+answer = 1
+why = "A hard-deleted row no longer exists to be selected. Log-based CDC reads the delete from the write-ahead log or binlog and emits it as an event."
+
+[[quiz]]
+q = "Why are OLTP schemas usually normalized?"
+options = [
+  "To make large aggregations faster",
+  "To avoid update anomalies and keep writes small and consistent",
+  "Because columnar storage requires it",
+  "To reduce the number of tables",
+]
+answer = 1
+why = "Normalization stores each fact once, so an update touches one row. Analytics flips the priority and denormalizes for read speed."
+
+[[quiz]]
+q = "A product needs per-customer analytics in its web UI for 50K concurrent users with sub-second latency. What is the most reasonable default?"
+options = [
+  "Query the cloud warehouse directly for each page load",
+  "Query the OLTP primary",
+  "A real-time OLAP store or precomputed aggregates in a low-latency store",
+  "Nightly CSV exports emailed to customers",
+]
+answer = 2
+why = "General-purpose warehouses are tuned for fewer, larger queries. High-concurrency, low-latency serving calls for an engine built for it or precomputed results."

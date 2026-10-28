@@ -1,0 +1,41 @@
+title = "Destination City"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-joins"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `travel_data(customer, start_loc, end_loc)`. Each customer's legs form a single path without repeats, but the
+rows are not stored in travel order.
+
+Return `customer, destination`: the final city of each customer's path, i.e. the `end_loc` from which that customer
+never departs. Different customers can visit the same cities. Any row order.
+"""
+starter = "SELECT customer, end_loc AS destination\nFROM travel_data\n"
+solution = """
+SELECT t.customer, t.end_loc AS destination
+FROM travel_data t
+WHERE NOT EXISTS (
+  SELECT 1 FROM travel_data s WHERE s.customer = t.customer AND s.start_loc = t.end_loc
+)
+"""
+hints = [
+  "The destination is an end_loc that never appears as a start_loc.",
+  "Check that per customer: another customer may start a trip in your destination city.",
+  "NOT EXISTS with s.customer = t.customer AND s.start_loc = t.end_loc.",
+]
+
+[[tests]]
+tables.travel_data = { columns = "customer STRING, start_loc STRING, end_loc STRING", rows = [
+  ["c1", "New York", "Lima"], ["c1", "London", "New York"], ["c1", "Lima", "Sao Paulo"],
+  ["c1", "Sao Paulo", "New Delhi"], ["c2", "Mumbai", "Hyderabad"], ["c2", "Surat", "Pune"],
+  ["c2", "Hyderabad", "Surat"], ["c3", "Kochi", "Kurnool"], ["c3", "Lucknow", "Agra"],
+  ["c3", "Agra", "Jaipur"], ["c3", "Jaipur", "Kochi"],
+] }
+
+[[tests]]  # c1 ends where c2 starts; single-leg customer
+tables.travel_data = { columns = "customer STRING, start_loc STRING, end_loc STRING", rows = [
+  ["c1", "Berlin", "Paris"], ["c1", "Madrid", "Berlin"],
+  ["c2", "Rome", "Oslo"], ["c2", "Paris", "Rome"],
+  ["c3", "Oslo", "Paris"],
+] }

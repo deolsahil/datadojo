@@ -1,0 +1,42 @@
+title = "Count subarrays summing to k"
+lang = "python"
+difficulty = "medium"
+pattern = "py-hashing"
+function = "count_subarrays"
+source_url = "https://leetcode.com/problems/subarray-sum-equals-k/"
+statement = """
+`count_subarrays(nums, k)` returns how many contiguous, non-empty slices of `nums` sum to
+exactly `k`. Values may be negative or zero, so a growing/shrinking window does not work.
+
+- `count_subarrays([1, 1, 1], 2)` → `2`
+- `count_subarrays([1, -1, 0], 0)` → `3` (`[1, -1]`, `[0]`, `[1, -1, 0]`)
+"""
+hints = [
+    "The sum of `nums[i:j]` is `prefix[j] - prefix[i]`.",
+    "While scanning, a slice ending here sums to `k` once for every earlier prefix equal to `running - k`.",
+    "Keep a Counter of prefix sums seen so far, seeded with `{0: 1}` for slices starting at index 0.",
+]
+starter = "def count_subarrays(nums, k):\n    pass\n"
+solution = """
+from collections import Counter
+
+def count_subarrays(nums, k):
+    seen = Counter({0: 1})
+    run = total = 0
+    for x in nums:
+        run += x
+        total += seen[run - k]
+        seen[run] += 1
+    return total
+"""
+
+[[tests]]
+args = [[1, 1, 1], 2]
+[[tests]]
+args = [[1, 2, 3], 3]
+[[tests]]  # negatives break sliding windows
+args = [[1, -1, 0], 0]
+[[tests]]
+args = [[0, 0, 0], 0]
+[[tests]]
+args = [[3, 4, 7, 2, -3, 1, 4, 2], 7]

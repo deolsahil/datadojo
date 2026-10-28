@@ -1,0 +1,39 @@
+title = "Quarterly revenue by region (pivot)"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-pivot"
+lists = ["sql-essentials"]
+statement = """
+Table `orders(order_id, region, order_date, amount)`.
+
+Build a 2024 report with one row per region that has at least one order in 2024:
+`region, q1, q2, q3, q4`, where each column is that region's total `amount` for orders in that quarter of 2024.
+Quarters with no orders show `0`, not NULL. Orders from other years are ignored. Any row order.
+"""
+starter = "SELECT region, SUM(amount) AS q1, 0 AS q2, 0 AS q3, 0 AS q4\nFROM orders\nGROUP BY region\n"
+solution = """
+SELECT region,
+       SUM(CASE WHEN MONTH(order_date) BETWEEN 1 AND 3 THEN amount ELSE 0 END) AS q1,
+       SUM(CASE WHEN MONTH(order_date) BETWEEN 4 AND 6 THEN amount ELSE 0 END) AS q2,
+       SUM(CASE WHEN MONTH(order_date) BETWEEN 7 AND 9 THEN amount ELSE 0 END) AS q3,
+       SUM(CASE WHEN MONTH(order_date) BETWEEN 10 AND 12 THEN amount ELSE 0 END) AS q4
+FROM orders
+WHERE YEAR(order_date) = 2024
+GROUP BY region
+"""
+hints = [
+  "Pivoting by hand is conditional aggregation: one SUM(CASE WHEN ... THEN amount ELSE 0 END) per output column.",
+  "Filter to 2024 in WHERE, then GROUP BY region. ELSE 0 (not a missing ELSE) is what turns empty quarters into 0.",
+]
+
+[[tests]]
+tables.orders = { columns = "order_id INT, region STRING, order_date DATE, amount INT", rows = [
+  [1, "east", "2024-01-15", 100], [2, "east", "2024-02-01", 50], [3, "east", "2024-07-04", 70],
+  [4, "west", "2024-12-31", 30], [5, "west", "2024-04-01", 20],
+] }
+
+[[tests]]  # other years ignored, a region with only one quarter, quarter boundaries
+tables.orders = { columns = "order_id INT, region STRING, order_date DATE, amount INT", rows = [
+  [1, "north", "2023-12-31", 999], [2, "north", "2024-03-31", 10], [3, "north", "2024-04-01", 5],
+  [4, "south", "2024-09-30", 8], [5, "south", "2024-10-01", 2], [6, "old", "2022-06-01", 1],
+] }

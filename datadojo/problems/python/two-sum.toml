@@ -1,0 +1,37 @@
+title = "Two sum (indices)"
+lang = "python"
+difficulty = "easy"
+pattern = "py-hashing"
+lists = ["python-de"]
+function = "two_sum"
+ordered = true
+source_url = "https://leetcode.com/problems/two-sum/"
+statement = """
+`two_sum(nums, target)` returns `[i, j]` with `i < j` such that `nums[i] + nums[j] == target`.
+Each input has exactly one valid answer. You may not use the same index twice (but two
+different indices may hold equal values).
+
+- `two_sum([2, 7, 11, 15], 9)` → `[0, 1]`
+"""
+hints = [
+    "The brute force checks every pair in O(n^2). Can you find the partner of `nums[j]` in O(1)?",
+    "Keep a dict from value to index of everything seen so far; look up `target - x` before inserting `x`.",
+]
+starter = "def two_sum(nums, target):\n    pass\n"
+solution = """
+def two_sum(nums, target):
+    seen = {}
+    for j, x in enumerate(nums):
+        if target - x in seen:
+            return [seen[target - x], j]
+        seen[x] = j
+"""
+
+[[tests]]
+args = [[2, 7, 11, 15], 9]
+[[tests]]  # must not pair index 0 with itself
+args = [[3, 2, 4], 6]
+[[tests]]
+args = [[3, 3], 6]
+[[tests]]
+args = [[-1, -2, -3, -4, -5], -8]

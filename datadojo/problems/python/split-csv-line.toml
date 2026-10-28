@@ -1,0 +1,58 @@
+title = "Split a CSV line with quotes"
+lang = "python"
+difficulty = "medium"
+pattern = "py-parsing"
+lists = ["python-de"]
+function = "split_csv"
+ordered = true
+statement = '''
+`split_csv(line)` splits one CSV line into a list of field strings.
+
+- Fields are separated by commas.
+- A field may be wrapped in double quotes; inside quotes commas are literal and `""` stands for one `"`. The surrounding quotes are not part of the value.
+- Unquoted fields are kept exactly as written (no whitespace stripping).
+- Quotes only appear at the start and end of a field (or doubled inside a quoted field).
+- An empty line is one empty field: `""` → `[""]`. A line of N commas has N+1 fields.
+
+Try writing the parser yourself before reaching for the `csv` module.
+'''
+starter = "def split_csv(line):\n    return line.split(',')\n"
+solution = '''
+def split_csv(line):
+    fields, buf, i, quoted = [], [], 0, False
+    while i < len(line):
+        c = line[i]
+        if quoted:
+            if c == '"':
+                if i + 1 < len(line) and line[i + 1] == '"':
+                    buf.append('"')
+                    i += 1
+                else:
+                    quoted = False
+            else:
+                buf.append(c)
+        elif c == '"':
+            quoted = True
+        elif c == ",":
+            fields.append("".join(buf))
+            buf = []
+        else:
+            buf.append(c)
+        i += 1
+    fields.append("".join(buf))
+    return fields
+'''
+hints = [
+    "Track one boolean: am I inside quotes?",
+    "Outside quotes a comma ends the field; inside quotes it is just a character.",
+    "Inside quotes, `\"` followed by another `\"` is an escaped quote; a lone `\"` closes the field.",
+]
+
+[[tests]]
+args = ['1,"Smith, John",42']
+[[tests]]
+args = ['"say ""hi""",plain, spaced ,""']
+[[tests]]
+args = [',,']
+[[tests]]
+args = ['']

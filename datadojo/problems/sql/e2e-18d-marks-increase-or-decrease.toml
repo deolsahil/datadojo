@@ -1,0 +1,52 @@
+title = "Student Performance: Marks Increase or Decrease"
+lang = "sql"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+difficulty = "medium"
+pattern = "sql-window-running"
+statement = """
+Table `students(studentid, studentname, subject, marks, testid, testdate)` has one row per student per subject
+test (the same student appears once per subject).
+
+Order each student's rows by `testdate`, breaking ties by `subject`. For every row return `studentid,
+studentname, subject, marks, testid, testdate, previous_marks, status`, where `previous_marks` is the
+student's mark on the previous row (NULL for their first row) and `status` is:
+- `'Previous Marks Not Present'` when there is no previous row,
+- `'Increased'` when marks are higher than previous_marks,
+- `'Decreased'` otherwise (including equal marks).
+
+Any row order.
+"""
+starter = "SELECT studentid, studentname, subject, marks, testid, testdate, NULL AS previous_marks, 'Previous Marks Not Present' AS status\nFROM students\n"
+solution = """
+SELECT *,
+       CASE WHEN previous_marks IS NULL THEN 'Previous Marks Not Present'
+            WHEN marks > previous_marks THEN 'Increased'
+            ELSE 'Decreased' END AS status
+FROM (
+  SELECT studentid, studentname, subject, marks, testid, testdate,
+         LAG(marks) OVER (PARTITION BY studentid ORDER BY testdate, subject) AS previous_marks
+  FROM students
+) t
+"""
+hints = [
+  "LAG(marks) OVER (PARTITION BY studentid ORDER BY ...) fetches the previous mark.",
+  "Several rows share a testdate, so add subject to the ORDER BY or the result is not deterministic.",
+  "Check for NULL first in the CASE; comparing with NULL is never true.",
+]
+
+[[tests]]
+tables.students = { columns = "studentid INT, studentname STRING, subject STRING, marks INT, testid INT, testdate DATE", rows = [
+  [2, "Max Ruin", "Subject1", 63, 1, "2022-01-02"], [3, "Arnold", "Subject1", 95, 1, "2022-01-02"],
+  [4, "Krish Star", "Subject1", 61, 1, "2022-01-02"], [5, "John Mike", "Subject1", 91, 1, "2022-01-02"],
+  [4, "Krish Star", "Subject2", 71, 1, "2022-01-02"], [3, "Arnold", "Subject2", 32, 1, "2022-01-02"],
+  [5, "John Mike", "Subject2", 61, 2, "2022-11-02"], [1, "John Deo", "Subject2", 60, 1, "2022-01-02"],
+  [2, "Max Ruin", "Subject2", 84, 1, "2022-01-02"], [2, "Max Ruin", "Subject3", 29, 3, "2022-01-03"],
+  [5, "John Mike", "Subject3", 98, 2, "2022-11-02"],
+] }
+
+[[tests]]  # equal marks count as Decreased; input not in date order
+tables.students = { columns = "studentid INT, studentname STRING, subject STRING, marks INT, testid INT, testdate DATE", rows = [
+  [7, "Z", "Math", 70, 2, "2022-03-01"], [7, "Z", "Art", 70, 1, "2022-02-01"], [7, "Z", "Bio", 80, 3, "2022-04-01"],
+  [8, "Y", "Math", 40, 1, "2022-01-01"],
+] }

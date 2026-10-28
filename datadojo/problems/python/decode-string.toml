@@ -1,0 +1,47 @@
+title = "Decode repeat-encoded strings"
+lang = "python"
+difficulty = "medium"
+pattern = "py-stack-queue"
+function = "decode"
+source_url = "https://leetcode.com/problems/decode-string/"
+statement = """
+`decode(s)` expands an encoded string where `k[text]` means `text` repeated `k` times.
+`k` is a positive integer (may have several digits) and groups can nest. Letters outside any
+brackets are copied as-is. Input is always well formed; digits appear only as repeat counts.
+
+- `"3[a]2[bc]"` → `"aaabcbc"`
+- `"3[a2[c]]"` → `"accaccacc"`
+"""
+hints = [
+    "Nesting means you need to suspend the outer group while decoding the inner one.",
+    "On `[` push `(text_so_far, k)` and start a fresh buffer; on `]` pop and set `text = prev + k * buffer`.",
+    "Build `k` digit by digit (`k = k * 10 + int(c)`) so `10[x]` works.",
+]
+starter = "def decode(s):\n    pass\n"
+solution = """
+def decode(s):
+    st, cur, k = [], "", 0
+    for c in s:
+        if c.isdigit():
+            k = k * 10 + int(c)
+        elif c == "[":
+            st.append((cur, k))
+            cur, k = "", 0
+        elif c == "]":
+            prev, n = st.pop()
+            cur = prev + cur * n
+        else:
+            cur += c
+    return cur
+"""
+
+[[tests]]
+args = ["3[a]2[bc]"]
+[[tests]]
+args = ["3[a2[c]]"]
+[[tests]]
+args = ["2[abc]3[cd]ef"]
+[[tests]]  # multi-digit count
+args = ["10[x]y"]
+[[tests]]
+args = ["abc"]

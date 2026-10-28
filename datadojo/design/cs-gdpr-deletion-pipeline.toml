@@ -1,0 +1,166 @@
+title = "Design a GDPR/CCPA Right-to-be-Forgotten Deletion Pipeline"
+section = "ds-cases-realtime"
+order = 5
+kind = "case_study"
+difficulty = "hard"
+companies = ["Uber", "Spotify", "LinkedIn"]
+big_idea = "Know where every user's data lives through a PII catalog, batch deletion requests so each table is rewritten once per cycle, and prove completion with an auditable per-request ledger, because deleting from an immutable lake is a rewrite problem."
+summary = """Privacy laws give users the right to have their personal data erased, typically within about a month of the request (GDPR allows extensions in some cases; CCPA has its own timelines). For an operational database that is a `DELETE`. For a petabyte data lake built on immutable Parquet files, Kafka topics, backups, derived tables and ML features, it is one of the hardest data engineering problems.
+
+The design needs: an intake that records each request; a **catalog** that tags which tables and columns contain personal data and which column identifies the user; a **deletion orchestrator** that fans out to every system; **batched rewrites** of lake tables using Iceberg/Delta/Hudi row-level deletes; handling of streams, backups and derived data; and an **audit trail** proving each request was completed. Techniques like **pseudonymization** and **crypto-shredding** reduce how much must be rewritten."""
+diagram = """flowchart LR
+  req[Privacy request portal] --> queue[("Deletion request ledger")]
+  queue --> orch[Deletion orchestrator]
+  cat[("PII catalog and lineage")] --> orch
+  orch --> oltp[Service DB deletes via APIs]
+  orch --> lake[Batched Iceberg or Delta deletes]
+  orch --> keys[("Per-user key vault")]
+  orch --> idx[Search and cache purges]
+  lake --> maint[Compaction and snapshot expiry]
+  keys -- shred key --> enc[("Encrypted PII columns")]
+  oltp --> audit[("Audit and verification")]
+  maint --> audit"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- Which regulations and deadlines apply (GDPR, CCPA/CPRA, others), and what exceptions (legal holds, financial records that must be kept)?
+- What counts as personal data here: direct identifiers only, or also device ids, IPs, free-text fields?
+- Request volume per month?
+- Where does user data live: service databases, Kafka, the lake, the warehouse, search indexes, ML features, backups, third-party tools?
+- Is anonymization (removing identifiers but keeping aggregate facts) acceptable instead of row deletion for analytics?
+- What proof is required: per-request completion records for regulators?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Accept, verify and track deletion requests; send confirmation when complete.
+- Delete or irreversibly anonymize the user's personal data in every registered system.
+- Respect legal-hold exceptions with documented reasons.
+- New datasets cannot be published without declaring PII columns and the user key.
+- Prevent re-ingestion: deleted users must not reappear from replays or backfills.
+
+**Non-functional**
+- Complete within the legal deadline (target 14 days to leave margin).
+- Cost-bounded: no rewriting the entire lake for each request.
+- Auditable: per-request, per-system status with timestamps.
+- Minimal impact on query performance and pipeline SLAs."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- Lake: 5 PB, 50K tables; 2,000 tables contain user-level personal data.
+- Requests: ~100K/month, so ~25K per weekly batch.
+- Biggest table: `events`, 1 TB/day compressed, 365 days retained = **365 TB**, in 128 MB files: 365 x 10^12 / 128 x 10^6 = **~2.85M files**.
+- Users: 100M. Each file holds ~1M rows from ~500K distinct users. Fraction of users in a weekly batch: 25K / 100M = 0.025%. Expected batch users per file: 500K x 0.00025 = **~125**, so essentially **every file contains at least one user to delete**.
+- Consequence: a naive weekly copy-on-write delete rewrites the whole 365 TB table every week, roughly 19 PB of rewrites per year for one table. That is the number that forces a better design."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Intake**: a privacy portal or support tool creates a request after identity verification; it is written to an append-only **request ledger** with the user's identifiers (user_id, emails, device ids from the identity graph).
+2. **PII catalog**: every table registers its PII columns, user key column, retention and legal basis (DataHub/OpenMetadata/Unity Catalog tags). Lineage identifies derived tables. CI blocks new tables without tags.
+3. **Orchestrator** (Airflow or a workflow engine like Temporal): weekly, collects pending requests into a batch, and fans out per system with retries and status tracking.
+4. **Operational systems**: each service implements a deletion API or consumes a `user-deleted` Kafka event and confirms back.
+5. **Lake tables**: one batched `DELETE FROM t WHERE user_id IN (batch)` (or MERGE against a batch table) per table per cycle, using merge-on-read deletes (Iceberg delete files, Delta deletion vectors) so the write is cheap; later compaction physically removes rows, and **snapshot expiry** plus orphan-file removal ensures old files are actually gone.
+6. **Crypto-shredding** for wide, append-heavy data: PII fields are encrypted with a per-user key in a key store; deleting the key renders all copies unreadable, including in Kafka and backups.
+7. **Kafka**: short retention for topics with PII, or compacted topics with tombstones; avoid indefinite retention of raw PII.
+8. **Verification**: after each cycle, query each table for the batch's user keys; zero rows required before marking a request complete."""
+
+[[blocks]]
+heading = "Data model"
+body = """**`deletion_requests`** (grain: one row per request): request_id, user_id, identifiers (resolved ids), received_at, verified_at, deadline, status, batch_id, completed_at, legal_hold_reason.
+
+**`deletion_tasks`** (grain: request x system or table): request_id, target (system or table), method (delete, anonymize, shred_key), status, attempts, rows_affected, verified_at.
+
+**`pii_catalog`** (grain: one row per table column): table, column, pii_category, user_key_column, retention_days, deletion_method, owner.
+
+**`user_keys`** (key store, grain: one per user): user_id, key_id, key_material (in a KMS-backed vault), destroyed_at.
+
+**`deleted_users_blocklist`** (grain: one per deleted user): user_id hash, deleted_at; used by ingestion and backfills to filter."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Making lake deletes affordable.** Because every file contains some user in the batch, the cost is driven by layout and write strategy. Options, often combined: (1) merge-on-read deletes write small delete files or deletion vectors instead of rewriting data files, then fold them in during compaction that would run anyway; (2) cluster or bucket big tables by user_id so a batch touches a fraction of files, though this conflicts with time-based clustering for analytics; (3) separate PII from facts: keep events keyed by a pseudonymous id and store the id-to-person mapping and PII attributes in a small table, so deleting the mapping (and PII rows) leaves facts that can no longer be tied to a person. Legal teams must agree whether the remaining data counts as anonymous; pseudonymized data is still personal data under GDPR if re-identification is possible.
+
+**Crypto-shredding.** Encrypting PII per user and deleting the key handles copies you cannot easily rewrite: Kafka history, backups, exports. The cost is key management at scale (100M keys, caching, rotation) and decryption overhead for readers, so it is usually applied to specific sensitive fields rather than whole tables.
+
+**Time travel and backups.** Iceberg/Delta snapshots still reference deleted rows until expired, so retention of snapshots must be shorter than the deletion deadline. Backups need either short retention or crypto-shredding.
+
+**Derived data and re-ingestion.** Aggregates without identifiers can usually stay. Derived tables keyed by user must be found through lineage and handled the same way. Replays from raw sources or backfills must join against the blocklist, otherwise a deleted user reappears."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **Delete vs. anonymize**: anonymizing (null or hash identifiers) keeps facts for analytics, but hashing a stable id is pseudonymization, not anonymization; true anonymization needs irreversibility.
+- **Batch weekly vs. per request**: per-request deletes cause thousands of tiny rewrites and commits; weekly batches amortize cost and still meet a 30-day deadline.
+- **Copy-on-write vs. merge-on-read**: COW gives clean files immediately but costs full rewrites; MOR is cheap to write but requires compaction and snapshot expiry before data is physically gone.
+- **Crypto-shredding vs. physical deletion**: shredding scales to copies everywhere but adds key management and read overhead; physical deletion is simpler for small, well-cataloged tables.
+- **Centralized orchestrator vs. each team owning deletion**: central gives auditability; team-owned scales knowledge. A common model: central orchestration with per-system handlers owned by teams."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Untagged tables**: scheduled scans for identifier-like columns (emails, phone numbers) in untagged tables, plus CI gates.
+- **Requests approaching deadline**: dashboard of requests by age; alert at 75% of the deadline.
+- **Task failures**: per-system retry with escalation to owners; a request is complete only when all tasks verify.
+- **Snapshot expiry not running**: alert when the oldest retained snapshot is older than policy.
+- **Resurrection**: verification queries rerun weekly for previously deleted users; any hit is an incident.
+- **Over-deletion**: identity-graph errors could delete another user's data; require verified identifiers and dry-run counts per table, with alerts on unexpectedly large row counts."""
+
+key_points = [
+  "Deletion starts with a catalog: every table declares its PII columns and user key, enforced in CI.",
+  "Batch requests weekly so each big table is processed once per cycle, well inside the deadline.",
+  "When every file contains some deleted user, copy-on-write deletes rewrite the whole table; use merge-on-read, user-based layout or PII separation.",
+  "Expire table snapshots and backups within the deadline, or deleted rows remain reachable via time travel.",
+  "Crypto-shredding handles copies you cannot rewrite, such as Kafka history and backups.",
+  "Track each request per system in an auditable ledger and verify with queries before confirming.",
+]
+common_mistakes = [
+  "Running DELETE in Delta or Iceberg and forgetting that older snapshots still contain the rows.",
+  "Processing each request individually, causing thousands of rewrites of the same tables.",
+  "Assuming hashing a user id makes data anonymous.",
+  "Not blocking deleted users from replays and backfills, so they reappear.",
+  "Ignoring derived tables, feature stores, search indexes and third-party exports.",
+]
+interview_questions = [
+  "How do you find every table containing a given user's data in a lake with 50K tables?",
+  "Estimate the cost of a weekly delete on a 365 TB events table and propose how to reduce it.",
+  "How would you handle deletion for a Kafka topic with 30 days of retention?",
+  "Finance must keep invoices for 7 years. How do you reconcile that with a deletion request?",
+  "How do you prove to an auditor that a request was fully executed?",
+]
+
+[[quiz]]
+q = "After DELETE on a Delta or Iceberg table, why may the user's data still be readable?"
+options = [
+  "The DELETE is asynchronous and may never run",
+  "Older snapshots still reference the original data files until snapshots are expired and files removed",
+  "Parquet files cannot be deleted",
+  "Deletes only apply to new partitions",
+]
+answer = 1
+why = "Table formats keep previous snapshots for time travel. Until snapshot expiry (Iceberg) or VACUUM (Delta) removes unreferenced files, old data remains accessible."
+
+[[quiz]]
+q = "A weekly batch deletes 25K of 100M users. A file has rows from 500K distinct users. About how many batch users does each file contain?"
+options = ["~0.1", "~1", "~125", "~25,000"]
+answer = 2
+why = "25K / 100M = 0.025% of users; 500K x 0.00025 = 125. Almost every file is touched, so copy-on-write rewrites the whole table."
+
+[[quiz]]
+q = "What does crypto-shredding do?"
+options = [
+  "Physically overwrites disk blocks",
+  "Encrypts each user's PII with a per-user key and deletes the key, making all copies unreadable",
+  "Compresses data so it is smaller",
+  "Hashes user ids",
+]
+answer = 1
+why = "Destroying the key makes ciphertext unrecoverable wherever it is stored, including backups and logs that are hard to rewrite."
+
+[[quiz]]
+q = "Why batch deletion requests instead of executing each immediately?"
+options = [
+  "The law requires batching",
+  "Each table is rewritten or committed once per batch instead of once per request, cutting cost while meeting the deadline",
+  "Batching makes deletes reversible",
+  "Individual deletes are not supported by SQL",
+]
+answer = 1
+why = "Lake deletes are file rewrites or delete-file commits; amortizing many requests into one operation per table is far cheaper and still fits a month-scale deadline."

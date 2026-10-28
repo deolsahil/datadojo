@@ -1,0 +1,41 @@
+title = "Fill missing sales days"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-dates"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`sales(store, day, amount)` has one row per sale, so a store can have several rows on one day and
+no rows at all on quiet days. `amount` can be NULL (treat it as 0).
+
+Dashboards need a dense series. Write `solve(spark, sales)` returning `store, day, amount` with
+**one row per store per calendar day** from that store's first sale day through its last sale day
+(inclusive). `amount` is the day's total, or `0` on days without sales.
+"""
+hints = [
+  "Build a date spine per store: `F.sequence(min_day, max_day)` produces every date in between; `F.explode` it.",
+  "Aggregate the real sales per store and day, then left-join them onto the spine.",
+  "`F.sum` over only NULLs is NULL. `F.coalesce` it to 0.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, sales):
+    return sales
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, sales):
+    daily = sales.groupBy("store", "day").agg(F.sum("amount").alias("amount"))
+    spine = (sales.groupBy("store").agg(F.min("day").alias("a"), F.max("day").alias("b"))
+             .select("store", F.explode(F.sequence("a", "b")).alias("day")))
+    return (spine.join(daily, ["store", "day"], "left")
+            .select("store", "day", F.coalesce("amount", F.lit(0)).alias("amount")))
+"""
+
+[[tests]]
+tables.sales = { columns = "store STRING, day DATE, amount INT", rows = '''[
+  ["a", "2024-01-01", 5], ["a", "2024-01-04", 2], ["a", "2024-01-01", 3], ["a", "2024-01-03", null],
+  ["b", "2024-03-01", 4], ["b", "2024-02-28", 1],
+  ["c", "2024-05-05", 7]]''' }

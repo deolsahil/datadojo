@@ -1,0 +1,35 @@
+title = "Students with Same Marks in Physics and Chemistry"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-joins"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `exams(student_id, subject, marks)` has at most one row per student and subject.
+
+Return `student_id, marks` for students who took both Physics and Chemistry and scored the **same marks in
+both**. Other subjects must be ignored. Any row order.
+"""
+starter = "SELECT student_id, marks\nFROM exams\nGROUP BY student_id, marks\nHAVING COUNT(*) >= 2\n"
+solution = """
+SELECT p.student_id, p.marks
+FROM exams p
+JOIN exams c ON c.student_id = p.student_id AND c.subject = 'Chemistry'
+WHERE p.subject = 'Physics' AND p.marks = c.marks
+"""
+hints = [
+  "Put each student's Physics row next to their Chemistry row.",
+  "A self-join on student_id with one side filtered to Physics and the other to Chemistry does it.",
+  "Grouping by (student_id, marks) and counting rows is a trap: it matches any two subjects with equal marks.",
+]
+
+[[tests]]
+tables.exams = { columns = "student_id INT, subject STRING, marks INT", rows = [
+  [1, "Chemistry", 91], [1, "Physics", 91], [2, "Chemistry", 80], [2, "Physics", 90],
+  [3, "Chemistry", 80], [4, "Chemistry", 71], [4, "Physics", 54],
+] }
+
+[[tests]]  # Maths equals Physics, but Chemistry differs
+tables.exams = { columns = "student_id INT, subject STRING, marks INT", rows = [
+  [1, "Physics", 70], [1, "Maths", 70], [1, "Chemistry", 65], [2, "Physics", 88], [2, "Chemistry", 88], [2, "Maths", 88],
+] }

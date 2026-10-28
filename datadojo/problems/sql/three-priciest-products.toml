@@ -1,0 +1,32 @@
+title = "Three most expensive products"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-basics"
+ordered = true
+statement = """
+The homepage shows a "premium picks" strip with exactly three products.
+
+Table `products(id, name, price)`.
+
+Return `id`, `name`, `price` for the 3 highest-priced products, most expensive first. If prices tie, the lower `id` wins the spot (and is listed first). If there are fewer than 3 products, return all of them.
+"""
+starter = "SELECT id, name, price\nFROM products\n"
+solution = """
+SELECT id, name, price FROM products
+ORDER BY price DESC, id
+LIMIT 3
+"""
+hints = [
+  "Sort, then keep only the first few rows.",
+  "Without a tie-breaker, which of two equally priced products comes first is undefined.",
+  "ORDER BY price DESC, id LIMIT 3",
+]
+
+[[tests]]
+tables.products = { columns = "id INT, name STRING, price DOUBLE", rows = [[1, "Mug", 12.5], [2, "Lamp", 80.0], [3, "Desk", 300.0], [4, "Chair", 150.0], [5, "Pen", 2.0]] }
+
+[[tests]]  # tie on the cut line
+tables.products = { columns = "id INT, name STRING, price DOUBLE", rows = [[9, "A", 50.0], [4, "B", 50.0], [7, "C", 90.0], [2, "D", 50.0]] }
+
+[[tests]]  # fewer than three
+tables.products = { columns = "id INT, name STRING, price DOUBLE", rows = [[1, "Solo", 5.0]] }

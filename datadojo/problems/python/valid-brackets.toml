@@ -1,0 +1,46 @@
+title = "Valid brackets"
+lang = "python"
+difficulty = "easy"
+pattern = "py-stack-queue"
+lists = ["python-de"]
+function = "is_valid"
+source_url = "https://leetcode.com/problems/valid-parentheses/"
+statement = """
+`is_valid(s)` gets a string made only of `()[]{}`. Return `True` if every opening bracket is
+closed by the same kind of bracket, in the correct nesting order, and no closer appears without
+a matching opener. The empty string is valid.
+
+- `"{[]}"` → `True`
+- `"([)]"` → `False`
+"""
+hints = [
+    "The most recent unclosed opener must be the first one closed: last in, first out.",
+    "Push openers; on a closer, the stack must be non-empty and its top must match.",
+    "At the end the stack must be empty (`\"((\"` is not valid).",
+]
+starter = "def is_valid(s):\n    pass\n"
+solution = """
+def is_valid(s):
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for c in s:
+        if c in pairs:
+            if not stack or stack.pop() != pairs[c]:
+                return False
+        else:
+            stack.append(c)
+    return not stack
+"""
+
+[[tests]]
+args = ["()[]{}"]
+[[tests]]
+args = ["([)]"]
+[[tests]]
+args = ["{[]}"]
+[[tests]]  # leftover openers
+args = ["(("]
+[[tests]]  # closer with empty stack
+args = ["]"]
+[[tests]]
+args = [""]

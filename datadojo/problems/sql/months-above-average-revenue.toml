@@ -1,0 +1,36 @@
+title = "Months that beat the average month"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-subqueries"
+lists = ["sql-essentials"]
+statement = """
+Finance wants to know which months were stronger than a typical month.
+
+Table `orders(id, order_date, amount)` where `order_date` is a DATE.
+
+First compute revenue per calendar month (sum of `amount`). Then return `year`, `month` (both integers) and `revenue` for the months whose revenue is **strictly above** the average of the monthly revenues. Only months that have at least one order count toward that average.
+"""
+starter = "SELECT EXTRACT(YEAR FROM order_date) AS year, EXTRACT(MONTH FROM order_date) AS month, amount AS revenue\nFROM orders\n"
+solution = """
+WITH monthly AS (
+  SELECT EXTRACT(YEAR FROM order_date) AS year, EXTRACT(MONTH FROM order_date) AS month, SUM(amount) AS revenue
+  FROM orders
+  GROUP BY EXTRACT(YEAR FROM order_date), EXTRACT(MONTH FROM order_date)
+)
+SELECT year, month, revenue FROM monthly
+WHERE revenue > (SELECT AVG(revenue) FROM monthly)
+"""
+hints = [
+  "Two levels of aggregation: a sum per month, then an average of those sums.",
+  "The average of monthly revenue is not the average order amount. Build the monthly table first.",
+  "WITH monthly AS (...GROUP BY year, month) SELECT ... FROM monthly WHERE revenue > (SELECT AVG(revenue) FROM monthly)",
+]
+
+[[tests]]
+tables.orders = { columns = "id INT, order_date DATE, amount INT", rows = [[1, "2024-01-05", 100], [2, "2024-01-20", 100], [3, "2024-02-03", 50], [4, "2024-03-10", 300], [5, "2024-03-11", 10]] }
+
+[[tests]]  # same month number in different years are different months
+tables.orders = { columns = "id INT, order_date DATE, amount INT", rows = [[1, "2023-05-01", 400], [2, "2024-05-01", 100], [3, "2024-06-01", 100], [4, "2024-06-15", 50]] }
+
+[[tests]]  # average of monthly totals, not average order amount
+tables.orders = { columns = "id INT, order_date DATE, amount INT", rows = [[1, "2024-01-02", 30], [2, "2024-01-03", 30], [3, "2024-01-04", 30], [4, "2024-01-05", 30], [5, "2024-02-01", 100], [6, "2024-03-01", 50]] }

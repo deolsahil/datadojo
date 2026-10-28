@@ -1,0 +1,41 @@
+title = "Orders with no payment"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-joins"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+Finance wants every order that has never received a payment.
+
+- `orders(order_id, customer_id, amount)`
+- `payments(payment_id, order_id, paid_at)`: an order can have several payments (retries,
+  split tender), and some payment rows have a NULL `order_id` (unmatched bank transfers).
+
+Write `solve(spark, orders, payments)` returning `order_id, customer_id, amount` for orders with
+no matching payment row. Each such order appears once.
+"""
+hints = [
+  "A join of type `\"left_anti\"` keeps left rows that have no match on the right.",
+  "Unlike `NOT IN`, an anti join is not tripped up by NULL keys on the right side.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, orders, payments):
+    return orders
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, orders, payments):
+    return orders.join(payments, "order_id", "left_anti").select("order_id", "customer_id", "amount")
+"""
+
+[[tests]]
+tables.orders = { columns = "order_id INT, customer_id INT, amount DOUBLE", rows = [
+  [100, 1, 25.0], [101, 1, 40.0], [102, 2, 15.5], [103, 3, 99.9], [104, 3, 5.0],
+] }
+tables.payments = { columns = "payment_id INT, order_id INT, paid_at TIMESTAMP", rows = '''[
+  [1, 100, "2024-03-01 10:00:00"], [2, 100, "2024-03-01 10:05:00"],
+  [3, 103, "2024-03-02 09:00:00"], [4, null, "2024-03-02 11:00:00"],
+  [5, 999, "2024-03-03 08:00:00"]]''' }

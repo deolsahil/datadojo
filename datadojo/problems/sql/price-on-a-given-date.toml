@@ -1,0 +1,37 @@
+title = "Product price on a given date"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-subqueries"
+source_url = "https://leetcode.com/problems/product-price-at-a-given-date/"
+statement = """
+Every product launches at a list price of **10**. After that, the pricing team logs each change.
+
+Table `price_changes(product_id, new_price, change_date)`, `change_date` is a DATE. A product changes price at most once per day. Only products that appear in this table exist.
+
+Return `product_id` and `price` for **every** product as of the end of **2024-06-30**: the `new_price` of its latest change on or before that date, or `10` if it had no change by then.
+"""
+starter = "SELECT product_id, MAX(new_price) AS price\nFROM price_changes\nGROUP BY product_id\n"
+solution = """
+WITH products AS (SELECT DISTINCT product_id FROM price_changes),
+last_change AS (
+  SELECT product_id, MAX(change_date) AS change_date
+  FROM price_changes
+  WHERE change_date <= DATE '2024-06-30'
+  GROUP BY product_id
+)
+SELECT p.product_id, COALESCE(pc.new_price, 10) AS price
+FROM products p
+LEFT JOIN last_change l ON l.product_id = p.product_id
+LEFT JOIN price_changes pc ON pc.product_id = l.product_id AND pc.change_date = l.change_date
+"""
+hints = [
+  "The latest change is not the highest price. Find the latest change_date on or before the cutoff, per product.",
+  "Join back to price_changes on (product_id, change_date) to get that day's new_price.",
+  "Products whose first change is after the cutoff still need a row: start from the distinct product list, LEFT JOIN, and COALESCE to 10.",
+]
+
+[[tests]]
+tables.price_changes = { columns = "product_id INT, new_price INT, change_date DATE", rows = [[1, 20, "2024-06-14"], [2, 50, "2024-06-14"], [1, 30, "2024-06-15"], [1, 35, "2024-06-30"], [2, 65, "2024-07-01"], [3, 20, "2024-08-18"]] }
+
+[[tests]]  # price went down: latest wins, not highest
+tables.price_changes = { columns = "product_id INT, new_price INT, change_date DATE", rows = [[7, 90, "2024-01-01"], [7, 15, "2024-05-01"], [8, 5, "2024-07-01"], [8, 12, "2024-06-29"]] }

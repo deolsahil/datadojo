@@ -1,0 +1,46 @@
+title = "Running median of latencies"
+lang = "python"
+difficulty = "hard"
+pattern = "py-heaps"
+function = "running_median"
+ordered = true
+source_url = "https://leetcode.com/problems/find-median-from-data-stream/"
+statement = '''
+`running_median(values)` gets request latencies in arrival order. Return a list where element `i` is the median of `values[0..i]`.
+
+With an odd count the median is the middle value; with an even count it is the mean of the two middle values. Values may repeat or be negative.
+
+`[5, 15, 1, 3]` → `[5, 10.0, 5, 4.0]`
+
+Re-sorting the prefix every time is O(n² log n); aim for O(n log n) with two heaps.
+'''
+starter = "def running_median(values):\n    pass\n"
+solution = '''
+import heapq
+
+def running_median(values):
+    lo, hi, out = [], [], []  # lo: max-heap (negated), hi: min-heap
+    for v in values:
+        heapq.heappush(lo, -v)
+        heapq.heappush(hi, -heapq.heappop(lo))
+        if len(hi) > len(lo):
+            heapq.heappush(lo, -heapq.heappop(hi))
+        out.append(-lo[0] if len(lo) > len(hi) else (-lo[0] + hi[0]) / 2)
+    return out
+'''
+hints = [
+    "Keep the smaller half in a max-heap and the larger half in a min-heap.",
+    "Python only has min-heaps: store negatives for the max-heap.",
+    "After each insert rebalance so the low half has the same size or one more; the median is then at the tops.",
+]
+
+[[tests]]
+args = [[5, 15, 1, 3]]
+[[tests]]
+args = [[1, 9, 2, 8, 3, 7, -4, 3]]
+[[tests]]
+args = [[2, 2, 2, -1, 10]]
+[[tests]]
+args = [[42]]
+[[tests]]
+args = [[]]

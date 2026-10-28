@@ -1,0 +1,36 @@
+title = "Unflatten dotted keys"
+lang = "python"
+difficulty = "easy"
+pattern = "py-recursion"
+lists = ["python-de"]
+function = "unflatten"
+statement = '''
+`unflatten(flat)` is the inverse of flattening: it turns a dict with dot-joined keys back into nested dicts.
+
+`{"a": 1, "b.c": 2, "b.d.e": 3}` → `{"a": 1, "b": {"c": 2, "d": {"e": 3}}}`
+
+Values are copied as-is (lists stay lists). The input never has conflicts such as both `"a"` and `"a.b"`.
+'''
+starter = "def unflatten(flat):\n    pass\n"
+solution = '''
+def unflatten(flat):
+    out = {}
+    for key, value in flat.items():
+        *parents, leaf = key.split(".")
+        cur = out
+        for p in parents:
+            cur = cur.setdefault(p, {})
+        cur[leaf] = value
+    return out
+'''
+hints = [
+    "Split each key on `.`; all parts but the last are dicts to walk into.",
+    "`setdefault(part, {})` creates the intermediate dict on first use.",
+]
+
+[[tests]]
+args = '''[{"a": 1, "b.c": 2, "b.d.e": 3}]'''
+[[tests]]
+args = '''[{"db.host": "x", "db.port": 5432, "db.opts.ssl": true, "tags": [1, 2], "db.opts.pool": null}]'''
+[[tests]]
+args = [{}]

@@ -1,0 +1,50 @@
+title = "Diff two catalog snapshots"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-dedup-scd"
+lists = ["sql-essentials"]
+statement = """
+Tables `catalog_old(product_id, name, price)` and `catalog_new(product_id, name, price)` are yesterday's and
+today's product catalog. `price` can be NULL (not yet priced).
+
+Return `product_id, change` for every product that differs between the two:
+
+- `'added'`: only in `catalog_new`
+- `'removed'`: only in `catalog_old`
+- `'updated'`: in both, but `name` or `price` differ. NULL to a value, or a value to NULL, is a change;
+  NULL to NULL is not.
+
+Unchanged products do not appear. Any row order.
+"""
+starter = "SELECT n.product_id, 'updated' AS change\nFROM catalog_new n\nJOIN catalog_old o ON o.product_id = n.product_id\nWHERE n.name <> o.name OR n.price <> o.price\n"
+solution = """
+SELECT COALESCE(n.product_id, o.product_id) AS product_id,
+       CASE WHEN o.product_id IS NULL THEN 'added'
+            WHEN n.product_id IS NULL THEN 'removed'
+            ELSE 'updated' END AS change
+FROM catalog_new n
+FULL OUTER JOIN catalog_old o ON o.product_id = n.product_id
+WHERE o.product_id IS NULL OR n.product_id IS NULL
+   OR n.name IS DISTINCT FROM o.name OR n.price IS DISTINCT FROM o.price
+"""
+hints = [
+  "A FULL OUTER JOIN on product_id lines up both snapshots and keeps rows that exist on only one side.",
+  "n.price <> o.price is NULL (not true) when either side is NULL. Use a null-safe comparison.",
+  "IS DISTINCT FROM treats NULL vs NULL as equal and NULL vs 5 as different.",
+]
+
+[[tests]]
+tables.catalog_old = { columns = "product_id INT, name STRING, price DOUBLE", rows = [
+  [1, "pen", 1.5], [2, "ink", 4.0], [3, "pad", 2.0],
+] }
+tables.catalog_new = { columns = "product_id INT, name STRING, price DOUBLE", rows = [
+  [1, "pen", 1.5], [2, "ink", 4.5], [4, "clip", 0.5],
+] }
+
+[[tests]]  # NULL prices: NULL->value and value->NULL change, NULL->NULL doesn't
+tables.catalog_old = { columns = "product_id INT, name STRING, price DOUBLE", rows = '''[
+  [1, "a", null], [2, "b", 3.0], [3, "c", null], [4, "d", 1.0]
+]''' }
+tables.catalog_new = { columns = "product_id INT, name STRING, price DOUBLE", rows = '''[
+  [1, "a", 2.0], [2, "b", null], [3, "c", null], [4, "D", 1.0]
+]''' }

@@ -1,0 +1,38 @@
+title = "Pair sum in a sorted list"
+lang = "python"
+difficulty = "easy"
+pattern = "py-two-pointers"
+function = "pair_sum_sorted"
+ordered = true
+source_url = "https://leetcode.com/problems/two-sum-ii-input-array-is-sorted/"
+statement = """
+`pair_sum_sorted(nums, target)` gets `nums` sorted ascending (duplicates and negatives allowed).
+Return `[i, j]` (0-based, `i < j`) with `nums[i] + nums[j] == target`. There is exactly one
+answer. Try to use O(1) extra space: no dict.
+"""
+hints = [
+    "Start one pointer at each end.",
+    "If the sum is too small, only moving the left pointer right can increase it; too big, move the right pointer left.",
+]
+starter = "def pair_sum_sorted(nums, target):\n    pass\n"
+solution = """
+def pair_sum_sorted(nums, target):
+    i, j = 0, len(nums) - 1
+    while i < j:
+        s = nums[i] + nums[j]
+        if s == target:
+            return [i, j]
+        if s < target:
+            i += 1
+        else:
+            j -= 1
+"""
+
+[[tests]]
+args = [[2, 7, 11, 15], 9]
+[[tests]]
+args = [[-3, -1, 0, 5, 9], 4]
+[[tests]]
+args = [[1, 1], 2]
+[[tests]]
+args = [[1, 3, 4, 5, 7, 11], 9]

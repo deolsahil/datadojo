@@ -1,0 +1,44 @@
+title = "Longest substring without repeats"
+lang = "python"
+difficulty = "medium"
+pattern = "py-two-pointers"
+lists = ["python-de"]
+function = "longest_unique"
+source_url = "https://leetcode.com/problems/longest-substring-without-repeating-characters/"
+statement = """
+`longest_unique(s)` returns the length of the longest contiguous substring of `s` in which no
+character appears twice. Spaces and punctuation are characters like any other. Empty input
+returns `0`.
+
+- `"abcabcbb"` → `3` (`"abc"`)
+- `"pwwkew"` → `3` (`"wke"`; `"pwke"` is not contiguous)
+"""
+hints = [
+    "Keep a window `[left, right]` with no repeats and slide `right` forward.",
+    "Remember the last index of each character. On a repeat, jump `left` past that index.",
+    "Only move `left` forward, never back: use `left = max(left, last[c] + 1)` (try `\"abba\"`).",
+]
+starter = "def longest_unique(s):\n    pass\n"
+solution = """
+def longest_unique(s):
+    last, left, best = {}, 0, 0
+    for right, c in enumerate(s):
+        if c in last:
+            left = max(left, last[c] + 1)
+        last[c] = right
+        best = max(best, right - left + 1)
+    return best
+"""
+
+[[tests]]
+args = ["abcabcbb"]
+[[tests]]
+args = ["bbbbb"]
+[[tests]]
+args = ["pwwkew"]
+[[tests]]  # left pointer must never move backwards
+args = ["abba"]
+[[tests]]
+args = [""]
+[[tests]]
+args = [" a b"]

@@ -1,0 +1,46 @@
+title = "Airports reachable from SFO"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-recursive"
+statement = """
+Table `flights(src, dst)` lists direct routes (one direction each). The route graph has **cycles**, e.g.
+SFO to LAX and LAX back to SFO.
+
+Return every airport reachable from `'SFO'` by one or more flights, with the fewest number of flights needed:
+`airport, hops`. Do not include SFO itself. Any row order.
+
+Your recursion must terminate even though the graph has cycles.
+"""
+starter = "SELECT dst AS airport, 1 AS hops\nFROM flights\nWHERE src = 'SFO'\n"
+solution = """
+WITH RECURSIVE r AS (
+  SELECT 'SFO' AS airport, 0 AS hops, ',SFO,' AS path
+  UNION ALL
+  SELECT f.dst, r.hops + 1, r.path || f.dst || ','
+  FROM r JOIN flights f ON f.src = r.airport
+  WHERE r.path NOT LIKE '%,' || f.dst || ',%'
+)
+SELECT airport, MIN(hops) AS hops
+FROM r
+WHERE airport <> 'SFO'
+GROUP BY airport
+"""
+hints = [
+  "Breadth-first search: start at SFO with 0 hops and follow flights, adding 1 each step.",
+  "To stop on cycles, carry the visited path (e.g. ',SFO,LAX,') and refuse to step to an airport already in it.",
+  "Several paths can reach the same airport; take MIN(hops) per airport at the end and drop SFO.",
+]
+
+[[tests]]
+tables.flights = { columns = "src STRING, dst STRING", rows = [
+  ["SFO", "LAX"], ["LAX", "SFO"], ["LAX", "JFK"], ["SFO", "SEA"], ["SEA", "JFK"], ["JFK", "BOS"],
+] }
+
+[[tests]]  # shorter route found later; unreachable airports; a cycle not touching SFO
+tables.flights = { columns = "src STRING, dst STRING", rows = [
+  ["SFO", "A"], ["A", "B"], ["B", "C"], ["C", "D"], ["SFO", "D"], ["D", "B"],
+  ["X", "Y"], ["Y", "X"], ["D", "SFO"],
+] }
+
+[[tests]]  # SFO has no outgoing flights
+tables.flights = { columns = "src STRING, dst STRING", rows = [["LAX", "SFO"]] }

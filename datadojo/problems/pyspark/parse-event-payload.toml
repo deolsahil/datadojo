@@ -1,0 +1,52 @@
+title = "Parse JSON event payloads"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-nested"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+A tracking service lands raw events as `events(event_id, payload)`, where `payload` is a JSON string like:
+
+```
+{"user": {"id": 7, "country": "us"}, "action": "click", "value": 3.5}
+```
+
+Fields may be missing, extra fields may appear, and some payloads are not valid JSON at all (or NULL).
+
+Write `solve(spark, events)` returning `event_id, user_id, country, action, value`:
+
+- `user_id` is an integer, `country` is upper-cased, `value` is a double (NULL when absent).
+- Drop events whose payload cannot be parsed or has no `user.id`.
+"""
+hints = [
+  "Parse once with `F.from_json(\"payload\", schema)` using a DDL schema string such as `\"user STRUCT<id INT, country STRING>, action STRING, value DOUBLE\"`.",
+  "Reach into the parsed struct with dotted paths: `F.col(\"p.user.id\")`.",
+  "Invalid JSON does not raise; the parsed fields just come back NULL. Filter on `user.id` being not NULL.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, events):
+    return events
+"""
+solution = """
+from pyspark.sql import functions as F
+
+SCHEMA = "user STRUCT<id INT, country STRING>, action STRING, value DOUBLE"
+
+def solve(spark, events):
+    p = events.select("event_id", F.from_json("payload", SCHEMA).alias("p"))
+    return (p.filter(F.col("p.user.id").isNotNull())
+            .select("event_id", F.col("p.user.id").alias("user_id"),
+                    F.upper("p.user.country").alias("country"),
+                    F.col("p.action").alias("action"), F.col("p.value").alias("value")))
+"""
+
+[[tests]]
+tables.events = { columns = "event_id INT, payload STRING", rows = '''[
+  [1, "{\"user\":{\"id\":7,\"country\":\"us\"},\"action\":\"click\",\"value\":3.5}"],
+  [2, "{\"user\":{\"id\":8},\"action\":\"view\"}"],
+  [3, "not json"],
+  [4, "{\"action\":\"click\",\"value\":1}"],
+  [5, null],
+  [6, "{\"user\":{\"id\":9,\"country\":\"Ca\"},\"action\":\"buy\",\"value\":20,\"extra\":true}"]]''' }

@@ -1,0 +1,35 @@
+title = "First event id that occurs once"
+lang = "python"
+difficulty = "easy"
+pattern = "py-hashing"
+function = "first_unique"
+statement = """
+`first_unique(events)` gets a list of event id strings in arrival order. Return the **first**
+id (by position in the list) that appears exactly once in the whole list, or `None` if every
+id repeats or the list is empty.
+
+- `["a", "b", "a", "c", "b"]` → `"c"`
+"""
+hints = [
+    "Two passes: count everything first, then scan in order.",
+    "`collections.Counter` does the counting; dicts preserve insertion order too.",
+]
+starter = "def first_unique(events):\n    pass\n"
+solution = """
+from collections import Counter
+
+def first_unique(events):
+    c = Counter(events)
+    return next((e for e in events if c[e] == 1), None)
+"""
+
+[[tests]]
+args = [["a", "b", "a", "c", "b"]]
+[[tests]]  # the first unique is not the first-seen id
+args = [["b", "a", "b", "c", "a", "d"]]
+[[tests]]
+args = [["evt-1"]]
+[[tests]]
+args = [["x", "x"]]
+[[tests]]
+args = [[]]

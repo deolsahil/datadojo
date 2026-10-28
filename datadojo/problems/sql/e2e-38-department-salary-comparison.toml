@@ -1,0 +1,56 @@
+title = "Department Salary Comparison"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-aggregation"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `PayPal_salary(emp_id, emp_name, department_id, salary, manager_id, emp_age)`. There are at least two departments.
+
+For each department, compare its average salary with the average salary of all employees **outside** that department.
+Return `department_id, avg_dept_salary, no_of_employees, total_dept_salary, company_avg_salary`, where:
+
+- `avg_dept_salary`: the department's average salary;
+- `no_of_employees`, `total_dept_salary`: head count and salary total of all **other** departments;
+- `company_avg_salary`: `total_dept_salary / no_of_employees`.
+
+Round both averages to 2 decimals. Order by `department_id`.
+"""
+ordered = true
+starter = "SELECT department_id, AVG(salary) AS avg_dept_salary, COUNT(*) AS no_of_employees,\n       SUM(salary) AS total_dept_salary, AVG(salary) AS company_avg_salary\nFROM PayPal_salary\nGROUP BY department_id\nORDER BY department_id\n"
+solution = """
+WITH d AS (
+  SELECT department_id, AVG(salary) AS avg_salary, COUNT(*) AS n, SUM(salary) AS total
+  FROM PayPal_salary
+  GROUP BY department_id
+),
+company AS (
+  SELECT COUNT(*) AS n, SUM(salary) AS total FROM PayPal_salary
+)
+SELECT d.department_id,
+       ROUND(d.avg_salary, 2) AS avg_dept_salary,
+       c.n - d.n AS no_of_employees,
+       c.total - d.total AS total_dept_salary,
+       ROUND((c.total - d.total) / (c.n - d.n), 2) AS company_avg_salary
+FROM d CROSS JOIN company c
+ORDER BY d.department_id
+"""
+hints = [
+  "Aggregate per department: COUNT, SUM and AVG of salary.",
+  "Everyone outside a department = company totals minus that department's totals (or a self join on department_id <> department_id).",
+  "Average of the others is (company sum - dept sum) / (company count - dept count), not an average of department averages.",
+]
+
+[[tests]]
+tables.PayPal_salary = { columns = "emp_id INT, emp_name STRING, department_id INT, salary INT, manager_id INT, emp_age INT", rows = [
+  [1, "Ankit", 100, 10000, 4, 39], [2, "Mohit", 100, 15000, 5, 48], [3, "Vikas", 100, 10000, 4, 37],
+  [4, "Rohit", 100, 5000, 2, 16], [5, "Mudit", 200, 12000, 6, 55], [6, "Agam", 200, 12000, 2, 14],
+  [7, "Sanjay", 200, 9000, 2, 13], [8, "Ashish", 200, 5000, 2, 12], [9, "Mukesh", 300, 6000, 6, 51],
+  [10, "Rakesh", 300, 7000, 6, 50],
+] }
+
+[[tests]]  # uneven department sizes, so averaging department averages gives the wrong answer
+tables.PayPal_salary = { columns = "emp_id INT, emp_name STRING, department_id INT, salary INT, manager_id INT, emp_age INT", rows = [
+  [1, "A", 1, 100, 0, 30], [2, "B", 1, 200, 0, 30], [3, "C", 2, 301, 0, 30],
+  [4, "D", 3, 50, 0, 30], [5, "E", 3, 50, 0, 30], [6, "F", 3, 51, 0, 30],
+] }

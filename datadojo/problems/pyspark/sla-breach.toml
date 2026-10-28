@@ -1,0 +1,49 @@
+title = "Flag SLA breaches"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-dates"
+function = "solve"
+statement = """
+`tickets(ticket_id, priority, opened_at, resolved_at)` comes from a support desk. `resolved_at` is
+NULL while a ticket is still open. The report runs as of **2024-03-10 00:00:00**, so open tickets
+are measured up to that moment.
+
+Resolution targets: `P1` = 4 hours, `P2` = 24 hours, anything else (including NULL) = 72 hours.
+
+Write `solve(spark, tickets)` returning `ticket_id, hours_open, breached`:
+
+- `hours_open` is the elapsed hours from `opened_at` to `resolved_at` (or the report time), rounded to 2 decimals.
+- `breached` is true when the elapsed time is **strictly greater** than the target. Exactly on target is not a breach.
+- If `resolved_at` is earlier than `opened_at` the record is corrupt: return NULL for both `hours_open` and `breached`.
+"""
+hints = [
+  "`F.unix_timestamp(ts)` gives seconds; subtract two of them for a duration.",
+  "Use `F.coalesce(\"resolved_at\", F.lit(\"2024-03-10 00:00:00\").cast(\"timestamp\"))` for the end time.",
+  "Compare the unrounded hours to the target, and build the target with `F.when(...).otherwise(72)`.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, tickets):
+    return tickets
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, tickets):
+    end = F.coalesce("resolved_at", F.lit("2024-03-10 00:00:00").cast("timestamp"))
+    secs = F.unix_timestamp(end) - F.unix_timestamp("opened_at")
+    hours = F.when(secs >= 0, secs / 3600)
+    target = F.when(F.col("priority") == "P1", 4).when(F.col("priority") == "P2", 24).otherwise(72)
+    return tickets.select("ticket_id", F.round(hours, 2).alias("hours_open"),
+                          (hours > target).alias("breached"))
+"""
+
+[[tests]]
+tables.tickets = { columns = "ticket_id INT, priority STRING, opened_at TIMESTAMP, resolved_at TIMESTAMP", rows = '''[
+  [1, "P1", "2024-03-09 18:00:00", "2024-03-09 21:30:00"],
+  [2, "P1", "2024-03-09 18:00:00", null],
+  [3, "P2", "2024-03-08 00:00:00", "2024-03-09 00:00:00"],
+  [4, null, "2024-03-05 00:00:00", null],
+  [5, "P3", "2024-03-07 12:00:00", "2024-03-07 11:00:00"],
+  [6, "P2", "2024-03-09 23:20:00", null]]''' }

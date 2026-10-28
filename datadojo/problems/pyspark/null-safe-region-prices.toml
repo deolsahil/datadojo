@@ -1,0 +1,42 @@
+title = "Match prices on a nullable key"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-joins"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+Inventory and pricing are keyed by `(sku, region)`. Online-only stock has no region, so its
+`region` is NULL in **both** tables, and NULL there means "the online channel", not "unknown".
+
+- `inventory(sku, region, on_hand)`
+- `prices(sku, region, price)`: at most one row per `(sku, region)`, NULL region included.
+
+Write `solve(spark, inventory, prices)` returning `sku, region, on_hand, price` with one row per
+inventory row. `price` is NULL when no price row matches. A NULL region matches only a NULL region.
+"""
+hints = [
+  "`a.region == b.region` is never true when both are NULL, so online stock would lose its price.",
+  "`a.region.eqNullSafe(b.region)` is the `<=>` operator: NULL matches NULL.",
+  "Alias both sides (`inventory.alias(\"i\")`) and select `i.sku`, `i.region`, ... to avoid ambiguous columns.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, inventory, prices):
+    return inventory.join(prices, ["sku", "region"], "left").select("sku", "region", "on_hand", "price")
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, inventory, prices):
+    i, p = inventory.alias("i"), prices.alias("p")
+    on = (F.col("i.sku") == F.col("p.sku")) & F.col("i.region").eqNullSafe(F.col("p.region"))
+    return i.join(p, on, "left").select("i.sku", "i.region", "i.on_hand", "p.price")
+"""
+
+[[tests]]
+tables.inventory = { columns = "sku STRING, region STRING, on_hand INT", rows = '''[
+  ["A1", "east", 10], ["A1", null, 4], ["B2", "west", 0], ["B2", null, 7], ["C3", "east", 3]]''' }
+tables.prices = { columns = "sku STRING, region STRING, price DOUBLE", rows = '''[
+  ["A1", "east", 9.99], ["A1", null, 8.49], ["A1", "west", 10.49], ["B2", "west", 4.0],
+  ["C3", null, 2.5]]''' }

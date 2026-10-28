@@ -1,0 +1,176 @@
+title = "Design Real-Time Fraud Detection on Card Transactions"
+section = "ds-cases-realtime"
+order = 1
+kind = "case_study"
+difficulty = "hard"
+companies = ["Stripe", "PayPal", "Visa"]
+big_idea = "Keep the authorization path a fast lookup of precomputed features plus a model call, and move all heavy aggregation into a streaming job that continuously updates those features in a low-latency store."
+summary = """When a card is swiped, the issuer or payment processor has a budget of tens of milliseconds to decide approve, decline or step-up (3-D Secure, SMS). Fraud signals are mostly **velocity and behavior features**: how many transactions this card made in the last 10 minutes, how far it is from the last location, whether this merchant is new for the card, and so on.
+
+The design splits into a **synchronous scoring path** (fetch features from Redis or a similar store, run rules and a model, respond) and an **asynchronous feature path** (Kafka and Flink maintaining windowed aggregates per card, device and merchant). Everything is logged for labels that arrive weeks later (chargebacks), which feed model retraining. The interesting parts are latency, feature freshness, exactly-once counting, and consistency between training and serving."""
+diagram = """flowchart LR
+  pos[Card network auth request] --> api[Scoring service]
+  api --> fs[("Online features: Redis")]
+  api --> model[Model server]
+  api --> rules[Rules engine]
+  api --> dec["Decision: approve, decline, challenge"]
+  api --> k[("Kafka: transactions and decisions")]
+  k --> flink[Flink feature jobs]
+  flink --> fs
+  k --> lake[("Lakehouse: transaction log")]
+  cb[Chargebacks and analyst labels] --> lake
+  lake --> train[Offline training]
+  train --> model"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- Are we the issuer, the acquirer/processor, or a merchant? That determines which signals we see.
+- Latency budget for a decision (e.g. p99 under 100 ms end to end, under 50 ms for our service)?
+- Decision options: approve/decline only, or step-up challenges and manual review queues?
+- What happens if the fraud system is down: fail open (approve) or fail closed?
+- How do labels arrive (chargebacks after 30-90 days, customer reports, analyst review)?
+- Do we need explainability for declines (reason codes for regulators and customer support)?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Score every authorization with rules plus an ML model; return a decision and reason codes.
+- Velocity features per card, account, device, IP and merchant over sliding windows (1 min, 10 min, 1 h, 24 h, 30 days).
+- Analysts can add rules without a deploy; case management for reviews.
+- Every decision logged with the exact features used.
+
+**Non-functional**
+- Scoring service p99 under 50 ms; availability 99.99%, with a defined fallback.
+- Features fresh within seconds (a fraudster testing a card fires many attempts in a minute).
+- Counts must not double after a failure: effectively-once feature updates.
+- Training and serving feature values must be consistent.
+- PCI DSS: card numbers tokenized; strict access control."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- Transactions: **10K/s average**, **50K/s peak** (holiday shopping).
+- Daily: 10K x 86,400 = **864M transactions/day**.
+- Event size ~1 KB with enrichment: 864M x 1 KB = **~864 GB/day**, **~315 TB/year** raw.
+- Online feature store: 500M active cards x 20 numeric features x 8 B = **80 GB** of values; with keys and Redis overhead (often 2-3x), **~200 GB**, which fits in a modest Redis Cluster with replicas.
+- Feature reads: each auth reads card, merchant, device and IP feature sets = 4 lookups x 50K/s = **200K reads/s at peak**, comfortable for Redis when pipelined.
+- Latency budget: 5 ms feature fetch + 10 ms model + 5 ms rules + network, leaving headroom within 50 ms."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Scoring service** (stateless, horizontally scaled): receives the auth request, fetches features from the online store in one pipelined call, calls a model server (gradient-boosted trees are common for their speed and tabular accuracy), evaluates rules, and returns a decision with reason codes. Strict timeouts on every dependency.
+2. **Event log**: the service publishes the transaction, the feature vector it used, and the decision to Kafka asynchronously.
+3. **Streaming features**: Flink jobs keyed by card, device and merchant maintain windowed aggregates (counts, sums, distinct merchants, last location) in RocksDB state and write updated values to Redis. Some features (e.g. count in the last minute including the current transaction) are computed in the scoring service from a small recent-events list to avoid lag.
+4. **Batch features**: Spark jobs compute slow features (30-day spend profile, merchant risk score) nightly and load them into the same online store.
+5. **Lakehouse**: all transactions, decisions and labels land in Iceberg/Delta for analysis and training.
+6. **Training**: labels (chargebacks, confirmed fraud) are joined to the logged features at decision time, then models are trained, validated, shadow-deployed, and promoted.
+7. **Rules engine**: analyst-managed rules with versioning and a dry-run mode."""
+
+[[blocks]]
+heading = "Data model"
+body = """**Topic `transactions`** (key = card_token): txn_id, card_token, account_id, merchant_id, mcc, amount_minor, currency, country, device_id, ip, entry_mode, ts.
+
+**Topic `decisions`** (key = txn_id): txn_id, decision, score, model_version, rule_hits, feature_vector (as served), latency_ms, ts.
+
+**Online store** (key pattern `card:<token>`): hash of features such as `cnt_10m`, `amt_1h`, `distinct_merchants_24h`, `last_country`, `last_ts`, plus `updated_at`.
+
+**`lake.decisions_with_features`** (grain: one row per authorization): everything above. **`lake.labels`** (grain: one row per txn_id with a label): label, label_source, label_ts."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Freshness vs. latency.** If the streaming job lags by 2 seconds, a burst of card-testing attempts may all see `cnt_1m = 0`. Two fixes: keep Flink lag low with enough parallelism and short checkpoint intervals, and compute the shortest windows synchronously in the scoring path (append the txn to a capped per-card list in Redis and count recent entries). Monitor feature age at read time.
+
+**Exactly-once counting.** Flink with checkpointed keyed state gives exactly-once state updates, but writes to Redis are external side effects. Make them idempotent: write the absolute window value (not an increment) keyed by card, with a version or event time, so a replay after recovery overwrites with the same value rather than double counting. Avoid `INCR` from a stream that may replay.
+
+**Training-serving consistency and leakage.** Recomputing features offline from the raw table usually gives slightly different values than what was served (different windows, late events, bugs). Logging the exact served feature vector and training on it removes the skew. When features must be backfilled for a new model, compute them point-in-time (only events before the transaction timestamp) to avoid leaking future information.
+
+**Label delay and feedback loops.** Chargebacks arrive weeks later, and declined transactions never get a label at all, which biases training. Use a small random holdout (approve a tiny fraction of low-to-mid risk transactions, or use analyst review) to estimate true fraud rates, and train with careful time-based splits."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **Rules vs. ML**: rules are explainable and instantly deployable for new attack patterns; models generalize better. Production systems use both: rules for hard policy and quick response, the model for ranking risk.
+- **Precomputed features vs. on-the-fly aggregation**: querying raw events at auth time is too slow; precomputing costs streaming infrastructure but keeps the hot path to key lookups.
+- **Fail open vs. fail closed**: failing open (approve when the fraud service is down) protects revenue and customer experience but risks losses; many use fail-open with a conservative fallback rule set for high amounts.
+- **Redis vs. Aerospike/DynamoDB/Cassandra**: Redis is fastest for in-memory data; Aerospike or DynamoDB are cheaper for large feature sets that do not fit in RAM. Choice depends on size and latency target.
+- **Flink vs. Kafka Streams**: both handle keyed windows; Flink is stronger for large state, event-time semantics and complex joins."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Feature store slow or down**: hard timeout (e.g. 10 ms) and fallback to rules plus default features; alert on timeout rate.
+- **Streaming lag**: alert on consumer lag and on feature age at read time per feature family.
+- **Model drift**: monitor score distribution, decline rate and approval rate per segment hourly; sudden shifts often mean a broken feature, not a fraud wave.
+- **Fraud attacks**: alert on spikes in declines by merchant, BIN or country.
+- **Training-serving skew**: periodically recompute features offline for a sample and compare to served values.
+- **Latency SLO**: p50/p99 of the scoring service and each dependency; load-test for peak."""
+
+key_points = [
+  "The synchronous path should only do key lookups, a model call and rules, all within a strict timeout budget.",
+  "Streaming jobs (Flink) maintain velocity features continuously; batch jobs add slow-moving profiles.",
+  "Make external feature writes idempotent by writing absolute window values, not increments.",
+  "Log the exact served feature vector with each decision and train on it to avoid training-serving skew.",
+  "Labels arrive weeks late and declined transactions have no label; plan holdouts and time-based splits.",
+  "Define fail-open or fail-closed behavior explicitly, with a fallback rule set.",
+]
+common_mistakes = [
+  "Querying the raw transaction table or warehouse during authorization.",
+  "Using INCR from a replayable stream so counts double after a restart.",
+  "Training on features recomputed from raw data that differ from what production served.",
+  "Ignoring streaming lag, so the shortest velocity windows miss bursts.",
+  "Having no fallback when the model server or feature store times out.",
+]
+interview_questions = [
+  "A fraud ring makes 200 small charges on stolen cards in 30 seconds across different merchants. Which features catch it and how fresh must they be?",
+  "How would you add a new 7-day feature and backfill it for training without leakage?",
+  "The decline rate doubled in the last hour. How do you tell a fraud attack from a pipeline bug?",
+  "How do you safely roll out a new model version?",
+  "How would you compute distinct merchants per card over 24 hours in a stream with bounded memory?",
+]
+
+[[quiz]]
+q = "Why should the authorization path avoid aggregating raw events at request time?"
+options = [
+  "Raw events are not stored",
+  "Aggregation over many events cannot reliably meet a tens-of-milliseconds latency budget at peak load",
+  "Card networks forbid it",
+  "It would make the model less accurate",
+]
+answer = 1
+why = "Precomputing features into a key-value store turns each decision into a few O(1) lookups, which is what fits a p99 latency budget under heavy load."
+
+[[quiz]]
+q = "A Flink job recovers from a checkpoint and replays 30 seconds of events. Which Redis write pattern avoids double counting?"
+options = [
+  "INCR the count for each event",
+  "Write the absolute window value computed from checkpointed state",
+  "Use Redis transactions with MULTI/EXEC",
+  "Disable checkpoints",
+]
+answer = 1
+why = "Flink state is restored exactly once, so recomputed absolute values are the same after replay; overwriting is idempotent, while increments applied again are not."
+
+[[quiz]]
+q = "500M cards x 20 features x 8 bytes is how much raw feature data?"
+options = ["8 GB", "80 GB", "800 GB", "8 TB"]
+answer = 1
+why = "500M x 20 = 10B values; 10B x 8 B = 80 GB, before key and data-structure overhead."
+
+[[quiz]]
+q = "What is the most reliable way to avoid training-serving skew for fraud features?"
+options = [
+  "Use a bigger model",
+  "Recompute all features nightly from raw data for training",
+  "Log the exact feature vector used at decision time and train on those logged values",
+  "Train only on recent data",
+]
+answer = 2
+why = "Logged served features are by definition what the model sees in production. Offline recomputation tends to differ slightly due to late data, window boundaries and code differences."
+
+[[quiz]]
+q = "Why do declined transactions complicate model training?"
+options = [
+  "They are stored in a different region",
+  "They never receive a true outcome label, biasing the training data toward approved transactions",
+  "They have more features",
+  "They are always fraud",
+]
+answer = 1
+why = "If a transaction was declined, you never learn whether it would have been charged back. Holdouts or review samples are needed to estimate outcomes on the blocked population."

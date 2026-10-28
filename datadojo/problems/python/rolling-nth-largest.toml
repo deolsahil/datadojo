@@ -1,0 +1,41 @@
+title = "Running Nth largest transaction"
+lang = "python"
+difficulty = "medium"
+pattern = "py-heaps"
+function = "nth_largest_so_far"
+ordered = true
+source_url = "https://leetcode.com/problems/kth-largest-element-in-a-stream/"
+statement = '''
+`nth_largest_so_far(amounts, n)` processes transaction amounts in order, for a fraud rule that flags anything above the current top-`n` threshold.
+
+Return a list where element `i` is the `n`-th largest of `amounts[0..i]` (duplicates count separately), or `null` while fewer than `n` amounts have been seen.
+
+`[5, 1, 9, 3, 9]` with `n = 2` → `[null, 1, 5, 5, 9]`
+'''
+starter = "def nth_largest_so_far(amounts, n):\n    pass\n"
+solution = '''
+import heapq
+
+def nth_largest_so_far(amounts, n):
+    heap, out = [], []
+    for a in amounts:
+        if len(heap) < n:
+            heapq.heappush(heap, a)
+        elif a > heap[0]:
+            heapq.heapreplace(heap, a)
+        out.append(heap[0] if len(heap) == n else None)
+    return out
+'''
+hints = [
+    "You only need the `n` largest values so far; keep them in a min-heap of size `n`.",
+    "The heap's smallest element is the answer once it is full.",
+]
+
+[[tests]]
+args = [[5, 1, 9, 3, 9], 2]
+[[tests]]
+args = [[4, 4, 4, 2, 8], 3]
+[[tests]]
+args = [[7, 3], 1]
+[[tests]]
+args = [[], 2]

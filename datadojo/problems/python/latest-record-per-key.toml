@@ -1,0 +1,30 @@
+title = "Keep the latest record per key"
+lang = "python"
+difficulty = "easy"
+pattern = "py-records"
+lists = ["python-de"]
+function = "latest"
+statement = """
+`latest(records)` gets a list of dicts with keys `id`, `updated_at` (ISO string) and `value`.
+Return one record per `id`: the one with the greatest `updated_at`. On a tie, keep the record
+that appears **later** in the input. Any order.
+"""
+starter = "def latest(records):\n    pass\n"
+solution = """
+def latest(records):
+    best = {}
+    for r in records:
+        if r["id"] not in best or r["updated_at"] >= best[r["id"]]["updated_at"]:
+            best[r["id"]] = r
+    return list(best.values())
+"""
+
+[[tests]]
+args = '''[[{"id": 1, "updated_at": "2024-01-01", "value": "a"},
+            {"id": 1, "updated_at": "2024-02-01", "value": "b"},
+            {"id": 2, "updated_at": "2024-01-05", "value": "c"}]]'''
+[[tests]]  # tie: later one wins
+args = '''[[{"id": 1, "updated_at": "2024-01-01", "value": "first"},
+            {"id": 1, "updated_at": "2024-01-01", "value": "second"}]]'''
+[[tests]]
+args = [[]]

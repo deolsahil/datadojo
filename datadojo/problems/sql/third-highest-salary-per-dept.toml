@@ -1,0 +1,37 @@
+title = "Third-highest salary per department"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-ranking"
+statement = """
+Table `employees(id, name, dept, salary)`.
+
+For each department, return `dept, salary` where `salary` is the department's **third-highest distinct salary**.
+Several employees earning the same amount count as one salary level. Departments with fewer than
+three distinct salaries do not appear. Any row order.
+"""
+starter = "SELECT dept, MAX(salary) AS salary\nFROM employees\nGROUP BY dept\n"
+solution = """
+SELECT DISTINCT dept, salary FROM (
+  SELECT dept, salary, DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS rk
+  FROM employees
+) t WHERE rk = 3
+"""
+hints = [
+  "You need a rank within each department, where equal salaries share a rank and the next level comes right after.",
+  "DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) gives 1, 1, 2, 3 for 100, 100, 90, 80.",
+  "Keep rk = 3, and use DISTINCT so two people on the same third salary produce a single row.",
+]
+source_url = "https://leetcode.com/problems/department-top-three-salaries/"
+
+[[tests]]
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT", rows = [
+  [1, "Ana", "eng", 150], [2, "Bo", "eng", 140], [3, "Cy", "eng", 130], [4, "Di", "eng", 120],
+  [5, "Ed", "ops", 90], [6, "Fa", "ops", 80],
+] }
+
+[[tests]]  # ties above and at the third level
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT", rows = [
+  [1, "A", "eng", 200], [2, "B", "eng", 200], [3, "C", "eng", 180], [4, "D", "eng", 150],
+  [5, "E", "eng", 150], [6, "F", "eng", 100],
+  [7, "G", "hr", 70], [8, "H", "hr", 70], [9, "I", "hr", 70],
+] }

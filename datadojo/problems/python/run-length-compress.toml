@@ -1,0 +1,40 @@
+title = "Run-length compress (only if shorter)"
+lang = "python"
+difficulty = "easy"
+pattern = "py-strings"
+function = "compress"
+statement = """
+`compress(s)` replaces each run of identical consecutive characters with the character followed
+by the run length (always written, even when it is 1). Counts can have several digits.
+
+Return the compressed string only if it is **strictly shorter** than `s`; otherwise return `s`
+unchanged.
+
+- `"aabcccccaaa"` → `"a2b1c5a3"`
+- `"abc"` → `"abc"` (compressed `"a1b1c1"` is longer)
+- `"aabb"` → `"aabb"` (compressed `"a2b2"` is the same length, not shorter)
+"""
+hints = [
+    "Walk the string keeping the current character and how many times it has repeated.",
+    "Flush the last run after the loop ends; that is the most common bug.",
+    "Collect pieces in a list and `''.join` them, then compare lengths.",
+]
+starter = "def compress(s):\n    pass\n"
+solution = """
+from itertools import groupby
+
+def compress(s):
+    c = "".join(f"{ch}{len(list(g))}" for ch, g in groupby(s))
+    return c if len(c) < len(s) else s
+"""
+
+[[tests]]
+args = ["aabcccccaaa"]
+[[tests]]
+args = ["abc"]
+[[tests]]  # equal length is not shorter
+args = ["aabb"]
+[[tests]]  # multi-digit count
+args = ["aaaaaaaaaaaab"]
+[[tests]]
+args = [""]

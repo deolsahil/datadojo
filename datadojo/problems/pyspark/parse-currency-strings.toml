@@ -1,0 +1,45 @@
+title = "Parse currency strings"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-basics"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+A payments CSV landed with the amount as text: `payments(payment_id, amount_raw)`. Values look like
+`"$1,234.50"`, `"  99 "`, `"-5"`, accounting-style negatives such as `"(12.00)"`, and junk such as
+`"N/A"`, `""` or NULL.
+
+Write `solve(spark, payments)` returning `payment_id, amount` (a double, rounded to 2 decimals):
+
+- trim surrounding spaces and drop `$` and `,`
+- a value wrapped in parentheses is negative: `"($7.10)"` is `-7.1`
+- anything that still is not a number becomes NULL
+
+Keep every payment.
+"""
+hints = [
+  "`F.trim`, then `F.regexp_replace(s, \"[$,()]\", \"\")` removes the decoration.",
+  "Remember whether the trimmed value `startswith(\"(\")` before you strip the parentheses.",
+  "`.cast(\"double\")` turns unparseable text into NULL (ANSI mode is off by default).",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, payments):
+    return payments
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, payments):
+    s = F.trim("amount_raw")
+    neg = s.startswith("(") & s.endswith(")")
+    num = F.regexp_replace(s, "[$,()]", "").cast("double")
+    amount = F.when(neg, -num).otherwise(num)
+    return payments.select("payment_id", F.round(amount, 2).alias("amount"))
+"""
+
+[[tests]]
+tables.payments = { columns = "payment_id INT, amount_raw STRING", rows = '''[
+  [1, "$1,234.50"], [2, "  99 "], [3, "(12.00)"], [4, "-5"], [5, "N/A"], [6, ""],
+  [7, null], [8, "($7.10)"], [9, "$0.50"], [10, "12,000"]]''' }

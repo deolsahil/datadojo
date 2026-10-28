@@ -1,0 +1,48 @@
+title = "First and Repeated Customers"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-ranking"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `customer_orders(order_id, customer_id, order_date, order_amount)` holds every order.
+
+For each `order_date`, count the customers who ordered that day split into two groups:
+- `new_customer`: customers whose first ever order date is that day;
+- `repeated_customer`: customers who ordered that day but had already ordered on an earlier day.
+
+A customer counts once per day, even with several orders that day. Return `order_date, new_customer,
+repeated_customer`, **ordered by `order_date`**.
+"""
+starter = "SELECT order_date, COUNT(*) AS new_customer, 0 AS repeated_customer\nFROM customer_orders\nGROUP BY order_date\nORDER BY order_date\n"
+solution = """
+WITH f AS (
+  SELECT customer_id, MIN(order_date) AS first_date FROM customer_orders GROUP BY customer_id
+)
+SELECT o.order_date,
+       COUNT(DISTINCT CASE WHEN o.order_date = f.first_date THEN o.customer_id END) AS new_customer,
+       COUNT(DISTINCT CASE WHEN o.order_date > f.first_date THEN o.customer_id END) AS repeated_customer
+FROM customer_orders o
+JOIN f ON f.customer_id = o.customer_id
+GROUP BY o.order_date
+ORDER BY o.order_date
+"""
+hints = [
+  "Find each customer's first order date first.",
+  "Join it back: an order on the first date is a new customer, a later one is a repeat.",
+  "Use COUNT(DISTINCT CASE ... THEN customer_id END) so several orders on one day count the customer once.",
+]
+ordered = true
+
+[[tests]]
+tables.customer_orders = { columns = "order_id INT, customer_id INT, order_date DATE, order_amount INT", rows = [
+  [1, 100, "2022-01-01", 2000], [2, 200, "2022-01-01", 2500], [3, 300, "2022-01-01", 2100],
+  [4, 100, "2022-01-02", 2000], [5, 400, "2022-01-02", 2200], [6, 500, "2022-01-02", 2700],
+  [7, 100, "2022-01-03", 3000], [8, 400, "2022-01-03", 1000], [9, 600, "2022-01-03", 3000],
+] }
+
+[[tests]]  # two orders on the first day; two orders on a repeat day; a day with only repeats
+tables.customer_orders = { columns = "order_id INT, customer_id INT, order_date DATE, order_amount INT", rows = [
+  [1, 1, "2022-05-01", 10], [2, 1, "2022-05-01", 20], [3, 2, "2022-05-01", 30],
+  [4, 1, "2022-05-03", 40], [5, 1, "2022-05-03", 50], [6, 2, "2022-05-03", 60], [7, 3, "2022-05-04", 70],
+] }

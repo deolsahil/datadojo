@@ -1,0 +1,45 @@
+title = "Bill of materials: total base parts"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-recursive"
+statement = """
+Table `components(parent, child, qty)`: one `parent` assembly directly uses `qty` units of `child`. Assemblies
+nest (a wheel uses spokes, a bike uses wheels). A **base part** is one that never appears as a `parent`.
+There are no cycles.
+
+To build **one** `'bike'`, how many of each base part are needed? Multiply quantities down every path and add
+up the results when a part is reached by several paths. Return `part, total_qty`. Any row order.
+"""
+starter = "SELECT child AS part, qty AS total_qty\nFROM components\nWHERE parent = 'bike'\n"
+solution = """
+WITH RECURSIVE need AS (
+  SELECT child AS part, qty AS total_qty FROM components WHERE parent = 'bike'
+  UNION ALL
+  SELECT c.child, n.total_qty * c.qty FROM need n JOIN components c ON c.parent = n.part
+)
+SELECT part, SUM(total_qty) AS total_qty
+FROM need
+WHERE part NOT IN (SELECT parent FROM components)
+GROUP BY part
+"""
+hints = [
+  "Walk down from 'bike' and carry the quantity multiplied so far along each path.",
+  "Recursive step: join components c ON c.parent = n.part and multiply n.total_qty * c.qty.",
+  "Keep only rows whose part is never a parent, then SUM per part (the same part can be reached by several paths).",
+]
+
+[[tests]]
+tables.components = { columns = "parent STRING, child STRING, qty INT", rows = [
+  ["bike", "wheel", 2], ["bike", "frame", 1], ["wheel", "spoke", 32], ["wheel", "tire", 1],
+] }
+
+[[tests]]  # bolts reached by two paths; an unrelated product; three levels deep
+tables.components = { columns = "parent STRING, child STRING, qty INT", rows = [
+  ["bike", "wheel", 2], ["bike", "bolt", 4], ["bike", "seat", 1], ["wheel", "hub", 1], ["wheel", "bolt", 3],
+  ["hub", "bearing", 2], ["hub", "bolt", 1], ["scooter", "wheel", 2], ["scooter", "deck", 1],
+] }
+
+[[tests]]  # two paths give the same per-path quantity; both must be counted
+tables.components = { columns = "parent STRING, child STRING, qty INT", rows = [
+  ["bike", "bolt", 2], ["bike", "wheel", 1], ["wheel", "bolt", 2], ["wheel", "rim", 1],
+] }

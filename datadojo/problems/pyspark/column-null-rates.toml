@@ -1,0 +1,46 @@
+title = "Missing-value rate per column"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-quality"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+Before onboarding a vendor file, you profile how complete it is.
+`customers(id, email, phone, country)` has gaps: some values are NULL, others are empty or
+whitespace-only strings, which count as missing too.
+
+Write `solve(spark, customers)` returning **one row per profiled column** (`email`, `phone`,
+`country`; not `id`): `column_name, missing, missing_pct`
+
+- `missing` is the number of rows where the column is NULL or blank after trimming.
+- `missing_pct` is `100 * missing / total rows`, rounded to 2 decimals.
+"""
+hints = [
+  "Compute all counts in a single `agg`: `F.sum(F.when(cond, 1).otherwise(0))` per column, plus `F.count(\"*\")`.",
+  "Then turn that one wide row into long rows: `F.explode(F.array(F.struct(...), ...))`, or `stack(...)` inside `F.expr`.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, customers):
+    return customers
+"""
+solution = """
+from pyspark.sql import functions as F
+
+COLS = ["email", "phone", "country"]
+
+def solve(spark, customers):
+    blank = lambda c: F.col(c).isNull() | (F.trim(F.col(c)) == "")
+    wide = customers.agg(F.count("*").alias("n"),
+                         *[F.sum(F.when(blank(c), 1).otherwise(0)).alias(c) for c in COLS])
+    long = wide.select("n", F.explode(F.array(*[
+        F.struct(F.lit(c).alias("column_name"), F.col(c).alias("missing")) for c in COLS])).alias("x"))
+    return long.select("x.column_name", "x.missing",
+                       F.round(100 * F.col("x.missing") / F.col("n"), 2).alias("missing_pct"))
+"""
+
+[[tests]]
+tables.customers = { columns = "id INT, email STRING, phone STRING, country STRING", rows = '''[
+  [1, "a@x.com", "555", null], [2, null, "  ", "US"], [3, "", null, "US"],
+  [4, "d@x.com", "777", "CA"], [5, "e@x.com", null, " "], [6, "f@x.com", "888", "US"]]''' }

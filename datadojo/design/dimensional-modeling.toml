@@ -1,0 +1,107 @@
+title = "Dimensional Modeling: Facts, Dimensions, and Grain"
+section = "ds-modeling"
+order = 1
+kind = "lesson"
+big_idea = "Declare the grain first, then put measurable events in fact tables and descriptive context in dimension tables, so every analytical question becomes a simple join and group-by."
+summary = """Dimensional modeling, popularized by Ralph Kimball, organizes analytical data around business processes. A **fact table** records events or measurements (an order line, a page view, a payment) with numeric measures and foreign keys. **Dimension tables** describe the who, what, where, and when: customer, product, store, date.
+
+The single most important decision is the **grain**: what one row of the fact table represents, stated in business terms, such as "one row per order line item". Get the grain wrong and every metric downstream is wrong, usually by double counting.
+
+A **star schema** has denormalized dimensions joined directly to the fact. A **snowflake schema** normalizes dimensions into sub-tables (product → category → department). Star is the usual default because it is simpler to query and columnar engines handle the redundancy cheaply."""
+diagram = """flowchart LR
+  fact[("fact_order_line")] --> cust[dim_customer]
+  fact --> prod[dim_product]
+  fact --> date[dim_date]
+  fact --> store[dim_store]
+  prod -- snowflake variant --> cat[dim_category]"""
+
+[[blocks]]
+heading = "How it works"
+body = """Kimball's four-step process:
+
+1. **Pick the business process:** orders, shipments, web sessions.
+2. **Declare the grain:** one row per order line.
+3. **Identify dimensions:** customer, product, date, store, promotion.
+4. **Identify facts (measures):** quantity, unit price, discount, net amount.
+
+Dimensions usually get a **surrogate key** (an integer or hash the warehouse controls) in addition to the source's natural key. This lets you keep history (see slowly changing dimensions) and protects you from source key reuse or changes."""
+
+[[blocks]]
+heading = "Types of fact tables"
+body = """- **Transaction facts:** one row per event (order line, click). Most common, most flexible.
+- **Periodic snapshot facts:** one row per entity per period (account balance per day, inventory per store per week). Answers "what was the state at time T" cheaply.
+- **Accumulating snapshot facts:** one row per process instance, updated as it moves through milestones (order placed, shipped, delivered, with timestamps for each). Good for pipeline and lag analysis.
+- **Factless facts:** record that something happened with no measure, such as student attended class.
+
+Measures can be **additive** (sum across all dimensions, like revenue), **semi-additive** (balances: sum across accounts but not across time), or **non-additive** (ratios: recompute from components, never sum)."""
+
+[[blocks]]
+heading = "Star vs snowflake vs one big table"
+body = """| | Star | Snowflake | One big table (OBT) |
+|---|---|---|---|
+| Joins per query | 1 level | Several | None |
+| Storage redundancy | Some | Least | Most |
+| Ease for analysts | High | Medium | Highest |
+| Updating a dimension attribute | Update one dimension | Update one sub-table | Rewrite many rows |
+
+Wide denormalized OBTs are popular on columnar engines for dashboards, usually built **from** a star schema rather than instead of one. Snowflaking is justified for very large dimensions or shared hierarchies, not by default."""
+
+[[blocks]]
+heading = "In an interview"
+body = """When asked to model data, say the grain out loud before anything else. Then sketch the fact with its measures and the dimensions around it. Mention conformed dimensions (one `dim_customer` shared by orders, support tickets, and marketing facts) so metrics line up across business processes. If a metric mixes grains, such as order-level shipping fees on a line-level fact, call out the double-counting risk and propose allocating the fee or using a separate order-level fact."""
+
+key_points = [
+  "Grain is declared first and stated in business terms: what exactly does one fact row represent?",
+  "Facts hold measures and foreign keys; dimensions hold descriptive attributes.",
+  "Star schema is the default; snowflake only for large or shared hierarchies.",
+  "Know additive, semi-additive, and non-additive measures, and never sum ratios.",
+  "Conformed dimensions let metrics from different processes be compared consistently.",
+]
+common_mistakes = [
+  "Mixing grains in one fact table, such as order-level and line-level amounts, causing double counting.",
+  "Summing semi-additive measures like account balances across days.",
+  "Using only natural source keys and losing the ability to track history.",
+  "Snowflaking every dimension by habit, making analysts write many joins.",
+  "Storing averages or percentages as facts and then summing them.",
+]
+interview_questions = [
+  "Design a dimensional model for an e-commerce orders process. What is the grain?",
+  "What is the difference between a transaction fact and a periodic snapshot fact?",
+  "When would you choose a snowflake schema over a star schema?",
+  "Why use surrogate keys instead of source system keys?",
+  "How would you model a shipping fee charged once per order when the fact is per line item?",
+]
+
+[[quiz]]
+q = "What should be decided first when designing a fact table?"
+options = ["The list of dimensions", "The grain", "The surrogate key type", "The partition column"]
+answer = 1
+why = "Grain defines what a row means. Dimensions and measures must all be consistent with it, otherwise metrics double count."
+
+[[quiz]]
+q = "A daily account balance fact. Which aggregation is valid?"
+options = [
+  "Sum balances across all days in a month",
+  "Sum balances across accounts for a single day",
+  "Average of summed balances across all accounts and days without grouping by day",
+  "Sum balances across both accounts and days",
+]
+answer = 1
+why = "Balances are semi-additive: they add across accounts at a point in time, but summing across days is meaningless."
+
+[[quiz]]
+q = "Which fact table type fits tracking each order through placed, packed, shipped, and delivered timestamps?"
+options = ["Transaction fact", "Periodic snapshot", "Accumulating snapshot", "Factless fact"]
+answer = 2
+why = "An accumulating snapshot has one row per process instance, updated as it hits milestones, which makes lag analysis easy."
+
+[[quiz]]
+q = "Why do columnar warehouses make star schemas (or even wide tables) cheap despite redundancy?"
+options = [
+  "They do not store repeated values at all",
+  "Repeated values in a column compress very well and only queried columns are read",
+  "They automatically convert stars into snowflakes",
+  "Joins are free in columnar engines",
+]
+answer = 1
+why = "Dictionary and run-length encoding shrink repeated dimension attributes, and column pruning skips unused ones."

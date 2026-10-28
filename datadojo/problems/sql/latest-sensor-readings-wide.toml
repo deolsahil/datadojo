@@ -1,0 +1,44 @@
+title = "Latest reading per metric, one row per device"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-pivot"
+statement = """
+Table `readings(device_id, metric, value, ts)` from IoT devices. `metric` is `'temp'`, `'humidity'` or
+`'battery'`. A device never reports the same metric twice at the same `ts`.
+
+Return one row per device: `device_id, temp, humidity, battery`, each column holding the **most recent** value
+of that metric for the device. If a device has never reported a metric, that column is NULL. Any row order.
+"""
+starter = "SELECT device_id,\n  MAX(CASE WHEN metric = 'temp' THEN value END) AS temp,\n  MAX(CASE WHEN metric = 'humidity' THEN value END) AS humidity,\n  MAX(CASE WHEN metric = 'battery' THEN value END) AS battery\nFROM readings\nGROUP BY device_id\n"
+solution = """
+WITH latest AS (
+  SELECT device_id, metric, value FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY device_id, metric ORDER BY ts DESC) AS rn FROM readings
+  ) t WHERE rn = 1
+)
+SELECT device_id,
+       MAX(CASE WHEN metric = 'temp' THEN value END) AS temp,
+       MAX(CASE WHEN metric = 'humidity' THEN value END) AS humidity,
+       MAX(CASE WHEN metric = 'battery' THEN value END) AS battery
+FROM latest
+GROUP BY device_id
+"""
+hints = [
+  "MAX(value) is the largest value, not the latest one. Reduce to the latest row per (device, metric) first.",
+  "ROW_NUMBER() OVER (PARTITION BY device_id, metric ORDER BY ts DESC) = 1 picks the latest reading.",
+  "Then pivot those rows with MAX(CASE WHEN metric = ... THEN value END) per column; each group has at most one match.",
+]
+
+[[tests]]
+tables.readings = { columns = "device_id INT, metric STRING, value DOUBLE, ts TIMESTAMP", rows = [
+  [1, "temp", 21.5, "2024-01-01 10:00:00"], [1, "temp", 19.0, "2024-01-01 11:00:00"],
+  [1, "humidity", 40.0, "2024-01-01 10:30:00"], [1, "battery", 90.0, "2024-01-01 09:00:00"],
+  [2, "temp", 30.0, "2024-01-01 08:00:00"],
+] }
+
+[[tests]]  # battery drains: latest is the smallest; missing metrics stay NULL
+tables.readings = { columns = "device_id INT, metric STRING, value DOUBLE, ts TIMESTAMP", rows = [
+  [5, "battery", 100.0, "2024-02-01 00:00:00"], [5, "battery", 80.0, "2024-02-02 00:00:00"],
+  [5, "battery", 55.0, "2024-02-03 00:00:00"], [6, "humidity", 60.0, "2024-02-03 00:00:00"],
+  [6, "humidity", 70.0, "2024-02-01 00:00:00"],
+] }

@@ -1,0 +1,48 @@
+title = "Day-1 retention by signup cohort"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-sessions-funnels"
+lists = ["sql-essentials"]
+ordered = true
+statement = """
+Table `logins(user_id, login_date)`. A user may log in several times per day.
+
+A user's cohort is the date of their **first** login. A user is **day-1 retained** if they logged in again on
+exactly the next calendar day after that first login.
+
+For each cohort date return `cohort_date, cohort_size, retained, retention_pct`, where `retention_pct` is
+`100 * retained / cohort_size` rounded to 2 decimals. Order by `cohort_date`.
+"""
+starter = "SELECT login_date AS cohort_date, COUNT(DISTINCT user_id) AS cohort_size, 0 AS retained, 0 AS retention_pct\nFROM logins\nGROUP BY login_date\nORDER BY 1\n"
+solution = """
+WITH f AS (
+  SELECT user_id, MIN(login_date) AS cohort_date FROM logins GROUP BY user_id
+), r AS (
+  SELECT f.cohort_date, f.user_id,
+         CASE WHEN EXISTS (SELECT 1 FROM logins l WHERE l.user_id = f.user_id
+                           AND l.login_date = f.cohort_date + 1) THEN 1 ELSE 0 END AS kept
+  FROM f
+)
+SELECT cohort_date, COUNT(*) AS cohort_size, SUM(kept) AS retained,
+       ROUND(100.0 * SUM(kept) / COUNT(*), 2) AS retention_pct
+FROM r
+GROUP BY cohort_date
+ORDER BY cohort_date
+"""
+hints = [
+  "Start with one row per user: their first login date (the cohort).",
+  "A user is retained if a login exists on cohort_date + 1. A LEFT JOIN or EXISTS works, but watch out for duplicate logins inflating counts.",
+  "Group the per-user rows by cohort_date; retained is a SUM of a 0/1 flag.",
+]
+source_url = "https://leetcode.com/problems/game-play-analysis-iv/"
+
+[[tests]]
+tables.logins = { columns = "user_id INT, login_date DATE", rows = [
+  [1, "2024-03-01"], [1, "2024-03-02"], [2, "2024-03-01"], [2, "2024-03-05"], [3, "2024-03-02"], [3, "2024-03-03"],
+] }
+
+[[tests]]  # duplicate logins on day 0 and day 1; a login two days later doesn't count; month boundary
+tables.logins = { columns = "user_id INT, login_date DATE", rows = [
+  [1, "2024-01-31"], [1, "2024-01-31"], [1, "2024-02-01"], [1, "2024-02-01"],
+  [2, "2024-01-31"], [2, "2024-02-02"], [3, "2024-01-31"],
+] }

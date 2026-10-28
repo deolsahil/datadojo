@@ -1,0 +1,30 @@
+title = "Count tags across posts"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-nested"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`posts(id, tags)`: `tags` is a comma-separated string like `"spark, sql,Python"` (may be NULL).
+
+Return `tag, posts` — number of posts using each tag. Trim spaces, lowercase, ignore empty tags,
+and count a tag once per post even if repeated.
+"""
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, posts):
+    return posts
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, posts):
+    t = posts.select("id", F.explode(F.split("tags", ",")).alias("tag"))
+    t = t.select("id", F.lower(F.trim("tag")).alias("tag")).filter(F.col("tag") != "")
+    return t.distinct().groupBy("tag").agg(F.count("*").alias("posts"))
+"""
+
+[[tests]]
+tables.posts = { columns = "id INT, tags STRING", rows = '''[
+  [1, "spark, sql,Python"], [2, "SQL"], [3, null], [4, "python,,python "]]''' }

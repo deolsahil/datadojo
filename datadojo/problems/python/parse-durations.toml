@@ -1,0 +1,43 @@
+title = "Parse duration strings"
+lang = "python"
+difficulty = "easy"
+pattern = "py-parsing"
+function = "to_seconds"
+ordered = true
+statement = '''
+`to_seconds(values)` converts job-runtime strings like `"1h30m"` to seconds and returns a list of the same length.
+
+A valid duration is one or more parts `<integer><unit>` with units `d` (86400 s), `h`, `m`, `s`, written in that order, each at most once, with no spaces between parts. Surrounding whitespace is ignored. Units are lowercase.
+
+Anything else (empty string, decimals, unknown unit, wrong order, repeated unit) becomes `null`.
+
+`["1h30m", "90s", "2d", "1m1h", "1.5h"]` → `[5400, 90, 172800, null, null]`
+'''
+starter = "def to_seconds(values):\n    pass\n"
+solution = '''
+import re
+
+PAT = re.compile(r"(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?")
+
+def to_seconds(values):
+    out = []
+    for v in values:
+        m = PAT.fullmatch(v.strip())
+        if not m or not any(m.groups()):
+            out.append(None)
+            continue
+        d, h, mi, s = (int(g or 0) for g in m.groups())
+        out.append(d * 86400 + h * 3600 + mi * 60 + s)
+    return out
+'''
+hints = [
+    "A regex of four optional groups in d, h, m, s order enforces both order and at-most-once.",
+    "Use `fullmatch`, and reject the case where every group is empty.",
+]
+
+[[tests]]
+args = [["1h30m", "90s", "2d", "1m1h", "1.5h"]]
+[[tests]]
+args = [["", "  45m ", "1d2h3m4s", "10x", "5h5h", "0s"]]
+[[tests]]
+args = [[]]

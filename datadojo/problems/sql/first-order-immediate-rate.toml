@@ -1,0 +1,29 @@
+title = "Share of first orders delivered immediately"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-subqueries"
+source_url = "https://leetcode.com/problems/immediate-food-delivery-ii/"
+statement = """
+A grocery app calls an order **immediate** when the customer's preferred delivery date equals the order date; otherwise it is **scheduled**.
+
+Table `deliveries(id, customer_id, order_date, preferred_date)`, both dates are DATEs. Each customer's **first order** is the one with the earliest `order_date` (a customer never has two orders on the same date).
+
+Return a single column `immediate_pct`: the percentage of customers whose first order was immediate, rounded to 2 decimals (e.g. 2 of 3 customers -> `66.67`).
+"""
+starter = "SELECT ROUND(100.0 * AVG(CASE WHEN order_date = preferred_date THEN 1 ELSE 0 END), 2) AS immediate_pct\nFROM deliveries\n"
+solution = """
+SELECT ROUND(100.0 * AVG(CASE WHEN d.order_date = d.preferred_date THEN 1 ELSE 0 END), 2) AS immediate_pct
+FROM deliveries d
+WHERE d.order_date = (SELECT MIN(x.order_date) FROM deliveries x WHERE x.customer_id = d.customer_id)
+"""
+hints = [
+  "The starter averages over all orders; you need only each customer's first order.",
+  "Find each customer's earliest order_date (a correlated MIN, or a GROUP BY subquery joined back).",
+  "Then AVG(CASE WHEN immediate THEN 1 ELSE 0 END) over just those rows, times 100.",
+]
+
+[[tests]]
+tables.deliveries = { columns = "id INT, customer_id INT, order_date DATE, preferred_date DATE", rows = [[1, 1, "2024-08-01", "2024-08-02"], [2, 2, "2024-08-02", "2024-08-02"], [3, 1, "2024-08-11", "2024-08-11"], [4, 3, "2024-08-24", "2024-08-24"], [5, 3, "2024-08-21", "2024-08-22"], [6, 2, "2024-08-11", "2024-08-13"], [7, 4, "2024-08-09", "2024-08-09"]] }
+
+[[tests]]  # later immediate orders don't count
+tables.deliveries = { columns = "id INT, customer_id INT, order_date DATE, preferred_date DATE", rows = [[1, 1, "2024-01-01", "2024-01-03"], [2, 1, "2024-01-05", "2024-01-05"], [3, 1, "2024-01-06", "2024-01-06"], [4, 2, "2024-01-02", "2024-01-02"], [5, 3, "2024-01-02", "2024-01-04"]] }

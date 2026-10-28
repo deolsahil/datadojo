@@ -1,0 +1,60 @@
+title = "Group accounts that share an email"
+lang = "python"
+difficulty = "medium"
+pattern = "py-graphs"
+lists = ["python-de"]
+function = "link_accounts"
+source_url = "https://leetcode.com/problems/accounts-merge/"
+statement = '''
+`link_accounts(accounts)` gets records `{"account_id": str, "emails": [str]}` from several sign-up systems. Two accounts belong to the same customer if they share an email, directly or through a chain of other accounts.
+
+Emails match after trimming whitespace and lowercasing. `emails` may be empty, missing or `null`; such an account is its own group. The same `account_id` may appear in several records, and they are the same account.
+
+Return a list of groups, each a list of distinct account ids sorted ascending. The groups themselves can be in any order.
+'''
+starter = "def link_accounts(accounts):\n    pass\n"
+solution = '''
+def link_accounts(accounts):
+    parent, owner = {}, {}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a in accounts:
+        aid = a["account_id"]
+        parent.setdefault(aid, aid)
+        for e in a.get("emails") or []:
+            e = e.strip().lower()
+            if e in owner:
+                parent[find(aid)] = find(owner[e])
+            else:
+                owner[e] = aid
+    groups = {}
+    for aid in parent:
+        groups.setdefault(find(aid), []).append(aid)
+    return [sorted(g) for g in groups.values()]
+'''
+hints = [
+    "Think of accounts as nodes; a shared email is an edge. You want connected components.",
+    "Union-find: remember the first account that owned each email and union later owners with it.",
+    "BFS over an adjacency map also works if union-find is new to you.",
+]
+
+[[tests]]
+args = '''[[{"account_id": "a1", "emails": ["x@co.com", "y@co.com"]},
+            {"account_id": "b7", "emails": ["z@co.com"]},
+            {"account_id": "c3", "emails": [" Y@co.com "]},
+            {"account_id": "d9", "emails": ["q@co.com"]}]]'''
+[[tests]]  # chain links a-c through b; repeat id; null emails
+args = '''[[{"account_id": "a", "emails": ["1@x"]},
+            {"account_id": "c", "emails": ["2@x"]},
+            {"account_id": "b", "emails": ["1@x", "2@x"]},
+            {"account_id": "e", "emails": null},
+            {"account_id": "f"},
+            {"account_id": "a", "emails": ["3@x"]},
+            {"account_id": "g", "emails": ["3@X"]}]]'''
+[[tests]]
+args = [[]]

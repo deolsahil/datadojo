@@ -1,0 +1,29 @@
+title = "Users active on three or more days"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-aggregation"
+statement = """
+Product defines an "engaged" user as someone who logged in on at least **three different calendar days**.
+
+Table `logins(user_id, login_at)` where `login_at` is a TIMESTAMP. A user may log in many times a day.
+
+Return `user_id` and `active_days` (number of distinct dates with a login) for users with `active_days >= 3`.
+"""
+starter = "SELECT user_id, COUNT(*) AS active_days\nFROM logins\nGROUP BY user_id\n"
+solution = """
+SELECT user_id, COUNT(DISTINCT CAST(login_at AS DATE)) AS active_days
+FROM logins
+GROUP BY user_id
+HAVING COUNT(DISTINCT CAST(login_at AS DATE)) >= 3
+"""
+hints = [
+  "Counting rows counts logins, not days.",
+  "Turn each timestamp into a date with CAST(login_at AS DATE), then count distinct values.",
+  "HAVING COUNT(DISTINCT CAST(login_at AS DATE)) >= 3",
+]
+
+[[tests]]
+tables.logins = { columns = "user_id INT, login_at TIMESTAMP", rows = [[1, "2024-03-01 08:00:00"], [1, "2024-03-02 09:00:00"], [1, "2024-03-05 10:00:00"], [2, "2024-03-01 08:00:00"], [2, "2024-03-01 12:00:00"], [2, "2024-03-01 18:00:00"], [2, "2024-03-02 07:00:00"]] }
+
+[[tests]]  # many logins across exactly three days, plus a midnight edge
+tables.logins = { columns = "user_id INT, login_at TIMESTAMP", rows = [[5, "2024-01-01 23:59:59"], [5, "2024-01-02 00:00:00"], [5, "2024-01-02 00:00:01"], [5, "2024-01-03 12:00:00"], [6, "2024-01-01 01:00:00"]] }

@@ -1,0 +1,53 @@
+title = "Date Difference Excluding Weekends and Holidays"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-strings-dates"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Tables `tickets(ticket_id, create_date, resolved_date)` and `holidays(holiday_date, reason)`.
+
+For each ticket, count the **business days** from `create_date` to `resolved_date`, both inclusive: days that are
+Monday to Friday and are not in `holidays`. A holiday that falls on a weekend is not subtracted twice, and a date
+listed more than once in `holidays` still counts once.
+
+Return `ticket_id, create_date, resolved_date, days_difference`. Any row order.
+"""
+starter = "SELECT ticket_id, create_date, resolved_date,\n       date_diff('day', create_date, resolved_date) AS days_difference\nFROM tickets\n"
+solution = """
+WITH days AS (
+  SELECT ticket_id, CAST(unnest(generate_series(create_date, resolved_date, INTERVAL 1 DAY)) AS DATE) AS d
+  FROM tickets
+),
+workdays AS (
+  SELECT ticket_id, d FROM days
+  WHERE isodow(d) <= 5
+    AND NOT EXISTS (SELECT 1 FROM holidays h WHERE h.holiday_date = days.d)
+)
+SELECT t.ticket_id, t.create_date, t.resolved_date, COUNT(w.d) AS days_difference
+FROM tickets t
+LEFT JOIN workdays w ON w.ticket_id = t.ticket_id
+GROUP BY t.ticket_id, t.create_date, t.resolved_date
+"""
+hints = [
+  "Expand each ticket into one row per calendar day with generate_series(create_date, resolved_date, INTERVAL 1 DAY).",
+  "Keep only days with isodow(d) <= 5 (Mon=1 ... Sun=7) and no matching row in holidays.",
+  "Count what is left per ticket. LEFT JOIN back to tickets so a ticket open only on a weekend still shows 0.",
+]
+
+[[tests]]
+tables.tickets = { columns = "ticket_id STRING, create_date DATE, resolved_date DATE", rows = [
+  ["1", "2022-08-01", "2022-08-03"], ["2", "2022-08-01", "2022-08-12"], ["3", "2022-08-01", "2022-08-16"],
+] }
+tables.holidays = { columns = "holiday_date DATE, reason STRING", rows = [
+  ["2022-08-11", "Rakhi"], ["2022-08-15", "Independence day"],
+] }
+
+[[tests]]  # weekend-only ticket, weekend holiday, duplicated holiday, same-day ticket
+tables.tickets = { columns = "ticket_id STRING, create_date DATE, resolved_date DATE", rows = [
+  ["A", "2022-08-06", "2022-08-07"], ["B", "2022-08-05", "2022-08-08"],
+  ["C", "2022-08-12", "2022-08-15"], ["D", "2022-08-16", "2022-08-16"],
+] }
+tables.holidays = { columns = "holiday_date DATE, reason STRING", rows = [
+  ["2022-08-13", "Saturday holiday"], ["2022-08-15", "Independence day"], ["2022-08-15", "Duplicate entry"],
+] }

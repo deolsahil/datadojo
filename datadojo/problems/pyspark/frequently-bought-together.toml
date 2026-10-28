@@ -1,0 +1,46 @@
+title = "Frequently bought together"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-joins"
+function = "solve"
+statement = """
+`order_items(order_id, product_id)` has one row per line item; the same product can appear on
+several lines of one order.
+
+Write `solve(spark, order_items)` returning `product_a, product_b, orders` for every pair of
+**different** products that appear together in at least 2 distinct orders. `orders` is the number
+of distinct orders containing both. Report each pair once with `product_a < product_b`.
+"""
+hints = [
+  "Deduplicate `(order_id, product_id)` first, or repeated lines multiply the pair counts.",
+  "Self join: alias the deduped frame as `a` and `b`, join on `order_id` and `a.product_id < b.product_id`.",
+  "Then `groupBy(a.product_id, b.product_id).count()` and keep counts of 2 or more.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, order_items):
+    return order_items
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, order_items):
+    d = order_items.select("order_id", "product_id").distinct()
+    a, b = d.alias("a"), d.alias("b")
+    pairs = a.join(b, (F.col("a.order_id") == F.col("b.order_id"))
+                      & (F.col("a.product_id") < F.col("b.product_id")))
+    return (pairs.groupBy(F.col("a.product_id").alias("product_a"), F.col("b.product_id").alias("product_b"))
+            .agg(F.count("*").alias("orders"))
+            .filter(F.col("orders") >= 2))
+"""
+
+[[tests]]
+tables.order_items = { columns = "order_id INT, product_id STRING", rows = [
+  [1, "bread"], [1, "butter"], [1, "jam"],
+  [2, "bread"], [2, "butter"], [2, "butter"],
+  [3, "jam"], [3, "jam"], [3, "tea"],
+  [4, "tea"], [4, "bread"],
+  [5, "milk"],
+  [6, "bread"], [6, "jam"],
+] }

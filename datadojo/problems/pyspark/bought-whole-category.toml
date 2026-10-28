@@ -1,0 +1,46 @@
+title = "Customers who bought a whole category"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-aggregation"
+function = "solve"
+statement = """
+A loyalty program rewards customers who have bought **every** product in a category.
+
+- `products(product_id, category)`: the current catalog
+- `purchases(customer_id, product_id)`: one row per purchase; repeats are common, and some rows
+  reference discontinued product ids that are no longer in `products` (ignore those).
+
+Write `solve(spark, products, purchases)` returning `customer_id, category` for every customer and
+category where the customer bought each product of that category at least once.
+"""
+hints = [
+  "Count products per category: `groupBy(\"category\").agg(F.countDistinct(\"product_id\"))`.",
+  "Inner join purchases to products (drops discontinued ids), then count **distinct** products per customer and category.",
+  "Join the two counts on category and keep rows where they are equal.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, products, purchases):
+    return purchases.join(products, "product_id").select("customer_id", "category").distinct()
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, products, purchases):
+    need = products.groupBy("category").agg(F.countDistinct("product_id").alias("n"))
+    have = (purchases.join(products, "product_id")
+            .groupBy("customer_id", "category").agg(F.countDistinct("product_id").alias("n")))
+    return have.join(need, ["category", "n"]).select("customer_id", "category")
+"""
+
+[[tests]]
+tables.products = { columns = "product_id INT, category STRING", rows = [
+  [1, "tea"], [2, "tea"], [3, "tea"], [4, "cups"], [5, "cups"], [6, "gift"],
+] }
+tables.purchases = { columns = "customer_id INT, product_id INT", rows = [
+  [10, 1], [10, 2], [10, 3], [10, 4],
+  [11, 1], [11, 1], [11, 2], [11, 99], [11, 4], [11, 5],
+  [12, 6], [12, 6],
+  [13, 1], [13, 2], [13, 2], [13, 98],
+] }

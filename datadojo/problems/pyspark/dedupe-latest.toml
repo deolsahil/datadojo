@@ -1,0 +1,34 @@
+title = "Deduplicate CDC events"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-dedup-scd"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`events(id, op, updated_at, amount)` is a change feed (`op` is `I`, `U` or `D`).
+
+Write `solve(spark, events)` returning a DataFrame `id, amount` with the **current** state:
+for each `id` take the event with the latest `updated_at`. Drop ids whose latest event is a delete.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, events):
+    return events
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, events):
+    w = Window.partitionBy("id").orderBy(F.col("updated_at").desc())
+    return (events.withColumn("rn", F.row_number().over(w))
+            .filter((F.col("rn") == 1) & (F.col("op") != "D"))
+            .select("id", "amount"))
+"""
+
+[[tests]]
+tables.events = { columns = "id INT, op STRING, updated_at TIMESTAMP, amount INT", rows = [
+  [1, "I", "2024-01-01 00:00:00", 10], [1, "U", "2024-01-02 00:00:00", 15],
+  [2, "I", "2024-01-01 00:00:00", 7], [2, "D", "2024-01-03 00:00:00", 7],
+  [3, "I", "2024-01-05 00:00:00", 1],
+] }

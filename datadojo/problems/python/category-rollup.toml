@@ -1,0 +1,47 @@
+title = "Roll up product counts in a category tree"
+lang = "python"
+difficulty = "medium"
+pattern = "py-recursion"
+function = "rollup"
+statement = '''
+`rollup(root)` walks a product-category tree. Each node is `{"name": str, "count": int, "children": [nodes]}`; `count` (products placed directly in that category) and `children` may each be missing or `null`, meaning 0 and no children.
+
+Return a dict mapping every node's full path, names joined with `" > "` from the root, to the total products in that node **and all its descendants**. Sibling names are unique. If `root` is `null`, return `{}`.
+
+```
+{"name": "All", "children": [{"name": "Food", "count": 2,
+   "children": [{"name": "Fruit", "count": 5}]}]}
+→ {"All": 7, "All > Food": 7, "All > Food > Fruit": 5}
+```
+'''
+starter = "def rollup(root):\n    pass\n"
+solution = '''
+def rollup(root):
+    out = {}
+
+    def walk(node, prefix):
+        path = prefix + [node["name"]]
+        total = node.get("count") or 0
+        for child in node.get("children") or []:
+            total += walk(child, path)
+        out[" > ".join(path)] = total
+        return total
+
+    if root is not None:
+        walk(root, [])
+    return out
+'''
+hints = [
+    "A helper that returns the subtree total lets the parent add up its children.",
+    "Pass the path so far down the recursion; record the total on the way back up.",
+]
+
+[[tests]]
+args = '''[{"name": "All", "children": [{"name": "Food", "count": 2, "children": [{"name": "Fruit", "count": 5}]}]}]'''
+[[tests]]
+args = '''[{"name": "Root", "count": 1, "children": [
+            {"name": "A", "count": null, "children": null},
+            {"name": "B", "children": [{"name": "B1", "count": 3, "children": []}, {"name": "B2", "count": 4}]},
+            {"name": "C", "count": 10}]}]'''
+[[tests]]
+args = '''[null]'''

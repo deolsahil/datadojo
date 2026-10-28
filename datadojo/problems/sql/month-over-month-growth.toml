@@ -1,0 +1,51 @@
+title = "Month-over-month revenue growth"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-running"
+lists = ["sql-essentials"]
+ordered = true
+statement = """
+Table `orders(order_id, order_date, amount)`.
+
+For every calendar month that has at least one order, return `month, revenue, growth_pct`:
+
+- `month`: the first day of the month (a DATE)
+- `revenue`: total `amount` that month
+- `growth_pct`: `100 * (revenue - prev) / prev` rounded to 2 decimals, where `prev` is the revenue of the
+  **immediately preceding calendar month**. If that month had no orders (or this is the first month), `growth_pct` is NULL.
+
+Order by `month`.
+"""
+starter = "SELECT DATE_TRUNC('month', order_date) AS month, SUM(amount) AS revenue, NULL AS growth_pct\nFROM orders\nGROUP BY 1\nORDER BY 1\n"
+solution = """
+WITH m AS (
+  SELECT CAST(DATE_TRUNC('month', order_date) AS DATE) AS month, SUM(amount) AS revenue
+  FROM orders GROUP BY 1
+), l AS (
+  SELECT month, revenue,
+         LAG(month) OVER (ORDER BY month) AS prev_month,
+         LAG(revenue) OVER (ORDER BY month) AS prev
+  FROM m
+)
+SELECT month, revenue,
+       CASE WHEN prev_month = month - INTERVAL 1 MONTH
+            THEN ROUND(100.0 * (revenue - prev) / prev, 2) END AS growth_pct
+FROM l
+ORDER BY month
+"""
+hints = [
+  "First aggregate to one row per month with DATE_TRUNC('month', order_date).",
+  "LAG(revenue) OVER (ORDER BY month) gives the previous row, but the previous row is not always the previous month.",
+  "Also LAG the month, and only compute growth when prev_month = month - INTERVAL 1 MONTH.",
+]
+
+[[tests]]
+tables.orders = { columns = "order_id INT, order_date DATE, amount DOUBLE", rows = [
+  [1, "2024-01-05", 100.0], [2, "2024-01-20", 100.0], [3, "2024-02-11", 300.0], [4, "2024-03-01", 150.0],
+] }
+
+[[tests]]  # a skipped month (April) resets growth to NULL; year boundary
+tables.orders = { columns = "order_id INT, order_date DATE, amount DOUBLE", rows = [
+  [1, "2023-12-31", 80.0], [2, "2024-01-01", 60.0], [3, "2024-03-15", 90.0], [4, "2024-05-02", 45.0],
+  [5, "2024-06-30", 30.0], [6, "2024-06-01", 30.0], [7, "2024-02-29", 120.0],
+] }

@@ -1,0 +1,56 @@
+title = "Roll up nested order documents"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-nested"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+An upstream service exports orders as JSON documents: `orders(order_id, doc)`, where `doc` looks like
+
+```
+{"customer": "C1", "lines": [{"sku": "a", "qty": 2, "price": 3.5}, ...]}
+```
+
+Write `solve(spark, orders)` returning one row per customer: `customer, revenue, skus`.
+
+- `revenue` is the sum of `qty * price` over all the customer's lines, rounded to 2 decimals.
+  A line with a NULL `qty` or `price` contributes 0.
+- `skus` is the distinct non-NULL SKUs the customer ordered, sorted ascending.
+- A customer whose orders have no lines (empty or missing `lines`) still appears, with revenue `0.0`
+  and an empty `skus` array.
+- Skip documents that are not valid JSON or have no `customer`.
+"""
+hints = [
+  "Parse with `F.from_json` and a schema like `customer STRING, lines ARRAY<STRUCT<sku: STRING, qty: INT, price: DOUBLE>>`.",
+  "`F.explode` would drop customers with no lines. Use `F.explode_outer`.",
+  "Aggregate back with `F.collect_set` (it skips NULLs) wrapped in `F.array_sort`, and `F.coalesce` the line revenue to 0.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, orders):
+    return orders
+"""
+solution = """
+from pyspark.sql import functions as F
+
+SCHEMA = "customer STRING, lines ARRAY<STRUCT<sku: STRING, qty: INT, price: DOUBLE>>"
+
+def solve(spark, orders):
+    d = orders.select(F.from_json("doc", SCHEMA).alias("d")).filter(F.col("d.customer").isNotNull())
+    lines = d.select(F.col("d.customer").alias("customer"), F.explode_outer("d.lines").alias("l"))
+    line_rev = F.coalesce(F.col("l.qty") * F.col("l.price"), F.lit(0.0))
+    return lines.groupBy("customer").agg(
+        F.round(F.sum(line_rev), 2).alias("revenue"),
+        F.array_sort(F.collect_set("l.sku")).alias("skus"))
+"""
+
+[[tests]]
+tables.orders = { columns = "order_id INT, doc STRING", rows = '''[
+  [1, "{\"customer\":\"C1\",\"lines\":[{\"sku\":\"a\",\"qty\":2,\"price\":3.5},{\"sku\":\"b\",\"qty\":1,\"price\":10}]}"],
+  [2, "{\"customer\":\"C1\",\"lines\":[{\"sku\":\"a\",\"qty\":1,\"price\":3.5},{\"sku\":\"c\",\"qty\":null,\"price\":4}]}"],
+  [3, "{\"customer\":\"C2\",\"lines\":[]}"],
+  [4, "{\"customer\":\"C3\"}"],
+  [5, "{\"lines\":[{\"sku\":\"z\",\"qty\":1,\"price\":1}]}"],
+  [6, "{broken"],
+  [7, "{\"customer\":\"C2\",\"lines\":[{\"sku\":\"d\",\"qty\":3,\"price\":0.1},{\"sku\":null,\"qty\":1,\"price\":1}]}"]]''' }

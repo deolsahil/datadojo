@@ -1,0 +1,39 @@
+title = "Monthly billing dates without drift"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-dates"
+function = "solve"
+statement = """
+`subscriptions(sub_id, start_date, cycles)`: each subscription is billed monthly on the
+day-of-month it started, for `cycles` billing cycles.
+
+Write `solve(spark, subscriptions)` returning `sub_id, cycle, bill_date`, one row per cycle:
+
+- Cycle 1 bills on `start_date`; cycle *k* bills *k − 1* months after `start_date`.
+- When that day doesn't exist in the target month, bill on the month's last day instead.
+- Clamping must not drift: a subscription starting Jan 31 bills Jan 31, Feb 29 (2024), **Mar 31**, Apr 30.
+- `cycles` of 0 or NULL produces no rows.
+"""
+hints = [
+  "Generate cycle numbers with `F.explode(F.sequence(F.lit(1), \"cycles\"))`, but watch out: `sequence(1, 0)` counts *down*.",
+  "`F.add_months(date, n)` already clamps to month end. Always add from `start_date`, never from the previous bill date.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, subscriptions):
+    return subscriptions
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, subscriptions):
+    s = subscriptions.filter(F.col("cycles") >= 1)
+    s = s.select("sub_id", "start_date", F.explode(F.sequence(F.lit(1), "cycles")).alias("cycle"))
+    return s.select("sub_id", "cycle", F.add_months("start_date", F.col("cycle") - 1).alias("bill_date"))
+"""
+
+[[tests]]
+tables.subscriptions = { columns = "sub_id INT, start_date DATE, cycles INT", rows = '''[
+  [1, "2024-01-31", 4], [2, "2023-02-28", 2], [3, "2024-05-15", 0],
+  [4, "2024-11-30", 3], [5, "2024-03-01", null]]''' }

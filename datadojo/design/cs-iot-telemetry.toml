@@ -1,0 +1,164 @@
+title = "Design IoT Telemetry Ingestion for Millions of Devices"
+section = "ds-cases-realtime"
+order = 4
+kind = "case_study"
+difficulty = "hard"
+companies = ["Tesla", "Siemens", "Samsung SmartThings"]
+big_idea = "Terminate device connections at a scalable MQTT edge, buffer everything in a partitioned log, and keep raw data briefly while serving most queries from progressively coarser rollups in hot and cold tiers."
+summary = """Millions of devices (vehicles, meters, thermostats, industrial sensors) send telemetry every few seconds over flaky networks. Operators want live device dashboards and alerts (overheating, offline devices), engineers want months of history for fleet analytics, and data scientists want raw data for model training.
+
+The design has four layers: an **MQTT ingestion edge** (AWS IoT Core, EMQX, HiveMQ) that handles connections and authentication; **Kafka** as the durable buffer; **stream processing** (Flink) for validation, alerts and **downsampling**; and **tiered storage**: a time-series store (TimescaleDB, InfluxDB, ClickHouse, Druid) for recent data and rollups, plus Parquet/Iceberg on S3 for cheap long-term raw history. The interesting parts are device clocks and late uploads, hot partitions, and cost control through rollups and retention."""
+diagram = """flowchart LR
+  dev[Devices] -- MQTT over TLS --> edge[MQTT broker cluster]
+  edge --> k[("Kafka: telemetry")]
+  reg[("Device registry")] --> flink
+  k --> flink["Flink: validate, enrich, alert"]
+  flink --> alerts[Alerting service]
+  flink --> roll["Flink rollups: 1 min and 1 h"]
+  roll --> ts[("Time-series DB: hot")]
+  flink --> ts
+  k --> sink[S3 sink]
+  sink --> cold[("Iceberg on S3: raw archive")]
+  cold --> spark[Spark fleet analytics]
+  ts --> dash[Dashboards and APIs]"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- How many devices, how often do they report, and how many metrics per message?
+- Connectivity: always online, or do devices buffer offline and upload hours later?
+- Which queries: one device's last 24 h (support), fleet-wide aggregates (engineering), raw data for ML?
+- Retention per resolution: raw for how long? Rollups for how long?
+- Alerting latency: seconds (safety) or minutes?
+- Do we also send commands to devices (two-way), and are there firmware/schema versions in the field?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Authenticate and ingest telemetry from millions of devices; handle reconnect storms.
+- Per-device recent data (last 7 days at full resolution) for support dashboards.
+- Rollups (1-minute and 1-hour min/max/avg/count) for long-range charts.
+- Threshold and anomaly alerts per device within seconds; offline-device detection.
+- Raw archive queryable for analytics and ML.
+
+**Non-functional**
+- Sustain 500K messages/s average with 3x headroom; no data loss once acknowledged.
+- Devices may upload data up to 72 hours late; it must land in the right time buckets.
+- Multiple firmware versions with different schemas in the field at once.
+- Cost-efficient: raw data in cheap object storage, not in the hot database."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- Devices: **5M**, each sending one message every 10 s: 5M / 10 = **500K messages/s**.
+- Messages/day: 500K x 86,400 = **43.2B/day** (equivalently 5M devices x 8,640 messages each).
+- Message size ~200 B (about 10 metrics plus ids, binary or compressed): 500K x 200 B = **100 MB/s**, so 100 MB/s x 86,400 = **8.64 TB/day** raw, **~3.15 PB/year**.
+- Columnar compression of time series is very effective (delta and dictionary encoding); at ~10x, the raw archive is **~315 TB/year** in Parquet.
+- 1-minute rollups: one row per device per minute with min/max/avg for 10 metrics (~150 B): 5M x 1,440 x 150 B = **~1.08 TB/day**; keep 30 days hot = ~32 TB.
+- 1-hour rollups: 5M x 24 x 150 B = **18 GB/day**, **~6.6 TB/year**, cheap to keep for years.
+- Hot raw tier: 7 days x 8.64 TB = ~60 TB before compression; a time-series DB with compression brings it to roughly 10 TB or less."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Device edge**: devices connect with MQTT over TLS using per-device X.509 certificates. A clustered broker (managed AWS IoT Core / Azure IoT Hub, or EMQX/HiveMQ) holds millions of connections and publishes messages into Kafka through a bridge or rules engine. QoS 1 (at least once) between device and broker.
+2. **Kafka** topic `telemetry` with hundreds of partitions, keyed by device_id for per-device ordering. Retention 3-7 days for replay.
+3. **Flink processing**: decode (Protobuf/CBOR by firmware version), validate ranges, enrich from the device registry (model, customer, location) via broadcast state or async lookup, dedupe on (device_id, seq_no), and evaluate alert rules with keyed state. Offline detection uses timers: no message from a device in 5 minutes fires an alert.
+4. **Downsampling**: event-time tumbling windows of 1 minute and 1 hour per device, with allowed lateness for late uploads; outputs upserted into the time-series DB.
+5. **Hot store**: TimescaleDB/ClickHouse/Druid holding 7 days of raw data, 30 days of 1-minute rollups and years of hourly rollups, partitioned by time and ordered by device.
+6. **Cold store**: a Kafka Connect or Flink sink writes raw Parquet to Iceberg on S3, partitioned by date and a device bucket; Spark/Trino for fleet analytics and ML."""
+
+[[blocks]]
+heading = "Data model"
+body = """**MQTT topic** `devices/<device_id>/telemetry`; payload: device_id, seq_no, device_ts, firmware, metrics map.
+
+**Kafka `telemetry`** (key = device_id): device_id, seq_no, device_ts, received_ts, firmware, metrics.
+
+**Hot `telemetry_raw`** (grain: one row per device per reading): device_id, ts, metric columns; time-partitioned (daily chunks), ordered by (device_id, ts).
+
+**`telemetry_1m`** / **`telemetry_1h`** (grain: device x bucket): device_id, bucket_start, for each metric min, max, sum, count (store sum and count, not only avg, so rollups can be re-aggregated).
+
+**Cold `iceberg.telemetry_raw`** (grain: one row per reading): partitioned by `day(ts)` and `bucket(64, device_id)`.
+
+**`device_registry`** (grain: one row per device): device_id, model, firmware, customer_id, site, installed_at."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Late and out-of-order data.** Devices buffer readings while offline and upload them later, and device clocks drift. Use device event time with sequence numbers, correct obvious clock errors with the broker receive time, and give rollup windows allowed lateness (for example, 72 hours) with upserts: when a late reading arrives, re-emit the updated 1-minute and 1-hour rows for that device and bucket. Because rollups store sum/count/min/max, updates are cheap and correct. The raw archive is partitioned by event date, so late data lands in old partitions; table formats like Iceberg make those appends safe.
+
+**Reconnect storms and hot partitions.** After a regional outage, millions of devices reconnect at once and flush buffers. Devices should use randomized exponential backoff; brokers rate-limit connects; Kafka absorbs the burst while Flink catches up. Keying by device_id spreads load evenly, but a small number of very chatty devices (or a firmware bug) can make partitions hot; enforce per-device rate limits at the edge.
+
+**Schema evolution across firmware.** Old and new firmware coexist for years. Use Protobuf with a schema per firmware version, only add fields, never reuse field numbers, and normalize to a canonical metric model in Flink. Unknown fields are preserved in the raw archive.
+
+**Retention and downsampling economics.** Keeping raw data hot for a year would be ~3 PB uncompressed in an expensive database. Rollups cut storage by orders of magnitude (hourly is 1/360 of 10-second raw by row count) while answering most dashboard queries; raw stays in S3 for the rare deep dive."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **MQTT vs. HTTP**: MQTT keeps persistent, lightweight connections with QoS and is designed for constrained devices; HTTP is simpler but costly per request at this rate.
+- **Managed IoT hub vs. self-hosted broker**: managed services handle certificates and scaling but cost per message adds up at 43B messages/day; self-hosting EMQX/HiveMQ is cheaper at scale with more ops.
+- **Time-series DB choice**: TimescaleDB keeps SQL and Postgres tooling; ClickHouse excels at large aggregations; Druid at high-concurrency slicing; InfluxDB is purpose-built for metrics. Depends on query patterns and team skills.
+- **Rollups in stream vs. in the database** (continuous aggregates): stream rollups reduce database write load; database continuous aggregates are simpler to maintain.
+- **Edge aggregation on the device or gateway** reduces bandwidth but loses raw data; useful when connectivity is expensive (cellular)."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Broker connection failures or certificate expiry**: connection counts per region, auth failure rate; expiring-certificate reports.
+- **Kafka lag / Flink backpressure** after reconnect storms: lag in seconds and checkpoint duration.
+- **Devices silently stop reporting**: offline-device timers per device and fleet-level "reporting devices" counts per model and firmware.
+- **Bad readings** from faulty sensors: range validation with quarantine counts per firmware.
+- **Late data beyond allowed lateness**: count dropped late readings; if high, extend lateness or route them to a batch correction job.
+- **Storage growth**: hot DB size vs. retention policy; verify retention jobs actually run."""
+
+key_points = [
+  "5M devices every 10 s is 500K msg/s, 43.2B messages and about 8.6 TB per day at 200 B each.",
+  "An MQTT broker cluster terminates device connections; Kafka keyed by device_id is the durable buffer.",
+  "Downsample in event-time windows with allowed lateness, storing sum/count/min/max so late data can update rollups.",
+  "Tier storage: recent raw and rollups in a time-series DB, the full raw archive in Parquet/Iceberg on S3.",
+  "Plan for reconnect storms with device backoff, broker rate limits and Kafka headroom.",
+  "Use versioned, additive Protobuf schemas because many firmware versions coexist.",
+]
+common_mistakes = [
+  "Storing a year of raw 10-second data in the hot time-series database.",
+  "Storing only averages in rollups, which cannot be re-aggregated or corrected for late data.",
+  "Using broker receive time as event time, so offline uploads distort charts.",
+  "Ignoring reconnect storms; all devices retry at once and take down the edge.",
+  "Treating missing messages as zero values instead of gaps.",
+]
+interview_questions = [
+  "A region loses connectivity for 6 hours. Walk through what happens when it comes back.",
+  "How would you detect devices that have gone offline among 5M with minimal state?",
+  "How do you answer 'average temperature per site per hour over the last year' quickly?",
+  "Product wants to push a configuration command to 1M devices. How does the design change?",
+  "How would you handle a firmware bug that sends readings 100x more often?",
+]
+
+[[quiz]]
+q = "5M devices each send a message every 10 seconds. What is the ingest rate?"
+options = ["50K msg/s", "500K msg/s", "5M msg/s", "50M msg/s"]
+answer = 1
+why = "5M devices / 10 s = 500K messages per second."
+
+[[quiz]]
+q = "Why store sum and count in rollup tables rather than only the average?"
+options = [
+  "Averages use more storage",
+  "Sums and counts can be combined into coarser buckets and updated when late data arrives; averages cannot",
+  "Time-series databases cannot store averages",
+  "It is required for compression",
+]
+answer = 1
+why = "The average of averages is wrong when counts differ. Sum and count are additive, so hourly rollups can be built from minutes and corrected incrementally."
+
+[[quiz]]
+q = "At 500K messages/s and 200 B per message, roughly how much raw data per day?"
+options = ["~864 GB", "~8.64 TB", "~86.4 TB", "~864 TB"]
+answer = 1
+why = "500K x 200 B = 100 MB/s; 100 MB/s x 86,400 s = 8.64 TB/day."
+
+[[quiz]]
+q = "Which is the best defense against a reconnect storm after a regional outage?"
+options = [
+  "Fixed 1-second retry intervals on devices",
+  "Randomized exponential backoff on devices plus connection rate limits and Kafka headroom",
+  "Dropping all buffered data on reconnect",
+  "Using HTTP instead of MQTT",
+]
+answer = 1
+why = "Jittered backoff spreads reconnects over time, broker rate limits protect the edge, and Kafka buffers the flush of offline data while processing catches up."

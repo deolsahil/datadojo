@@ -1,0 +1,37 @@
+title = "Path depth and top section"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-nested"
+function = "solve"
+statement = """
+`pages(page_id, path)` holds URL paths from a web crawl, e.g. `/docs/spark/sql/`. Paths are messy:
+leading, trailing and doubled slashes all occur, and `path` can be empty or NULL.
+
+Write `solve(spark, pages)` returning `page_id, depth, section`:
+
+- A path's **segments** are the non-empty pieces between `/` characters.
+- `depth` is the number of segments (0 for `/`, `""` or NULL; never negative).
+- `section` is the first segment in lowercase, or NULL when there are no segments.
+"""
+hints = [
+  "`F.split(col, \"/\")` gives an array that includes empty strings; drop them with `F.filter(arr, lambda s: s != \"\")`.",
+  "`F.size` of a NULL array is -1, not 0. Coalesce the path to `\"\"` first.",
+  "Indexing an empty array with `arr[0]` returns NULL.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, pages):
+    return pages
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, pages):
+    segs = F.filter(F.split(F.coalesce("path", F.lit("")), "/"), lambda s: s != "")
+    return pages.select("page_id", F.size(segs).alias("depth"), F.lower(segs[0]).alias("section"))
+"""
+
+[[tests]]
+tables.pages = { columns = "page_id INT, path STRING", rows = '''[
+  [1, "/docs/spark/sql/"], [2, "/"], [3, null], [4, "Blog//2024/post-1"], [5, ""], [6, "/About"]]''' }

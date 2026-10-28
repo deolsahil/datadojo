@@ -1,0 +1,59 @@
+title = "Simulate an LRU cache"
+lang = "python"
+difficulty = "medium"
+pattern = "py-stack-queue"
+lists = ["python-de"]
+function = "lru"
+ordered = true
+source_url = "https://leetcode.com/problems/lru-cache/"
+statement = """
+`lru(capacity, ops)` simulates a least-recently-used cache holding at most `capacity` keys
+(`capacity >= 1`). `ops` is a list of operations, applied in order:
+
+- `["get", key]`: if present, the result is its value and the key becomes most recently used;
+  otherwise the result is `-1`.
+- `["put", key, value]`: set the value and make the key most recently used. If this adds a new
+  key and the cache is now over capacity, evict the least recently used key.
+
+Return the list of results of the `get` operations, in order.
+
+```
+lru(2, [["put", 1, 1], ["put", 2, 2], ["get", 1], ["put", 3, 3], ["get", 2]])
+→ [1, -1]   # get 1 refreshed key 1, so put 3 evicted key 2
+```
+"""
+hints = [
+    "You need key lookup plus an ordering by recency. `collections.OrderedDict` gives both.",
+    "`move_to_end(key)` marks a key as most recent; `popitem(last=False)` removes the least recent.",
+    "Updating an existing key with `put` also refreshes it, and must not evict anything.",
+]
+starter = "def lru(capacity, ops):\n    pass\n"
+solution = """
+from collections import OrderedDict
+
+def lru(capacity, ops):
+    cache, out = OrderedDict(), []
+    for op in ops:
+        key = op[1]
+        if op[0] == "get":
+            if key in cache:
+                cache.move_to_end(key)
+                out.append(cache[key])
+            else:
+                out.append(-1)
+        else:
+            cache[key] = op[2]
+            cache.move_to_end(key)
+            if len(cache) > capacity:
+                cache.popitem(last=False)
+    return out
+"""
+
+[[tests]]  # get refreshes recency
+args = [2, [["put", 1, 1], ["put", 2, 2], ["get", 1], ["put", 3, 3], ["get", 2], ["put", 4, 4], ["get", 1], ["get", 3], ["get", 4]]]
+[[tests]]  # updating an existing key refreshes it
+args = [2, [["put", "a", 1], ["put", "b", 2], ["put", "a", 10], ["put", "c", 3], ["get", "a"], ["get", "b"], ["get", "c"]]]
+[[tests]]
+args = [1, [["put", "x", 1], ["get", "x"], ["put", "y", 2], ["get", "x"], ["get", "y"]]]
+[[tests]]  # update at capacity must not evict
+args = [2, [["put", 1, 1], ["put", 2, 2], ["put", 2, 20], ["get", 1], ["get", 2]]]

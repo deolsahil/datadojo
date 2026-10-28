@@ -1,0 +1,50 @@
+title = "Reorder log lines"
+lang = "python"
+difficulty = "medium"
+pattern = "py-sorting"
+function = "reorder"
+ordered = true
+source_url = "https://leetcode.com/problems/reorder-data-in-log-files/"
+statement = """
+Each log line is `"<id> <word> <word> ..."`: an identifier, then at least one space-separated
+word. A **digit-log** has only digit words after the id; a **letter-log** has only lowercase
+letter words after the id.
+
+`reorder(logs)` returns the lines with:
+
+- all letter-logs first, sorted by their content (everything after the id); ties on content
+  broken by id;
+- then all digit-logs, in their **original** relative order.
+
+```
+["d1 8 1 5 1", "l1 art can", "d2 3 6", "l2 own kit dig", "l3 art zero"]
+→ ["l1 art can", "l3 art zero", "l2 own kit dig", "d1 8 1 5 1", "d2 3 6"]
+```
+"""
+hints = [
+    "`line.split(' ', 1)` separates the id from the content.",
+    "Partition into letter-logs and digit-logs by looking at the first character of the content.",
+    "Sort letter-logs with key `(content, id)`; Python's sort is stable, and digit-logs just keep their order.",
+]
+starter = "def reorder(logs):\n    pass\n"
+solution = """
+def reorder(logs):
+    letters, digits = [], []
+    for line in logs:
+        ident, rest = line.split(" ", 1)
+        if rest[0].isdigit():
+            digits.append(line)
+        else:
+            letters.append((rest, ident, line))
+    letters.sort()
+    return [line for _, _, line in letters] + digits
+"""
+
+[[tests]]
+args = [["d1 8 1 5 1", "l1 art can", "d2 3 6", "l2 own kit dig", "l3 art zero"]]
+[[tests]]  # same content: id breaks the tie
+args = [["a2 act car", "d1 3 4", "a1 act car"]]
+[[tests]]  # digit-logs keep input order (not sorted)
+args = [["z 9 9", "a 1 1", "m 5"]]
+[[tests]]
+args = [[]]

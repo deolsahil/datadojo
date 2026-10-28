@@ -1,0 +1,42 @@
+title = "Companies with Multilingual Users"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-aggregation"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `company_users(company_id, user_id, language)` lists the languages each user of each company speaks.
+
+Find companies that have **at least two users who speak both English and German**. Return `company_id` and
+`no_of_both_language_users` (how many such users the company has). Any row order.
+"""
+starter = "SELECT company_id, COUNT(DISTINCT user_id) AS no_of_both_language_users\nFROM company_users\nGROUP BY company_id\n"
+solution = """
+SELECT company_id, COUNT(*) AS no_of_both_language_users
+FROM (
+  SELECT company_id, user_id
+  FROM company_users
+  WHERE language IN ('English', 'German')
+  GROUP BY company_id, user_id
+  HAVING COUNT(DISTINCT language) = 2
+) t
+GROUP BY company_id
+HAVING COUNT(*) >= 2
+"""
+hints = [
+  "First find the users who speak both languages, then count them per company.",
+  "Keep only English/German rows, GROUP BY company_id, user_id, HAVING COUNT(DISTINCT language) = 2.",
+  "Then GROUP BY company_id HAVING COUNT(*) >= 2.",
+]
+
+[[tests]]
+tables.company_users = { columns = "company_id INT, user_id INT, language STRING", rows = [
+  [1, 1, "English"], [1, 1, "German"], [1, 2, "English"], [1, 3, "German"], [1, 3, "English"], [1, 4, "English"],
+  [2, 5, "English"], [2, 5, "German"], [2, 5, "Spanish"], [2, 6, "German"], [2, 6, "Spanish"], [2, 7, "English"],
+] }
+
+[[tests]]  # a duplicated English row must not stand in for German
+tables.company_users = { columns = "company_id INT, user_id INT, language STRING", rows = [
+  [1, 1, "English"], [1, 1, "English"], [1, 2, "English"], [1, 2, "German"],
+  [2, 3, "English"], [2, 3, "German"], [2, 4, "German"], [2, 4, "English"], [2, 5, "English"], [2, 5, "German"],
+] }

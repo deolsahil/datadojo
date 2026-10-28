@@ -1,0 +1,30 @@
+title = "Warmer than the day before"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-strings-dates"
+lists = ["sql-essentials"]
+source_url = "https://leetcode.com/problems/rising-temperature/"
+statement = """
+A weather station logs one reading per day, but the sensor sometimes misses days.
+
+Table `weather(id, reading_date, temp)` where `reading_date` is a DATE and is unique.
+
+Return the `id` of every reading whose `temp` is higher than the reading from the **previous calendar day**. If there is no reading for the previous calendar day, that row is not returned, even if an earlier reading was colder.
+"""
+starter = "SELECT id\nFROM weather\n"
+solution = """
+SELECT t.id FROM weather t
+JOIN weather y ON y.reading_date = t.reading_date - INTERVAL 1 DAY
+WHERE t.temp > y.temp
+"""
+hints = [
+  "Compare each row with the row dated exactly one day earlier, which may not exist.",
+  "A self-join on the date works: today.reading_date = yesterday.reading_date + 1 day.",
+  "Beware the \"previous row\" approach (LAG / ordering by id): with gaps, the previous row isn't yesterday.",
+]
+
+[[tests]]
+tables.weather = { columns = "id INT, reading_date DATE, temp INT", rows = [[1, "2024-01-01", 10], [2, "2024-01-02", 25], [3, "2024-01-03", 20], [4, "2024-01-04", 30]] }
+
+[[tests]]  # gap: Jan 5 has no Jan 4 reading; ids out of date order; month boundary
+tables.weather = { columns = "id INT, reading_date DATE, temp INT", rows = [[1, "2024-01-03", 5], [2, "2024-01-05", 9], [3, "2024-01-31", 1], [4, "2024-02-01", 2], [6, "2024-02-03", 8], [5, "2024-02-02", 9]] }

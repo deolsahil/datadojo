@@ -1,0 +1,32 @@
+title = "Days since the previous order"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-window-running"
+statement = """
+Table `orders(order_id, customer_id, order_date)`.
+
+For every order return `order_id, days_since_prev`: the number of days between this order and the same
+customer's previous order. A customer's orders are sequenced by `order_date`, then `order_id`, so a second
+order on the same day has `days_since_prev = 0`. A customer's first order has `days_since_prev` NULL.
+Any row order.
+"""
+starter = "SELECT order_id, 0 AS days_since_prev\nFROM orders\n"
+solution = """
+SELECT order_id,
+       order_date - LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date, order_id) AS days_since_prev
+FROM orders
+"""
+hints = [
+  "LAG(col) OVER (PARTITION BY ... ORDER BY ...) reads the previous row's value in the same partition.",
+  "Subtracting two DATEs gives a whole number of days; LAG returns NULL for the first row, which carries through.",
+]
+
+[[tests]]
+tables.orders = { columns = "order_id INT, customer_id INT, order_date DATE", rows = [
+  [1, 5, "2024-01-01"], [2, 5, "2024-01-11"], [3, 6, "2024-01-03"], [4, 5, "2024-02-01"],
+] }
+
+[[tests]]  # same-day orders, ids out of date order
+tables.orders = { columns = "order_id INT, customer_id INT, order_date DATE", rows = [
+  [30, 1, "2024-03-01"], [10, 1, "2024-03-05"], [20, 1, "2024-03-05"], [5, 2, "2024-02-28"], [6, 2, "2024-03-01"],
+] }

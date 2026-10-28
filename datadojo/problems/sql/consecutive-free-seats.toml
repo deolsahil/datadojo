@@ -1,0 +1,38 @@
+title = "Free seats next to another free seat"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-gaps-islands"
+lists = ["sql-essentials"]
+ordered = true
+statement = """
+Table `seats(seat_id, is_free)`. Seats sit in a single row, numbered by consecutive integers `seat_id`.
+
+A couple wants to sit together. Return the `seat_id` of every free seat that has **at least one free neighbour**
+(the seat directly before or after it). Order by `seat_id`.
+"""
+starter = "SELECT seat_id\nFROM seats\nWHERE is_free\nORDER BY seat_id\n"
+solution = """
+SELECT seat_id FROM (
+  SELECT seat_id, is_free,
+         LAG(is_free) OVER (ORDER BY seat_id) AS prev_free,
+         LEAD(is_free) OVER (ORDER BY seat_id) AS next_free
+  FROM seats
+) t
+WHERE is_free AND (prev_free OR next_free)
+ORDER BY seat_id
+"""
+hints = [
+  "LAG and LEAD let a row look at its neighbour's value.",
+  "Keep a seat when it is free and either LAG(is_free) or LEAD(is_free) is true. The first and last seats have a NULL neighbour; NULL OR TRUE is TRUE.",
+]
+source_url = "https://leetcode.com/problems/consecutive-available-seats/"
+
+[[tests]]
+tables.seats = { columns = "seat_id INT, is_free BOOLEAN", rows = [
+  [1, true], [2, false], [3, true], [4, true], [5, true],
+] }
+
+[[tests]]  # isolated free seats at both ends, a pair in the middle
+tables.seats = { columns = "seat_id INT, is_free BOOLEAN", rows = [
+  [1, true], [2, false], [3, false], [4, true], [5, true], [6, false], [7, true],
+] }

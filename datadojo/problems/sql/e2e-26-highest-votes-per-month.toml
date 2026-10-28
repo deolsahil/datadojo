@@ -1,0 +1,45 @@
+title = "Highest Votes Per Month"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-ranking"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `Elections(CandidateID, VoterID, VoteDate)`, one row per vote.
+
+For every month (year and month, formatted `'YYYY-MM'`), find the candidate with the most votes that month. If several
+candidates tie, pick the one with the **lowest** `CandidateID`.
+
+Return `Year_date, CandidateID, VoteCount`, one row per month. Any row order.
+"""
+starter = "SELECT *\nFROM Elections\n"
+solution = """
+WITH monthly AS (
+  SELECT strftime(VoteDate, '%Y-%m') AS Year_date, CandidateID, COUNT(*) AS VoteCount
+  FROM Elections
+  GROUP BY Year_date, CandidateID
+)
+SELECT Year_date, CandidateID, VoteCount
+FROM monthly
+QUALIFY ROW_NUMBER() OVER (PARTITION BY Year_date ORDER BY VoteCount DESC, CandidateID) = 1
+"""
+hints = [
+  "First count votes per (month, candidate). strftime(VoteDate, '%Y-%m') gives the month key.",
+  "Rank candidates within each month by VoteCount DESC, then CandidateID ASC as the tiebreaker.",
+  "Keep rank 1 with ROW_NUMBER (or QUALIFY in DuckDB).",
+]
+
+[[tests]]
+tables.Elections = { columns = "CandidateID INT, VoterID INT, VoteDate DATE", rows = [
+  [1, 101, "2023-01-10"], [2, 102, "2023-01-15"], [1, 103, "2023-01-20"], [2, 104, "2023-01-25"],
+  [3, 105, "2023-01-30"], [1, 106, "2023-02-05"], [2, 107, "2023-02-10"], [1, 108, "2023-02-15"],
+  [1, 109, "2023-02-20"], [3, 110, "2023-02-25"], [2, 111, "2023-03-01"], [1, 112, "2023-03-05"],
+  [2, 113, "2023-03-10"], [3, 114, "2023-03-15"], [3, 115, "2023-03-20"], [1, 116, "2023-03-25"],
+  [1, 117, "2023-03-30"],
+] }
+
+[[tests]]  # tie where the higher id comes first; same month in two different years
+tables.Elections = { columns = "CandidateID INT, VoterID INT, VoteDate DATE", rows = [
+  [5, 1, "2023-01-02"], [5, 2, "2023-01-03"], [2, 3, "2023-01-04"], [2, 4, "2023-01-05"],
+  [5, 5, "2024-01-02"], [5, 6, "2024-01-09"], [5, 7, "2024-01-10"], [2, 8, "2024-01-11"],
+] }

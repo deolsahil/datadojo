@@ -1,0 +1,41 @@
+title = "Largest rectangle in a histogram"
+lang = "python"
+difficulty = "hard"
+pattern = "py-stack-queue"
+function = "largest_rectangle"
+source_url = "https://leetcode.com/problems/largest-rectangle-in-histogram/"
+statement = """
+`largest_rectangle(heights)` gets the heights of adjacent bars, each 1 unit wide (non-negative
+integers). Return the area of the largest axis-aligned rectangle that fits under the bars.
+Empty input returns `0`.
+
+- `[2, 1, 5, 6, 2, 3]` → `10` (height 5 across the bars `5, 6`)
+"""
+hints = [
+    "For each bar, the best rectangle using its full height stretches to the nearest shorter bar on each side.",
+    "A stack of indices with increasing heights finds both boundaries: when a shorter bar arrives, everything taller on the stack ends here.",
+    "Append a sentinel height `0` at the end so every bar gets popped and measured.",
+]
+starter = "def largest_rectangle(heights):\n    pass\n"
+solution = """
+def largest_rectangle(heights):
+    st, best = [], 0
+    for i, h in enumerate(heights + [0]):
+        while st and heights[st[-1]] >= h:
+            top = st.pop()
+            left = st[-1] + 1 if st else 0
+            best = max(best, heights[top] * (i - left))
+        st.append(i)
+    return best
+"""
+
+[[tests]]
+args = [[2, 1, 5, 6, 2, 3]]
+[[tests]]
+args = [[2, 4]]
+[[tests]]
+args = [[6, 2, 5, 4, 5, 1, 6]]
+[[tests]]  # equal heights span the whole width
+args = [[1, 1, 1, 1]]
+[[tests]]
+args = [[]]

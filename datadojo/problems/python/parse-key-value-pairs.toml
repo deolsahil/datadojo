@@ -1,0 +1,68 @@
+title = "Parse key=value pairs with quotes"
+lang = "python"
+difficulty = "medium"
+pattern = "py-parsing"
+lists = ["python-de"]
+function = "parse_kv"
+statement = '''
+`parse_kv(line)` parses a logfmt-style line like
+
+```
+level=info user=alice msg="login failed" detail="said \"hi\""
+```
+
+into a dict of strings: `{"level": "info", "user": "alice", "msg": "login failed", "detail": "said \"hi\""}`.
+
+- Pairs are separated by whitespace. A key runs up to the first `=`.
+- An unquoted value runs to the next whitespace and may be empty (`k=` → `""`).
+- A value starting with `"` is quoted: it may contain spaces, and a backslash escapes the next character (`\"` → `"`, `\\` → `\`). A closing quote is always followed by whitespace or end of line. An **unterminated** quote takes the rest of the line.
+- Tokens with no `=` are ignored, as are pairs with an empty key (`=x`).
+- If a key repeats, the last value wins.
+'''
+starter = "def parse_kv(line):\n    pass\n"
+solution = '''
+def parse_kv(line):
+    out, i, n = {}, 0, len(line)
+    while i < n:
+        while i < n and line[i].isspace():
+            i += 1
+        start = i
+        while i < n and not line[i].isspace() and line[i] != "=":
+            i += 1
+        key = line[start:i]
+        if i >= n or line[i] != "=":
+            continue
+        i += 1
+        if i < n and line[i] == '"':
+            i += 1
+            buf = []
+            while i < n and line[i] != '"':
+                if line[i] == "\\" and i + 1 < n:
+                    i += 1
+                buf.append(line[i])
+                i += 1
+            i += 1
+            val = "".join(buf)
+        else:
+            start = i
+            while i < n and not line[i].isspace():
+                i += 1
+            val = line[start:i]
+        if key:
+            out[key] = val
+    return out
+'''
+hints = [
+    "`split()` breaks quoted values apart. Walk the string with an index instead.",
+    "Read a key up to `=`, then branch: quoted value or plain value.",
+    "Inside quotes, on a backslash skip ahead one character and take it literally.",
+]
+
+[[tests]]
+args = ['level=info user=alice msg="login failed" detail="said \"hi\""']
+[[tests]]
+args = ['a=1 bare  b= c="x\\y" a=2 =nope']
+[[tests]]
+args = ['path=/tmp note="unterminated value here']
+[[tests]]
+args = ['   ']

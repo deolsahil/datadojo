@@ -1,0 +1,39 @@
+title = "Two Consecutive Empty Seats"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-gaps-islands"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `bms(seat_no, is_empty)` for a single row of seats numbered by consecutive integers; `is_empty` is `'Y'` or `'N'`.
+
+A couple wants a block of **exactly two** adjacent empty seats (a block of three or more empty seats does not count).
+Return `seat_no`: the first seat of every block of exactly two consecutive empty seats. Any row order.
+"""
+starter = "SELECT seat_no\nFROM bms\nWHERE is_empty = 'Y'\n"
+solution = """
+WITH e AS (
+  SELECT seat_no, seat_no - ROW_NUMBER() OVER (ORDER BY seat_no) AS grp
+  FROM bms
+  WHERE is_empty = 'Y'
+)
+SELECT MIN(seat_no) AS seat_no
+FROM e
+GROUP BY grp
+HAVING COUNT(*) = 2
+"""
+hints = [
+  "Among empty seats only, seat_no - ROW_NUMBER() is the same for every seat in an unbroken run.",
+  "Group by that value to get one row per run of empty seats.",
+  "Keep runs with COUNT(*) = 2 and return MIN(seat_no).",
+]
+
+[[tests]]
+tables.bms = { columns = "seat_no INT, is_empty STRING", rows = [
+  [1, "Y"], [2, "Y"], [3, "N"], [4, "Y"], [5, "Y"], [6, "N"], [7, "Y"], [8, "Y"], [9, "Y"],
+] }
+
+[[tests]]  # a run of four, a lone seat, and a pair at the very end
+tables.bms = { columns = "seat_no INT, is_empty STRING", rows = [
+  [1, "N"], [2, "Y"], [3, "N"], [4, "Y"], [5, "Y"], [6, "Y"], [7, "Y"], [8, "N"], [9, "Y"], [10, "Y"],
+] }

@@ -1,0 +1,49 @@
+title = "Build SCD Type 2 history from snapshots"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-dedup-scd"
+lists = ["sql-essentials"]
+statement = """
+Table `tier_snapshots(customer_id, snapshot_date, tier)`. A nightly job (which sometimes skips nights) records
+each customer's loyalty tier. `tier` is never NULL.
+
+Turn the snapshots into a Slowly Changing Dimension Type 2 table with one row per **version**: a version begins
+on a snapshot whose tier differs from the customer's previous snapshot (or on their first snapshot), and lasts
+until the next version begins. Return `customer_id, tier, valid_from, valid_to` where:
+
+- `valid_from` is the snapshot date the version began
+- `valid_to` is the day **before** the next version's `valid_from`, or NULL for the current version
+
+A customer who goes gold, then silver, then gold again has three versions. Any row order.
+"""
+starter = "SELECT customer_id, tier, MIN(snapshot_date) AS valid_from, MAX(snapshot_date) AS valid_to\nFROM tier_snapshots\nGROUP BY customer_id, tier\n"
+solution = """
+WITH c AS (
+  SELECT customer_id, snapshot_date, tier,
+         LAG(tier) OVER (PARTITION BY customer_id ORDER BY snapshot_date) AS prev_tier
+  FROM tier_snapshots
+), v AS (
+  SELECT customer_id, tier, snapshot_date AS valid_from
+  FROM c WHERE prev_tier IS NULL OR prev_tier <> tier
+)
+SELECT customer_id, tier, valid_from,
+       LEAD(valid_from) OVER (PARTITION BY customer_id ORDER BY valid_from) - 1 AS valid_to
+FROM v
+"""
+hints = [
+  "GROUP BY customer_id, tier merges gold-silver-gold into one gold row. Find where the tier changes instead.",
+  "LAG(tier) per customer marks change points: keep snapshots where the previous tier is NULL or different.",
+  "Those rows are the versions. LEAD(valid_from) - 1 over the versions gives valid_to; the last version's LEAD is NULL.",
+]
+
+[[tests]]
+tables.tier_snapshots = { columns = "customer_id INT, snapshot_date DATE, tier STRING", rows = [
+  [1, "2024-01-01", "bronze"], [1, "2024-01-02", "bronze"], [1, "2024-01-03", "silver"], [1, "2024-01-04", "silver"],
+  [2, "2024-01-01", "gold"], [2, "2024-01-02", "gold"],
+] }
+
+[[tests]]  # A -> B -> A gives three versions; skipped nights; unsorted input
+tables.tier_snapshots = { columns = "customer_id INT, snapshot_date DATE, tier STRING", rows = [
+  [5, "2024-03-10", "gold"], [5, "2024-03-01", "gold"], [5, "2024-03-05", "silver"], [5, "2024-03-03", "gold"],
+  [5, "2024-03-08", "silver"], [6, "2024-02-29", "bronze"],
+] }

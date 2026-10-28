@@ -1,0 +1,31 @@
+title = "Merge booking intervals"
+lang = "python"
+difficulty = "medium"
+pattern = "py-sorting"
+lists = ["python-de"]
+function = "merge"
+ordered = true
+statement = """
+`merge(intervals)` gets a list of `[start, end]` pairs (unsorted, may overlap or touch).
+Return the merged intervals sorted by start. Touching intervals (`[1,3]`, `[3,5]`) merge.
+"""
+starter = "def merge(intervals):\n    pass\n"
+solution = """
+def merge(intervals):
+    out = []
+    for s, e in sorted(intervals):
+        if out and s <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out
+"""
+
+[[tests]]
+args = [[[1, 3], [8, 10], [2, 6], [15, 18]]]
+[[tests]]
+args = [[[1, 3], [3, 5]]]
+[[tests]]
+args = [[[5, 6], [1, 10]]]
+[[tests]]
+args = [[]]

@@ -1,0 +1,55 @@
+title = "User Purchase Platform Analysis"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-pivot"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `spending(user_id, spend_date, platform, amount_spent)` records purchases; `platform` is `'mobile'` or
+`'desktop'`, with at most one row per user, date and platform.
+
+On each date, classify every user who spent that day as **mobile only**, **desktop only**, or **both**. For each
+`spend_date` in the table return:
+
+`spend_date, mobile_only_users, desktop_only_users, both_users, total_amount_mobile, total_amount_desktop,
+total_amount_both`
+
+where the `total_amount_*` columns are the amounts spent that day by the users in each category (0 when the
+category is empty). Any row order.
+"""
+starter = "SELECT spend_date, 0 AS mobile_only_users, 0 AS desktop_only_users, 0 AS both_users,\n       0 AS total_amount_mobile, 0 AS total_amount_desktop, 0 AS total_amount_both\nFROM spending\nGROUP BY spend_date\n"
+solution = """
+WITH u AS (
+  SELECT user_id, spend_date,
+         CASE WHEN COUNT(DISTINCT platform) = 2 THEN 'both' ELSE MAX(platform) END AS cat,
+         SUM(amount_spent) AS amt
+  FROM spending
+  GROUP BY user_id, spend_date
+)
+SELECT spend_date,
+       COUNT(*) FILTER (WHERE cat = 'mobile') AS mobile_only_users,
+       COUNT(*) FILTER (WHERE cat = 'desktop') AS desktop_only_users,
+       COUNT(*) FILTER (WHERE cat = 'both') AS both_users,
+       COALESCE(SUM(amt) FILTER (WHERE cat = 'mobile'), 0) AS total_amount_mobile,
+       COALESCE(SUM(amt) FILTER (WHERE cat = 'desktop'), 0) AS total_amount_desktop,
+       COALESCE(SUM(amt) FILTER (WHERE cat = 'both'), 0) AS total_amount_both
+FROM u
+GROUP BY spend_date
+"""
+hints = [
+  "First collapse to one row per (user, date): which platforms did they use and how much did they spend?",
+  "COUNT(DISTINCT platform) = 2 means both; otherwise the single platform is the category.",
+  "Then pivot per date with conditional aggregation (SUM(CASE ...) or FILTER), returning 0 for empty categories.",
+]
+
+[[tests]]
+tables.spending = { columns = "user_id INT, spend_date DATE, platform STRING, amount_spent INT", rows = [
+  [1, "2019-07-01", "mobile", 100], [1, "2019-07-01", "desktop", 100], [2, "2019-07-01", "mobile", 100],
+  [2, "2019-07-02", "mobile", 100], [3, "2019-07-01", "desktop", 100], [3, "2019-07-02", "desktop", 100],
+] }
+
+[[tests]]  # uneven amounts; a date with only 'both' users; a zero-amount mobile purchase is still mobile
+tables.spending = { columns = "user_id INT, spend_date DATE, platform STRING, amount_spent INT", rows = [
+  [1, "2020-01-01", "mobile", 30], [1, "2020-01-01", "desktop", 70], [2, "2020-01-01", "mobile", 0],
+  [3, "2020-01-01", "mobile", 15], [4, "2020-01-02", "desktop", 5], [4, "2020-01-02", "mobile", 6],
+] }

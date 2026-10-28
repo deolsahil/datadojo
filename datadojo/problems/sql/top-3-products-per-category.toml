@@ -1,0 +1,48 @@
+title = "Top 3 products per category by revenue"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-ranking"
+lists = ["sql-essentials"]
+statement = """
+Tables `products(product_id, category, name)` and `sales(sale_id, product_id, quantity, unit_price)`.
+
+A product's revenue is the sum of `quantity * unit_price` over its sales. Products with no sales are ignored.
+
+For each category, return the products whose revenue rank is **3 or better**, as `category, name, revenue, rnk`.
+Use standard competition ranking: products with equal revenue share a rank, and the next rank skips
+(revenues 50, 50, 40 are ranked 1, 1, 3). So a category may return more than three products,
+or fewer. Any row order.
+"""
+starter = "SELECT p.category, p.name, s.quantity * s.unit_price AS revenue, 1 AS rnk\nFROM products p\nJOIN sales s ON s.product_id = p.product_id\n"
+solution = """
+WITH rev AS (
+  SELECT p.category, p.name, SUM(s.quantity * s.unit_price) AS revenue
+  FROM products p JOIN sales s ON s.product_id = p.product_id
+  GROUP BY p.product_id, p.category, p.name
+)
+SELECT category, name, revenue, rnk FROM (
+  SELECT *, RANK() OVER (PARTITION BY category ORDER BY revenue DESC) AS rnk FROM rev
+) t WHERE rnk <= 3
+"""
+hints = [
+  "Aggregate revenue per product first, in a CTE, then rank the aggregated rows.",
+  "The tie rule (1, 1, 3) is exactly RANK(), not DENSE_RANK() or ROW_NUMBER().",
+  "RANK() OVER (PARTITION BY category ORDER BY revenue DESC) and filter rnk <= 3 in an outer query.",
+]
+
+[[tests]]
+tables.products = { columns = "product_id INT, category STRING, name STRING", rows = [
+  [1, "audio", "earbuds"], [2, "audio", "speaker"], [3, "audio", "headphones"], [4, "audio", "cable"],
+  [5, "video", "tv"],
+] }
+tables.sales = { columns = "sale_id INT, product_id INT, quantity INT, unit_price DOUBLE", rows = [
+  [1, 1, 2, 50.0], [2, 1, 1, 50.0], [3, 2, 1, 120.0], [4, 3, 1, 200.0], [5, 4, 10, 5.0], [6, 5, 1, 900.0],
+] }
+
+[[tests]]  # ties: ranks 1,1,3,3,5 -> four products survive; RANK must skip
+tables.products = { columns = "product_id INT, category STRING, name STRING", rows = [
+  [1, "toys", "a"], [2, "toys", "b"], [3, "toys", "c"], [4, "toys", "d"], [5, "toys", "e"], [6, "toys", "f"],
+] }
+tables.sales = { columns = "sale_id INT, product_id INT, quantity INT, unit_price DOUBLE", rows = [
+  [1, 1, 1, 100.0], [2, 2, 2, 50.0], [3, 3, 1, 80.0], [4, 4, 4, 20.0], [5, 5, 1, 30.0], [6, 6, 1, 30.0],
+] }

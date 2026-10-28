@@ -1,0 +1,33 @@
+title = "7-day rolling average"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-windows"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`daily(sensor, day, reading)` — some days are missing.
+
+Return `sensor, day, avg_7d`: the average reading for that sensor over the 7 **calendar** days
+ending on `day` (that day and the 6 before), rounded to 2 decimals. Missing days are not zeros —
+they just aren't in the window.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, daily):
+    return daily
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, daily):
+    d = daily.withColumn("n", F.datediff("day", F.lit("1970-01-01")))
+    w = Window.partitionBy("sensor").orderBy("n").rangeBetween(-6, 0)
+    return d.select("sensor", "day", F.round(F.avg("reading").over(w), 2).alias("avg_7d"))
+"""
+
+[[tests]]
+tables.daily = { columns = "sensor STRING, day DATE, reading DOUBLE", rows = [
+  ["a", "2024-01-01", 10.0], ["a", "2024-01-02", 20.0], ["a", "2024-01-08", 30.0],
+  ["a", "2024-01-09", 40.0], ["b", "2024-01-01", 5.0],
+] }

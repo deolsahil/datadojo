@@ -1,0 +1,102 @@
+title = "Back-of-the-Envelope Estimation"
+section = "ds-foundations"
+order = 4
+kind = "lesson"
+big_idea = "A few memorized numbers and one or two lines of arithmetic turn a vague prompt into concrete throughput, storage, and compute requirements that justify every box in your design."
+summary = """Estimation is not about being right to the byte. It is about knowing whether you are dealing with megabytes or petabytes, hundreds or millions of events per second, because those differences change the architecture.
+
+Work in a fixed order: **users → events per day → events per second (average, then peak) → bytes per event → daily volume → storage over retention → compute to process it**. Round aggressively (a day is ~100K seconds, roughly 86,400) and say your assumptions out loud so the interviewer can correct them.
+
+Then use the result. "~60K events/s at peak with 1 KB events is ~60 MB/s, which a Kafka topic with a few dozen partitions handles easily" is a design decision, not just a number."""
+diagram = """flowchart LR
+  A[Users] --> B[Events per day]
+  B --> C["Events per second (avg and peak)"]
+  C --> D[Bytes per second]
+  D --> E[Daily volume]
+  E --> F[Storage over retention]
+  E --> G[Compute and cluster size]"""
+
+[[blocks]]
+heading = "Numbers worth memorizing"
+body = """- 1 day ≈ 86,400 s, round to **~10^5 s**. 1 million per day ≈ 12 per second. 1 billion per day ≈ 12K per second.
+- Peak is often **2-5×** average for consumer traffic; more for spiky events like sales or sports.
+- Typical event sizes: clickstream JSON 0.5-2 KB; a CDC row change a few hundred bytes to a few KB; a log line ~200-500 bytes.
+- Columnar formats (Parquet/ORC) with compression: often **3-10×** smaller than raw JSON. Use 5× if unsure, and say so.
+- Rough throughput ballparks (vary widely by hardware and config): one Kafka partition commonly handles a few to tens of MB/s; a single Spark executor core processes on the order of tens of MB/s for simple transforms.
+- Replication: Kafka and HDFS commonly use **3×**; cloud object storage hides replication from you in the price."""
+
+[[blocks]]
+heading = "Worked example: clickstream"
+body = """Assume 50M DAU, 40 events per user per day, 1 KB per event, 1 year raw retention.
+
+- Events/day: 50M × 40 = **2B/day**.
+- Average: 2B / 10^5 s ≈ **20K events/s**; peak at 3× ≈ **60K events/s**.
+- Ingest bandwidth at peak: 60K × 1 KB ≈ **60 MB/s**.
+- Raw daily volume: 2B × 1 KB = **2 TB/day**; in Parquet at ~5× compression ≈ **400 GB/day**.
+- One year in the lake: 400 GB × 365 ≈ **~150 TB** compressed.
+- Kafka with 7-day retention and 3× replication on raw: 2 TB × 7 × 3 ≈ **42 TB** of broker disk (before any compression on the topic).
+- Partitions: if one partition comfortably takes ~5 MB/s, 60 MB/s needs ~12; choose 24-48 to allow consumer parallelism and growth."""
+
+[[blocks]]
+heading = "Compute and query estimates"
+body = """For batch: if a daily job must scan 400 GB and each core processes ~50 MB/s, that is 8,000 core-seconds, about 2.2 core-hours: 50 cores finish in under 3 minutes, ignoring shuffles. Shuffles and skew typically add a multiple, so say "a few times that".
+
+For queries: a dashboard scanning one month of a 150 TB table is ~12 TB per query without pruning. With date partitioning and selecting 3 of 50 columns, it might scan well under 1 TB. This is how estimation motivates partitioning and columnar formats, and on pay-per-scanned-byte warehouses it directly drives cost."""
+
+[[blocks]]
+heading = "In an interview"
+body = """- State assumptions first; invite correction.
+- Keep units visible (events/s, MB/s, TB/day).
+- Round to one significant figure; nobody needs 23,148 events/s.
+- Always compute **peak**, not just average; systems fail at peak.
+- Finish each estimate with a sentence about what it means for the design."""
+
+key_points = [
+  "Chain users to events/day to events/s to bytes/s to daily volume to retention storage.",
+  "A day is about 10^5 seconds; 1B events/day is about 12K events/s.",
+  "Always size for peak, typically 2-5× average for consumer traffic.",
+  "Columnar compression of 3-10× versus raw JSON is a reasonable assumption; say which you use.",
+  "Every estimate should end with a design consequence: partitions, cluster size, storage tier, or cost.",
+]
+common_mistakes = [
+  "Computing only average throughput and sizing the system for it.",
+  "Forgetting replication factor when sizing Kafka or HDFS disks.",
+  "Giving precise-looking numbers without stating assumptions.",
+  "Producing numbers and then never using them to justify a design choice.",
+  "Mixing up bits and bytes, or GB and GiB, in bandwidth math (state which you mean).",
+]
+interview_questions = [
+  "Estimate the storage needed for one year of clickstream data for a 100M-user app.",
+  "How many Kafka partitions would you provision for 200 MB/s of peak ingest, and why?",
+  "How long would a daily Spark job take to process 2 TB of compressed Parquet with 100 cores?",
+  "How would partitioning change the cost of a dashboard query on a pay-per-scan warehouse?",
+]
+
+[[quiz]]
+q = "Roughly how many events per second is 1 billion events per day on average?"
+options = ["About 1,200", "About 12,000", "About 120,000", "About 1.2 million"]
+answer = 1
+why = "1B divided by about 86,400 seconds is about 11,600, so roughly 12K events/s."
+
+[[quiz]]
+q = "10B events/day at 500 bytes each, stored in Parquet at about 5× compression. Roughly how much compressed data per day?"
+options = ["100 GB", "1 TB", "5 TB", "25 TB"]
+answer = 1
+why = "10B × 500 B = 5 TB raw per day; divided by 5 is about 1 TB/day compressed."
+
+[[quiz]]
+q = "Raw Kafka ingest is 1 TB/day, retention is 7 days, replication factor is 3. Roughly how much broker disk is needed?"
+options = ["7 TB", "10 TB", "21 TB", "3 TB"]
+answer = 2
+why = "1 TB × 7 days × 3 replicas = 21 TB, before topic compression and headroom."
+
+[[quiz]]
+q = "Why should you estimate peak throughput, not only average?"
+options = [
+  "Interviewers prefer larger numbers",
+  "Systems are provisioned and fail at peak load, which is often several times the average",
+  "Average throughput cannot be calculated",
+  "Peak determines storage cost",
+]
+answer = 1
+why = "Partitions, consumers, and clusters must absorb peak traffic or lag builds up; storage is driven by total volume instead."

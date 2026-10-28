@@ -1,0 +1,48 @@
+title = "Last Price Carried to Next Month"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-strings-dates"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `sku(sku_id, price_date, price)` records price changes.
+
+Report each SKU's price on the **first day of the month**:
+
+- every price change that happened on the 1st of a month is reported as is;
+- for every month in which a SKU has price changes, its last price that month is carried to the 1st of the next month,
+  unless that SKU already has a price change dated on that 1st (the explicit change wins).
+
+Months are calendar months (year and month). Return `sku_id, price_date, price`. Any row order.
+"""
+starter = "SELECT sku_id, price_date, price\nFROM sku\nWHERE day(price_date) = 1\n"
+solution = """
+WITH firsts AS (
+  SELECT sku_id, price_date, price FROM sku WHERE day(price_date) = 1
+),
+carried AS (
+  SELECT sku_id, CAST(date_trunc('month', price_date) + INTERVAL 1 MONTH AS DATE) AS price_date, price
+  FROM sku
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY sku_id, date_trunc('month', price_date) ORDER BY price_date DESC) = 1
+)
+SELECT * FROM firsts
+UNION ALL
+SELECT * FROM carried c
+WHERE NOT EXISTS (SELECT 1 FROM firsts f WHERE f.sku_id = c.sku_id AND f.price_date = c.price_date)
+"""
+hints = [
+  "Find each SKU's last price per month: ROW_NUMBER over (sku_id, date_trunc('month', price_date)) ordered by price_date DESC.",
+  "Move that row to the 1st of the next month: date_trunc('month', price_date) + INTERVAL 1 MONTH.",
+  "Partition by SKU and by year+month, not just MONTH(price_date). Then UNION ALL with the changes already on the 1st, skipping carried rows that collide with one.",
+]
+
+[[tests]]
+tables.sku = { columns = "sku_id INT, price_date DATE, price INT", rows = [
+  [1, "2023-01-01", 10], [1, "2023-02-15", 15], [1, "2023-03-03", 18], [1, "2023-03-27", 15], [1, "2023-04-06", 20],
+] }
+
+[[tests]]  # two SKUs, same month in two years, year rollover, a change on the 1st that beats the carried price
+tables.sku = { columns = "sku_id INT, price_date DATE, price INT", rows = [
+  [1, "2022-03-10", 5], [1, "2022-12-20", 7], [1, "2023-03-05", 9],
+  [2, "2023-02-10", 30], [2, "2023-02-25", 40], [2, "2023-03-01", 50],
+] }

@@ -1,0 +1,49 @@
+title = "Students Missing Consecutive Classes"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-gaps-islands"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `Attendance(StudentID, ClassDate, IsPresent)`, one row per student per class held; `IsPresent` is `1` or `0`.
+Classes are not held every calendar day, so "consecutive" means consecutive **classes** for that student (by
+`ClassDate`), not consecutive calendar dates.
+
+Find every streak of **more than 3** consecutive missed classes. Return `StudentID, start_date, end_date, missed_days`
+(first and last missed class of the streak and its length). A student can have several qualifying streaks. Any row order.
+"""
+starter = "SELECT StudentID, MIN(ClassDate) AS start_date, MAX(ClassDate) AS end_date, COUNT(*) AS missed_days\nFROM Attendance\nWHERE IsPresent = 0\nGROUP BY StudentID\n"
+solution = """
+WITH t AS (
+  SELECT *,
+         ROW_NUMBER() OVER (PARTITION BY StudentID ORDER BY ClassDate)
+       - ROW_NUMBER() OVER (PARTITION BY StudentID, IsPresent ORDER BY ClassDate) AS grp
+  FROM Attendance
+)
+SELECT StudentID, MIN(ClassDate) AS start_date, MAX(ClassDate) AS end_date, COUNT(*) AS missed_days
+FROM t
+WHERE IsPresent = 0
+GROUP BY StudentID, grp
+HAVING COUNT(*) > 3
+"""
+hints = [
+  "Gaps and islands: a row number over all of a student's classes minus a row number over only rows with the same IsPresent value is constant within a run.",
+  "Compute both row numbers before filtering to absences. Filter first and the two numbers are always equal, merging separate runs.",
+  "Group the absences by (StudentID, that difference) and keep groups with COUNT(*) > 3.",
+]
+
+[[tests]]
+tables.Attendance = { columns = "StudentID INT, ClassDate DATE, IsPresent INT", rows = [
+  [1, "2023-05-01", 1], [1, "2023-05-02", 0], [1, "2023-05-03", 0], [1, "2023-05-04", 0], [1, "2023-05-05", 0],
+  [2, "2023-05-01", 1], [2, "2023-05-02", 1], [2, "2023-05-03", 1], [2, "2023-05-04", 0], [2, "2023-05-05", 0],
+  [3, "2023-05-01", 0], [3, "2023-05-02", 0], [3, "2023-05-03", 1], [3, "2023-05-04", 0], [3, "2023-05-05", 0],
+  [4, "2023-05-01", 0], [4, "2023-05-02", 0], [4, "2023-05-03", 0], [4, "2023-05-04", 0], [4, "2023-05-05", 1],
+] }
+
+[[tests]]  # exactly 3 is not enough; two qualifying streaks; classes on non-consecutive calendar days
+tables.Attendance = { columns = "StudentID INT, ClassDate DATE, IsPresent INT", rows = [
+  [5, "2023-05-01", 0], [5, "2023-05-02", 0], [5, "2023-05-03", 0], [5, "2023-05-04", 1],
+  [6, "2023-05-01", 0], [6, "2023-05-02", 0], [6, "2023-05-03", 0], [6, "2023-05-04", 0], [6, "2023-05-05", 1],
+  [6, "2023-05-08", 0], [6, "2023-05-09", 0], [6, "2023-05-10", 0], [6, "2023-05-11", 0], [6, "2023-05-12", 0],
+  [7, "2023-05-01", 0], [7, "2023-05-03", 0], [7, "2023-05-05", 0], [7, "2023-05-08", 0], [7, "2023-05-10", 1],
+] }

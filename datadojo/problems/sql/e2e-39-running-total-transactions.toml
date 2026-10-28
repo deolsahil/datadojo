@@ -1,0 +1,38 @@
+title = "Running Total of Transactions"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-window-running"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `transactions(transaction_id, type, amount, transaction_date)`. `type` is `'deposit'` or `'withdrawal'`;
+`amount` is always positive. Transactions on the same date have no recorded order.
+
+Return every transaction as `transaction_id, type, amount, transaction_date, rolling_total`, where `rolling_total` is
+the account balance (deposits minus withdrawals) at the **end of that transaction's date**, counting every transaction
+up to and including that date. Transactions on the same date therefore share a balance. Any row order.
+"""
+starter = "SELECT *, amount AS rolling_total\nFROM transactions\n"
+solution = """
+SELECT *,
+       SUM(CASE WHEN type = 'deposit' THEN amount ELSE -amount END) OVER (ORDER BY transaction_date) AS rolling_total
+FROM transactions
+"""
+hints = [
+  "Turn each row into a signed amount: +amount for deposits, -amount for withdrawals.",
+  "A running SUM(...) OVER (ORDER BY transaction_date) gives the cumulative balance.",
+  "The default frame (RANGE) includes all rows with the same date, which is what 'end of day' means. ROWS would give same-day rows arbitrary partial totals.",
+]
+
+[[tests]]
+tables.transactions = { columns = "transaction_id INT, type STRING, amount INT, transaction_date DATE", rows = [
+  [53151, "deposit", 178, "2022-07-08"], [29776, "withdrawal", 25, "2022-07-08"],
+  [16461, "withdrawal", 45, "2022-07-08"], [19153, "deposit", 65, "2022-07-10"],
+  [77134, "deposit", 32, "2022-07-10"],
+] }
+
+[[tests]]  # balance goes negative, rows stored out of date order
+tables.transactions = { columns = "transaction_id INT, type STRING, amount INT, transaction_date DATE", rows = [
+  [3, "deposit", 100, "2022-07-03"], [1, "withdrawal", 40, "2022-07-01"],
+  [2, "deposit", 10, "2022-07-02"], [4, "withdrawal", 5, "2022-07-03"],
+] }

@@ -1,0 +1,101 @@
+title = "Backfills and Reprocessing"
+section = "ds-reliability"
+order = 4
+kind = "lesson"
+big_idea = "A backfill is just running your normal idempotent pipeline over past intervals, so the real work is making that safe: bounded parallelism, isolated outputs, validation, and an atomic switch."
+summary = """You backfill when a new table needs history, a bug corrupted past outputs, business logic changed, or a source re-delivered data. If the pipeline is idempotent and parameterized by the logical date, a backfill is simply "run the job for every date from March to June".
+
+The hard parts are operational. Running 120 days at once can overwhelm the source, the cluster, or the warehouse budget. Rewriting a production table in place means consumers see a mix of old and new logic for hours. Downstream tables built from the corrected data must be backfilled too, in dependency order.
+
+The usual playbook: build into a **shadow table**, run in controlled parallel chunks, **validate** against the old output, then swap atomically and backfill downstream."""
+diagram = """flowchart LR
+  raw[("Raw or bronze history")] --> job["Same job, new version"]
+  job --> shadow[("Shadow table")]
+  shadow --> val["Validate vs current"]
+  val -- pass --> swap["Atomic swap or overwrite"]
+  swap --> down[Backfill downstream in order]"""
+
+[[blocks]]
+heading = "Prerequisites"
+body = """- **Raw data retained:** you can only reprocess what you kept. Retention of bronze/raw and Kafka (or tiered storage) defines how far back you can go.
+- **Idempotent, date-parameterized jobs:** each run overwrites its own slice.
+- **Versioned code:** know which version produced which output.
+- **Lineage:** know which downstream tables depend on what you are changing, so you can backfill them too.
+- **Dimension history:** if facts join to SCD Type 2 dimensions, the backfill joins to the versions valid at event time, not today's values."""
+
+[[blocks]]
+heading = "Running it safely"
+body = """- **Chunk and limit parallelism:** Airflow backfills (the CLI changed in Airflow 3) or clearing past runs with `max_active_runs` capped; Dagster partition backfills. Start with one day, check results, then scale to, say, 5-10 concurrent days.
+- **Order matters for stateful logic:** cumulative metrics, sessionization across midnight, or SCD builds must run in chronological order, not in parallel.
+- **Protect sources:** read from the lake, not the production database. If you must hit an API, respect rate limits.
+- **Isolate compute:** a separate cluster or warehouse so production SLAs are not hurt.
+- **Isolate output:** write to `table_v2` or a branch (Iceberg branches, Delta clones, or Snowflake zero-copy clones can help), then swap.
+- **Cost estimate first:** 120 days × current daily cost; an unexpected five-figure warehouse bill is a real failure mode."""
+
+[[blocks]]
+heading = "Validation and cutover"
+body = """Compare old and new outputs before cutover: row counts per partition, sums of key measures, distinct key counts, and a sample of row-level diffs. Differences should be **explained** by the intended change. Then switch atomically: rename/swap tables, repoint a view, or overwrite partitions in a single table-format commit. Announce the restatement to consumers, because dashboards will change historically.
+
+For streaming (Kappa) reprocessing: start a new job version reading from the earliest retained offset into a new output, let it catch up to real time, then point consumers at it and stop the old job."""
+
+[[blocks]]
+heading = "Failure modes"
+body = """- Backfilling a table but not its downstream aggregates, so they disagree.
+- Using `current_date()` in a job, so every backfilled day computes today.
+- Running a sessionization job in parallel across days and splitting sessions at boundaries incorrectly.
+- In-place overwrite while consumers read, exposing a mix of old and new logic.
+- Kafka retention shorter than the reprocessing window."""
+
+key_points = [
+  "A backfill is the normal idempotent job run over past logical dates; if that is unsafe, fix the job first.",
+  "Raw data retention determines how far back you can reprocess.",
+  "Write to a shadow table or branch, validate, then swap atomically.",
+  "Control parallelism, isolate compute, and estimate cost before launching.",
+  "Backfill downstream dependencies in lineage order and tell consumers about restated history.",
+]
+common_mistakes = [
+  "Running hundreds of backfill days at once and starving production jobs.",
+  "Re-extracting from the production database instead of the retained raw layer.",
+  "Backfilling stateful or cumulative logic in parallel when it must run in order.",
+  "Overwriting production in place without validation.",
+  "Forgetting downstream tables built on the corrected data.",
+]
+interview_questions = [
+  "A bug inflated revenue for the last 90 days. Walk me through fixing it.",
+  "How do you backfill a new column added to a large fact table?",
+  "How do you reprocess history in a streaming pipeline?",
+  "How do you prevent a backfill from hurting production workloads?",
+]
+
+[[quiz]]
+q = "What determines how far back you can reprocess data?"
+options = [
+  "The size of your cluster",
+  "How long raw input data is retained",
+  "The orchestrator's version",
+  "The number of downstream tables",
+]
+answer = 1
+why = "Reprocessing replays inputs. If raw data or log retention has expired, the history cannot be recomputed from it."
+
+[[quiz]]
+q = "Which backfill must run sequentially rather than in parallel by day?"
+options = [
+  "Daily page-view counts per page",
+  "A running cumulative balance that depends on the previous day's output",
+  "Filtering bad records per day",
+  "Converting JSON to Parquet per day",
+]
+answer = 1
+why = "Each day's output depends on the previous day, so order matters. Independent daily partitions can run in parallel."
+
+[[quiz]]
+q = "What is the safest way to cut over a corrected 90-day history?"
+options = [
+  "Overwrite partitions one by one while users query",
+  "Build into a shadow table, validate against the current table, then swap atomically",
+  "Delete the old table first, then rebuild",
+  "Ask users to stop querying for a week",
+]
+answer = 1
+why = "Shadow builds keep production stable and let you verify that differences match the intended change before an atomic switch."

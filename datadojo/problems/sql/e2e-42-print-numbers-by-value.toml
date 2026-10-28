@@ -1,0 +1,33 @@
+title = "Print Numbers by Their Value"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-recursive"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `zepto(input)` of integers (values may repeat; `0` or negative values may appear).
+
+Return a single column `input` in which each row's value appears as many times as the value itself (`3` appears three
+times, `0` and negatives not at all). A value present in two rows is repeated for each row. Order by `input`.
+"""
+ordered = true
+starter = "SELECT input\nFROM zepto\nORDER BY input\n"
+solution = """
+WITH RECURSIVE c AS (
+  SELECT input, 1 AS k FROM zepto WHERE input >= 1
+  UNION ALL
+  SELECT input, k + 1 FROM c WHERE k < input
+)
+SELECT input FROM c ORDER BY input
+"""
+hints = [
+  "A recursive CTE can emit one row per counter value 1, 2, ..., input.",
+  "Anchor: (input, 1) for values >= 1; recursive step: (input, k + 1) while k < input.",
+  "Without the >= 1 filter, 0 would still be printed once. (DuckDB shortcut: unnest(range(input)).)",
+]
+
+[[tests]]
+tables.zepto = { columns = "input INT", rows = [[1], [2], [3], [4], [5]] }
+
+[[tests]]  # duplicates, zero, a negative value
+tables.zepto = { columns = "input INT", rows = [[3], [0], [3], [1], [-2]] }

@@ -1,0 +1,37 @@
+title = "Bucket orders by size"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-basics"
+lists = ["sql-essentials"]
+statement = """
+Finance wants each order labelled by size for a dashboard.
+
+Table `orders(id, amount)`.
+
+Return `id` and `bucket`, where `bucket` is:
+
+- `small` when `amount` is below 50
+- `medium` when `amount` is from 50 up to and including 199
+- `large` when `amount` is 200 or more
+
+Every order appears exactly once.
+"""
+starter = "SELECT id, amount\nFROM orders\n"
+solution = """
+SELECT id,
+       CASE WHEN amount < 50 THEN 'small'
+            WHEN amount < 200 THEN 'medium'
+            ELSE 'large' END AS bucket
+FROM orders
+"""
+hints = [
+  "This is a job for CASE WHEN ... THEN ... ELSE ... END.",
+  "CASE checks branches in order and stops at the first match, so later branches can assume earlier ones failed.",
+  "Watch the boundaries: 50 is medium, 199 is medium, 200 is large.",
+]
+
+[[tests]]
+tables.orders = { columns = "id INT, amount INT", rows = [[1, 10], [2, 75], [3, 500]] }
+
+[[tests]]  # exact boundaries
+tables.orders = { columns = "id INT, amount INT", rows = [[1, 49], [2, 50], [3, 199], [4, 200], [5, 0]] }

@@ -1,0 +1,34 @@
+title = "2024 order count for every customer"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-joins"
+lists = ["sql-essentials"]
+statement = """
+Marketing wants to target customers by how often they ordered in 2024, including customers who did not order at all that year.
+
+Tables `customers(id, name)` and `orders(id, customer_id, order_date)` where `order_date` is a DATE.
+
+Return `name` and `orders_2024`, the number of that customer's orders dated in calendar year 2024. **Every** customer appears; customers with no 2024 orders show 0.
+"""
+starter = "SELECT c.name\nFROM customers c\n"
+solution = """
+SELECT c.name, COUNT(o.id) AS orders_2024
+FROM customers c
+LEFT JOIN orders o
+  ON o.customer_id = c.id
+ AND o.order_date >= DATE '2024-01-01' AND o.order_date < DATE '2025-01-01'
+GROUP BY c.id, c.name
+"""
+hints = [
+  "Start from customers and LEFT JOIN orders so nobody is dropped.",
+  "A filter on the right-hand table in WHERE throws away the NULL rows the LEFT JOIN created, turning it back into an inner join.",
+  "Move the date condition into the ON clause, and count o.id (not *) so unmatched customers get 0.",
+]
+
+[[tests]]
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Ann"], [2, "Bo"], [3, "Cy"]] }
+tables.orders = { columns = "id INT, customer_id INT, order_date DATE", rows = [[10, 1, "2024-02-01"], [11, 1, "2024-07-15"], [12, 2, "2023-12-31"], [13, 1, "2025-01-01"]] }
+
+[[tests]]  # customer with only old orders, plus one with none
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Dee"], [2, "Eli"]] }
+tables.orders = { columns = "id INT, customer_id INT, order_date DATE", rows = [[1, 1, "2022-05-05"]] }

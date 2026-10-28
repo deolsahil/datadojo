@@ -1,0 +1,43 @@
+title = "Task Result Periods"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-gaps-islands"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+A scheduled job runs once a day. Table `tasks(date_value, state)` has one row per calendar day (no missing days);
+`state` is `'success'` or `'fail'`.
+
+Collapse the history into periods of consecutive days with the same state. Return `start_date, end_date, result`
+(the state), **ordered by `start_date`**.
+"""
+starter = "SELECT date_value AS start_date, date_value AS end_date, state AS result\nFROM tasks\nORDER BY start_date\n"
+solution = """
+WITH t AS (
+  SELECT date_value, state,
+         date_value - CAST(ROW_NUMBER() OVER (PARTITION BY state ORDER BY date_value) AS INT) AS grp
+  FROM tasks
+)
+SELECT MIN(date_value) AS start_date, MAX(date_value) AS end_date, state AS result
+FROM t
+GROUP BY state, grp
+ORDER BY start_date
+"""
+hints = [
+  "Grouping by state alone merges separate runs. You need a key that is constant within one run.",
+  "Number the days within each state with ROW_NUMBER() OVER (PARTITION BY state ORDER BY date_value).",
+  "date_value minus that row number is the same date for every day of one run. GROUP BY state and that value.",
+]
+ordered = true
+
+[[tests]]
+tables.tasks = { columns = "date_value DATE, state STRING", rows = [
+  ["2022-01-01", "success"], ["2022-01-02", "success"], ["2022-01-03", "fail"], ["2022-01-04", "success"],
+  ["2022-01-05", "fail"], ["2022-01-06", "fail"], ["2022-01-07", "fail"], ["2022-01-08", "success"],
+] }
+
+[[tests]]  # a single long run crossing a month end, then alternating days
+tables.tasks = { columns = "date_value DATE, state STRING", rows = [
+  ["2022-02-27", "fail"], ["2022-02-28", "fail"], ["2022-03-01", "fail"], ["2022-03-02", "success"],
+  ["2022-03-03", "fail"], ["2022-03-04", "success"], ["2022-03-05", "success"],
+] }

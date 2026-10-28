@@ -1,0 +1,43 @@
+title = "Total Visits and Most Visited Floor"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-ranking"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+An office logs every entry in `entries(name, address, email, floor, resources)`: one row per visit.
+
+For each person (`name`) return `name, total_visits, max_visited_floor`: the number of visits, and the floor
+they visited most often. If several floors tie for most visits, return the lowest floor number. Any row order.
+"""
+starter = "SELECT name, COUNT(*) AS total_visits, MAX(floor) AS max_visited_floor\nFROM entries\nGROUP BY name\n"
+solution = """
+WITH f AS (
+  SELECT name, floor, COUNT(*) AS visits,
+         SUM(COUNT(*)) OVER (PARTITION BY name) AS total_visits,
+         ROW_NUMBER() OVER (PARTITION BY name ORDER BY COUNT(*) DESC, floor) AS rn
+  FROM entries
+  GROUP BY name, floor
+)
+SELECT name, CAST(total_visits AS BIGINT) AS total_visits, floor AS max_visited_floor
+FROM f
+WHERE rn = 1
+"""
+hints = [
+  "Count visits per (name, floor) first.",
+  "Rank floors within each name by that count, descending, with floor ascending as the tie-break.",
+  "The total per person is the sum of the per-floor counts: SUM(COUNT(*)) OVER (PARTITION BY name).",
+]
+
+[[tests]]
+tables.entries = { columns = "name STRING, address STRING, email STRING, floor INT, resources STRING", rows = [
+  ["A", "Bangalore", "A@gmail.com", 1, "CPU"], ["A", "Bangalore", "A1@gmail.com", 1, "CPU"],
+  ["A", "Bangalore", "A2@gmail.com", 2, "DESKTOP"], ["B", "Bangalore", "B@gmail.com", 2, "DESKTOP"],
+  ["B", "Bangalore", "B1@gmail.com", 2, "DESKTOP"], ["B", "Bangalore", "B2@gmail.com", 1, "MONITOR"],
+] }
+
+[[tests]]  # a tie between floors 3 and 5 (lowest wins); the max floor number is not the most visited
+tables.entries = { columns = "name STRING, address STRING, email STRING, floor INT, resources STRING", rows = [
+  ["C", "Pune", "c1", 5, "CPU"], ["C", "Pune", "c2", 3, "CPU"], ["C", "Pune", "c3", 5, "CPU"], ["C", "Pune", "c4", 3, "CPU"],
+  ["D", "Pune", "d1", 9, "CPU"], ["D", "Pune", "d2", 2, "CPU"], ["D", "Pune", "d3", 2, "CPU"],
+] }

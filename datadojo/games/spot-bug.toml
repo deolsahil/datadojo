@@ -1,0 +1,480 @@
+# Spot the Bug: each item has exactly one buggy line (bug_line is 1-based within `code`).
+
+# ---------------------------------------------------------------- sql
+
+[[items]]
+lang = "sql"
+goal = "List customers who have never placed an order (orders.customer_id is NULL for guest checkouts)."
+code = '''
+SELECT c.id, c.name
+FROM customers c
+WHERE c.id NOT IN (SELECT customer_id FROM orders);
+'''
+bug_line = 3
+why = "One NULL in the subquery makes `id NOT IN (...)` UNKNOWN for every customer, so the query silently returns zero rows. NOT EXISTS ignores the NULL."
+fix = "WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id);"
+
+[[items]]
+lang = "sql"
+goal = "Return customers whose total spend across all orders is over 100."
+code = '''
+SELECT customer_id, SUM(amount) AS total
+FROM orders
+WHERE amount > 100 GROUP BY customer_id;
+'''
+bug_line = 3
+why = "WHERE filters individual rows before grouping, so it keeps customers with one big order and drops those with many small ones. A condition on the aggregate belongs in HAVING."
+fix = "GROUP BY customer_id HAVING SUM(amount) > 100;"
+
+[[items]]
+lang = "sql"
+goal = "Show every customer with their count of orders since 2024, including customers with zero."
+code = '''
+SELECT c.id, COUNT(o.id) AS orders_since_2024
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+WHERE o.order_date >= DATE '2024-01-01'
+GROUP BY c.id;
+'''
+bug_line = 4
+why = "Customers with no matching order have NULL order_date, and WHERE drops them, turning the LEFT JOIN into an inner join. Put the date condition in the ON clause."
+fix = "  AND o.order_date >= DATE '2024-01-01'"
+
+[[items]]
+lang = "sql"
+goal = "Count orders per customer, showing 0 for customers who never ordered."
+code = '''
+SELECT c.id, COUNT(*) AS n_orders
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+GROUP BY c.id;
+'''
+bug_line = 1
+why = "A customer with no orders still produces one joined row (with NULL order columns), and COUNT(*) counts it as 1. COUNT(o.id) skips the NULL."
+fix = "SELECT c.id, COUNT(o.id) AS n_orders"
+
+[[items]]
+lang = "sql"
+goal = "Return every employee earning the second-highest distinct salary in their department."
+code = '''
+SELECT dept, name, salary
+FROM (
+  SELECT *, RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS r
+  FROM employees
+) t
+WHERE r = 2;
+'''
+bug_line = 3
+why = "RANK leaves gaps after ties: two people tied at the top are both 1 and the next salary is 3, so r = 2 finds nobody. DENSE_RANK numbers distinct salaries 1, 2, 3."
+fix = "  SELECT *, DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS r"
+
+[[items]]
+lang = "sql"
+goal = "Count events that happened in March 2024 (ts is a TIMESTAMP)."
+code = '''
+SELECT COUNT(*) AS march_events
+FROM events
+WHERE ts BETWEEN '2024-03-01' AND '2024-03-31';
+'''
+bug_line = 3
+why = "'2024-03-31' becomes midnight at the start of the 31st, so anything later on March 31 is missed. A half-open range up to April 1 covers the whole day."
+fix = "WHERE ts >= '2024-03-01' AND ts < '2024-04-01';"
+
+[[items]]
+lang = "sql"
+goal = "Compute each customer's running total of order amounts by date."
+code = '''
+SELECT customer_id, order_date, amount,
+       SUM(amount) OVER (ORDER BY order_date) AS running_total
+FROM orders;
+'''
+bug_line = 2
+why = "Without PARTITION BY the window covers the whole table, so this is a running total across all customers mixed together."
+fix = "       SUM(amount) OVER (PARTITION BY customer_id ORDER BY order_date) AS running_total"
+
+[[items]]
+lang = "sql"
+goal = "List orders that are not cancelled; a NULL status means still pending and should be included."
+code = '''
+SELECT id, status
+FROM orders
+WHERE status <> 'cancelled';
+'''
+bug_line = 3
+why = "NULL <> 'cancelled' is UNKNOWN, not TRUE, so the pending rows quietly disappear. IS DISTINCT FROM treats NULL as a real value."
+fix = "WHERE status IS DISTINCT FROM 'cancelled';"
+
+[[items]]
+lang = "sql"
+goal = "Keep only the most recent snapshot row for each user."
+code = '''
+SELECT *
+FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY updated_at) AS rn
+  FROM user_snapshots
+) t
+WHERE rn = 1;
+'''
+bug_line = 3
+why = "Window ORDER BY is ascending by default, so rn = 1 is the oldest snapshot instead of the newest."
+fix = "  SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY updated_at DESC) AS rn"
+
+[[items]]
+lang = "sql"
+goal = "Count all clicks across Monday's and Tuesday's tables; repeated (user, page) pairs are real clicks."
+code = '''
+SELECT COUNT(*) AS clicks FROM (
+  SELECT user_id, page FROM clicks_mon
+  UNION
+  SELECT user_id, page FROM clicks_tue
+) t;
+'''
+bug_line = 3
+why = "UNION removes duplicate rows, which here are real repeat clicks, so the count comes out low. It also adds an extra dedup step. UNION ALL keeps every row."
+fix = "  UNION ALL"
+
+[[items]]
+lang = "sql"
+goal = "Return paid orders from either the US or Canada."
+code = '''
+SELECT id, status, country
+FROM orders
+WHERE status = 'paid' AND country = 'US' OR country = 'CA';
+'''
+bug_line = 3
+why = "AND binds tighter than OR, so this means (paid AND US) OR CA, which lets unpaid Canadian orders through."
+fix = "WHERE status = 'paid' AND (country = 'US' OR country = 'CA');"
+
+[[items]]
+lang = "sql"
+goal = "Report revenue per calendar month for orders spanning 2023 and 2024."
+code = '''
+SELECT EXTRACT(month FROM order_date) AS month, SUM(amount) AS revenue
+FROM orders
+GROUP BY 1
+ORDER BY 1;
+'''
+bug_line = 1
+why = "EXTRACT(month) returns only 1 to 12, so January 2023 and January 2024 are added together. DATE_TRUNC keeps the year."
+fix = "SELECT DATE_TRUNC('month', order_date) AS month, SUM(amount) AS revenue"
+
+# ---------------------------------------------------------------- python
+
+[[items]]
+lang = "python"
+goal = "Append a record to a batch, starting a fresh batch when none is passed."
+code = '''
+def add_record(rec, batch=[]):
+    batch.append(rec)
+    return batch
+
+first = add_record({"id": 1})
+second = add_record({"id": 2})  # expect [{"id": 2}]
+'''
+bug_line = 2
+why = "The default list is created once, when the function is defined. Appending to it in place makes every call without a batch share one growing list, so `second` also contains id 1."
+fix = "    batch = batch + [rec]"
+
+[[items]]
+lang = "python"
+goal = "Sum the integers from 1 to n inclusive."
+code = '''
+def total_up_to(n):
+    total = 0
+    for i in range(1, n):
+        total += i
+    return total
+'''
+bug_line = 3
+why = "range stops before its end value, so n itself is never added: total_up_to(4) gives 6 instead of 10."
+fix = "    for i in range(1, n + 1):"
+
+[[items]]
+lang = "python"
+goal = "Remove keys whose value is None from a row dict, in place."
+code = '''
+def drop_nulls(row):
+    for k in row:
+        if row[k] is None:
+            del row[k]
+    return row
+'''
+bug_line = 2
+why = "Deleting from a dict while you iterate over it raises 'RuntimeError: dictionary changed size during iteration'. Iterate over a snapshot of the keys instead."
+fix = "    for k in list(row):"
+
+[[items]]
+lang = "python"
+goal = "Return True when a record's normalized status is 'active'."
+code = '''
+def is_active(rec):
+    status = rec["status"].strip().lower()
+    return status is "active"
+'''
+bug_line = 3
+why = "`is` checks whether two names point to the same object, not whether the values are equal. A string built at runtime, like the result of .lower(), is a different object from the literal, so 'ACTIVE ' comes back False."
+fix = "    return status == \"active\""
+
+[[items]]
+lang = "python"
+goal = "Return the mean of the amt field across rows."
+code = '''
+def mean(rows):
+    vals = (r["amt"] for r in rows)
+    total = sum(vals)
+    count = sum(1 for _ in vals)
+    return total / count
+'''
+bug_line = 2
+why = "A generator can only be iterated once. sum() uses it up, so count is 0 and the function raises ZeroDivisionError. Materialize it as a list."
+fix = "    vals = [r[\"amt\"] for r in rows]"
+
+[[items]]
+lang = "python"
+goal = "Return the names of the 3 products with the highest revenue, highest first."
+code = '''
+def top3(sales):  # sales: {product_name: revenue}
+    ranked = sorted(sales.items(), key=lambda kv: kv[0], reverse=True)
+    return [name for name, _ in ranked[:3]]
+'''
+bug_line = 2
+why = "kv[0] is the product name, so this sorts names in reverse alphabetical order. The sort key should be the revenue, kv[1]."
+fix = "    ranked = sorted(sales.items(), key=lambda kv: kv[1], reverse=True)"
+
+[[items]]
+lang = "python"
+goal = "Build functions that multiply their input by 1, 2 and 3 respectively."
+code = '''
+multipliers = []
+for k in (1, 2, 3):
+    multipliers.append(lambda x: x * k)
+print([f(10) for f in multipliers])  # want [10, 20, 30]
+'''
+bug_line = 3
+why = "A closure looks up k when it is called, not when it is created. By then the loop has finished and k is 3, so this prints [30, 30, 30]. A default argument captures the value at creation time."
+fix = "    multipliers.append(lambda x, k=k: x * k)"
+
+[[items]]
+lang = "python"
+goal = "Return the three most recent events from an oldest-first list."
+code = '''
+def last_three(events):
+    """events is ordered oldest first."""
+    return events[-3:-1]
+'''
+bug_line = 3
+why = "The slice end is exclusive, so -1 leaves out the newest event and only two items come back. Omit the end to go to the end of the list."
+fix = "    return events[-3:]"
+
+[[items]]
+lang = "python"
+goal = "Keep rows whose ISO date string (YYYY-MM-DD) is after 2024-01-15."
+code = '''
+from datetime import datetime
+def after_cutoff(rows):
+    cutoff = datetime(2024, 1, 15)
+    return [r for r in rows if datetime.strptime(r["date"], "%Y-%d-%m") > cutoff]
+'''
+bug_line = 4
+why = "The format has day and month swapped, so '2024-02-01' is read as January 2 and dropped, and any day above 12 raises ValueError."
+fix = "    return [r for r in rows if datetime.strptime(r[\"date\"], \"%Y-%m-%d\") > cutoff]"
+
+[[items]]
+lang = "python"
+goal = "Give each job its own config: the defaults plus one extra tag, leaving DEFAULTS unchanged."
+code = '''
+import copy
+DEFAULTS = {"retries": 3, "tags": ["etl"]}
+def job_config(extra_tag):
+    cfg = DEFAULTS.copy()
+    cfg["tags"].append(extra_tag)
+    return cfg
+'''
+bug_line = 4
+why = "dict.copy() is shallow, so cfg['tags'] is the same list object as DEFAULTS['tags']. Every call adds its tag to the shared defaults."
+fix = "    cfg = copy.deepcopy(DEFAULTS)"
+
+[[items]]
+lang = "python"
+goal = "Return the current Unix epoch time in seconds."
+code = '''
+from datetime import datetime, timezone
+def epoch_now():
+    """Seconds since 1970-01-01T00:00:00Z."""
+    return datetime.utcnow().timestamp()
+'''
+bug_line = 4
+why = "utcnow() returns a naive datetime, and .timestamp() treats naive values as local time. On any machine not set to UTC the result is off by the UTC offset. Use an aware datetime."
+fix = "    return datetime.now(timezone.utc).timestamp()"
+
+[[items]]
+lang = "python"
+goal = "Create a 3x3 grid of zeros and set only the top-left cell to 1."
+code = '''
+grid = [[0] * 3] * 3
+grid[0][0] = 1
+print(grid)  # want [[1, 0, 0], [0, 0, 0], [0, 0, 0]]
+'''
+bug_line = 1
+why = "Multiplying the outer list copies the reference three times, so all three rows are the same list and the first column of every row becomes 1."
+fix = "grid = [[0] * 3 for _ in range(3)]"
+
+# ---------------------------------------------------------------- pyspark
+
+[[items]]
+lang = "pyspark"
+goal = "Select the ids of users who have no email."
+code = '''
+from pyspark.sql import functions as F
+users = spark.read.parquet("s3://lake/users/")
+missing = users.filter(F.col("email") == None).select("id")
+'''
+bug_line = 3
+why = "`== None` builds the SQL `email = NULL`, which is never true, so the result is always empty. Use isNull()."
+fix = "missing = users.filter(F.col(\"email\").isNull()).select(\"id\")"
+
+[[items]]
+lang = "pyspark"
+goal = "Count distinct users in a roughly 2-billion-row events table."
+code = '''
+events = spark.read.parquet("s3://lake/events/")  # ~2 billion rows
+n_users = len(set(r.user_id for r in events.select("user_id").collect()))
+print(f"distinct users: {n_users}")
+'''
+bug_line = 2
+why = "collect() pulls every row to the driver, which runs out of memory or takes hours. Let the cluster deduplicate and count, so only one number comes back."
+fix = "n_users = events.select(\"user_id\").distinct().count()"
+
+[[items]]
+lang = "pyspark"
+goal = "Cast about 300 metric columns to double before writing."
+code = '''
+from pyspark.sql import functions as F
+metric_cols = [c for c in df.columns if c.startswith("m_")]  # ~300 columns
+for c in metric_cols: df = df.withColumn(c, F.col(c).cast("double"))
+df.write.parquet("s3://lake/metrics/")
+'''
+bug_line = 3
+why = "Each withColumn adds another projection to the plan, and 300 of them make analysis and optimization very slow, sometimes failing with a StackOverflowError. Do all the casts in one withColumns or select."
+fix = "df = df.withColumns({c: F.col(c).cast(\"double\") for c in metric_cols})"
+
+[[items]]
+lang = "pyspark"
+goal = "Keep every order and attach the customer name where the customer is known."
+code = '''
+orders = spark.table("orders")
+customers = spark.table("customers").select("customer_id", "name")
+enriched = orders.join(customers, on="customer_id", how="inner")
+'''
+bug_line = 3
+why = "An inner join drops orders whose customer_id is missing from customers, or NULL. A left join keeps every order."
+fix = "enriched = orders.join(customers, on=\"customer_id\", how=\"left\")"
+
+[[items]]
+lang = "pyspark"
+goal = "Total amount per customer, then keep customers whose total is over 100."
+code = '''
+from pyspark.sql import functions as F
+totals = orders.groupBy("customer_id").agg(F.sum("amount"))
+big = totals.filter(F.col("total") > 100)
+'''
+bug_line = 2
+why = "Without an alias the aggregate column is named 'sum(amount)', so the next line fails with an AnalysisException because 'total' does not exist."
+fix = "totals = orders.groupBy(\"customer_id\").agg(F.sum(\"amount\").alias(\"total\"))"
+
+[[items]]
+lang = "pyspark"
+goal = "Label every order 'big' (amount >= 100) or 'small'; the label must never be null."
+code = '''
+from pyspark.sql import functions as F
+orders = spark.table("orders")
+orders = orders.withColumn("size", F.when(F.col("amount") >= 100, "big"))
+'''
+bug_line = 3
+why = "F.when without .otherwise() returns NULL for rows that fail every condition, so small orders get a null label."
+fix = "orders = orders.withColumn(\"size\", F.when(F.col(\"amount\") >= 100, \"big\").otherwise(\"small\"))"
+
+[[items]]
+lang = "pyspark"
+goal = "Keep paid orders from the US."
+code = '''
+from pyspark.sql import functions as F
+orders = spark.table("orders")
+paid_us = orders.filter((F.col("status") == "paid") and (F.col("country") == "US"))
+'''
+bug_line = 3
+why = "Python's `and` calls bool() on a Column, which raises 'Cannot convert column into bool'. Column conditions need the & operator."
+fix = "paid_us = orders.filter((F.col(\"status\") == \"paid\") & (F.col(\"country\") == \"US\"))"
+
+[[items]]
+lang = "pyspark"
+goal = "Keep paid orders with an amount over 100."
+code = '''
+from pyspark.sql import functions as F
+orders = spark.table("orders")
+big_paid = orders.filter(F.col("status") == "paid" & F.col("amount") > 100)
+'''
+bug_line = 3
+why = "& binds tighter than == and >, so Python tries `\"paid\" & F.col(\"amount\")` first, which errors (and the result would be a chained comparison anyway). Wrap each condition in parentheses."
+fix = "big_paid = orders.filter((F.col(\"status\") == \"paid\") & (F.col(\"amount\") > 100))"
+
+[[items]]
+lang = "pyspark"
+goal = "Get each customer's most recent order amount."
+code = '''
+from pyspark.sql import functions as F
+latest = (orders.orderBy(F.col("ts").desc())
+          .groupBy("customer_id")
+          .agg(F.first("amount").alias("latest_amount")))
+'''
+bug_line = 4
+why = "groupBy shuffles the data, and Spark does not keep the earlier sort order, so first() returns an arbitrary order's amount. max_by picks the amount at the latest ts explicitly."
+fix = "          .agg(F.max_by(\"amount\", \"ts\").alias(\"latest_amount\")))"
+
+[[items]]
+lang = "pyspark"
+goal = "Uppercase the country column (it contains some nulls)."
+code = '''
+from pyspark.sql import functions as F
+from pyspark.sql.types import StringType
+df = df.withColumn("country", F.udf(lambda s: s.upper(), StringType())("country"))
+'''
+bug_line = 3
+why = "A Python UDF sends every row to a Python worker and hides the logic from the optimizer, and this one crashes on null with AttributeError. The built-in F.upper is fast and passes nulls through."
+fix = "df = df.withColumn(\"country\", F.upper(\"country\"))"
+
+[[items]]
+lang = "pyspark"
+goal = "Parse strings like '2024-03-15' into a date column."
+code = '''
+from pyspark.sql import functions as F
+raw = spark.table("raw_orders")
+orders = raw.withColumn("order_date", F.to_date("order_date_str", "yyyy-mm-dd"))
+'''
+bug_line = 3
+why = "In Spark datetime patterns `mm` means minutes and `MM` means months. The month gets parsed as minutes and defaults to January, so '2024-03-15' becomes 2024-01-15."
+fix = "orders = raw.withColumn(\"order_date\", F.to_date(\"order_date_str\", \"yyyy-MM-dd\"))"
+
+[[items]]
+lang = "pyspark"
+goal = "Add a running total of amount per customer ordered by ts."
+code = '''
+from pyspark.sql import Window, functions as F
+w = Window.orderBy("ts").rowsBetween(Window.unboundedPreceding, 0)
+df = df.withColumn("running", F.sum("amount").over(w))
+'''
+bug_line = 2
+why = "Without partitionBy the window sums across all customers and moves every row into a single partition, which is wrong and does not scale."
+fix = "w = Window.partitionBy(\"customer_id\").orderBy(\"ts\").rowsBetween(Window.unboundedPreceding, 0)"
+
+[[items]]
+lang = "pyspark"
+goal = "Stack January and February extracts whose columns are the same but in a different order."
+code = '''
+jan = spark.read.parquet("s3://lake/jan/")  # columns: id, amount, country
+feb = spark.read.parquet("s3://lake/feb/")  # columns: id, country, amount
+both = jan.union(feb)
+'''
+bug_line = 3
+why = "union matches columns by position, not name, so February's country lands in amount and amount lands in country, sometimes with no error. unionByName lines them up by name."
+fix = "both = jan.unionByName(feb)"

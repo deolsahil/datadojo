@@ -1,0 +1,66 @@
+title = "Server Utilization Time"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-gaps-islands"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `server_sessions(server_id, session_status, status_time)`. `session_status` is `'start'` or `'stop'`. Each
+server's events alternate start, stop, start, stop, ...; pair a server's n-th start with its n-th stop.
+
+The fleet counts as running whenever **at least one** server is running, so overlapping sessions on different servers
+are counted once. Return `total_running_days`: the total time the fleet was running, in **full days** (total
+duration rounded down to whole days).
+"""
+starter = "SELECT 0 AS total_running_days\n"
+solution = """
+WITH ev AS (
+  SELECT server_id, session_status, status_time,
+         ROW_NUMBER() OVER (PARTITION BY server_id, session_status ORDER BY status_time) AS rn
+  FROM server_sessions
+),
+iv AS (
+  SELECT s.status_time AS start_time, e.status_time AS stop_time
+  FROM ev s
+  JOIN ev e ON e.server_id = s.server_id AND e.rn = s.rn AND e.session_status = 'stop'
+  WHERE s.session_status = 'start'
+),
+flagged AS (
+  SELECT *, MAX(stop_time) OVER (ORDER BY start_time, stop_time ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS prev_end
+  FROM iv
+),
+grouped AS (
+  SELECT *, SUM(CASE WHEN prev_end >= start_time THEN 0 ELSE 1 END)
+              OVER (ORDER BY start_time, stop_time ROWS UNBOUNDED PRECEDING) AS grp
+  FROM flagged
+),
+merged AS (
+  SELECT MIN(start_time) AS s, MAX(stop_time) AS e FROM grouped GROUP BY grp
+)
+SELECT CAST(FLOOR(SUM(date_diff('second', s, e)) / 86400) AS BIGINT) AS total_running_days
+FROM merged
+"""
+hints = [
+  "First build one (start_time, stop_time) row per session: number starts and stops per server with ROW_NUMBER and join on that number.",
+  "Overlapping sessions must be merged. Sort by start_time; a session starts a new island when it begins after the latest stop_time seen so far.",
+  "Sum island lengths in seconds and divide by 86400, rounding down at the end (not per session).",
+]
+
+[[tests]]
+tables.server_sessions = { columns = "server_id INT, session_status STRING, status_time TIMESTAMP", rows = [
+  [1, "start", "2022-08-02 10:00:00"], [1, "stop", "2022-08-04 10:00:00"],
+  [1, "start", "2022-08-13 10:00:00"], [1, "stop", "2022-08-13 19:00:00"],
+  [3, "start", "2022-08-06 10:00:00"], [3, "stop", "2022-08-14 10:00:00"],
+  [3, "start", "2022-08-18 10:00:00"], [3, "stop", "2022-08-19 10:00:00"],
+  [2, "start", "2022-08-17 10:00:00"], [2, "stop", "2022-08-24 10:00:00"],
+  [4, "start", "2022-08-16 10:00:00"], [4, "stop", "2022-08-19 14:00:00"],
+  [5, "start", "2022-08-14 21:00:00"], [5, "stop", "2022-08-19 10:00:00"],
+] }
+
+[[tests]]  # overlapping and nested sessions; per-server sums would give 5
+tables.server_sessions = { columns = "server_id INT, session_status STRING, status_time TIMESTAMP", rows = [
+  [1, "start", "2024-01-01 00:00:00"], [1, "stop", "2024-01-03 00:00:00"],
+  [2, "start", "2024-01-02 00:00:00"], [2, "stop", "2024-01-04 12:00:00"],
+  [3, "start", "2024-01-02 00:00:00"], [3, "stop", "2024-01-02 12:00:00"],
+  [1, "stop", "2024-01-10 18:00:00"], [1, "start", "2024-01-10 00:00:00"],
+] }

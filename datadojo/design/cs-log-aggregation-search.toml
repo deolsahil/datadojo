@@ -1,0 +1,165 @@
+title = "Design Log Aggregation and Search for Thousands of Services"
+section = "ds-cases-pipelines"
+order = 5
+kind = "case_study"
+difficulty = "hard"
+companies = ["Datadog", "Uber", "Cloudflare"]
+big_idea = "Buffer logs in Kafka, index only what engineers search in a short hot tier, and keep everything else cheaply in compressed object storage, because log volume grows faster than anyone's budget."
+summary = """Thousands of microservices on tens of thousands of hosts emit application and access logs. Engineers need to search recent logs in seconds during an incident, build alerts on patterns, and occasionally dig through months-old logs for audits or security investigations.
+
+The design is a tiered pipeline: lightweight agents (Fluent Bit, Vector, OpenTelemetry Collector) ship logs to **Kafka**, processors parse and enrich them, a **hot tier** (Elasticsearch/OpenSearch, or a cheaper engine like ClickHouse or Loki) serves fast search for about a week, and a **cold tier** of compressed Parquet or chunks in S3 keeps months to years. Most of the interview is about cost control: what to index, how to handle noisy tenants, and how to keep ingestion from collapsing during the incidents when logs matter most."""
+diagram = """flowchart LR
+  svc[Services and hosts] --> agent[Fluent Bit or Vector agents]
+  agent --> k[("Kafka: logs by tenant")]
+  k --> proc["Parse, enrich, redact"]
+  proc --> k2[("Kafka: structured logs")]
+  k2 --> hot[("Hot tier: OpenSearch or ClickHouse")]
+  k2 --> arch[Archiver]
+  arch --> s3[("S3 cold tier: Parquet")]
+  hot --> ui[Search UI and alerts]
+  s3 --> trino[Trino or Athena]
+  trino --> ui
+  ctl[Rate limits and quotas] --> proc"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- How many services, hosts and lines per second? Are logs already structured (JSON) or free text?
+- Which queries matter: full-text search, filtering by service/trace id/level, aggregations for dashboards?
+- How fresh must search be (seconds after emission?) and how long must logs be retained (7 days hot, 1 year cold for compliance?)
+- Is it multi-tenant across teams with chargeback or quotas?
+- Are there PII or secrets in logs that must be redacted?
+- Is losing some debug logs during an overload acceptable if error logs are kept?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Collect stdout/file logs from all services with metadata (service, host, pod, region, trace_id).
+- Full-text and field search over the last 7 days with results in seconds.
+- Log-based alerts (error rate per service, specific patterns).
+- Query archived logs up to 1 year (minutes of latency acceptable).
+
+**Non-functional**
+- Ingest-to-searchable latency under 30 s at p95.
+- Ingestion keeps working during incident spikes of 3-5x; degrade by dropping low-priority levels first.
+- Per-tenant quotas so one noisy service cannot starve others.
+- Redact secrets and PII before indexing; access control per team.
+- Cost per GB ingested is a first-class metric."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- 3,000 services x ~10 instances = **30,000 instances**, averaging ~10 lines/s each = **300K lines/s** (spikes to 1M+).
+- Average line ~500 B: 300K x 500 B = **150 MB/s**.
+- Daily: 150 MB/s x 86,400 s = **~13 TB/day** raw.
+- Hot tier, 7 days: 13 TB x 7 = ~91 TB raw. Index size is roughly comparable to raw after compression plus inverted indexes, and with 1 replica that is **~180 TB** of cluster storage.
+- Cold tier: logs compress ~10x in Parquet/zstd, so ~1.3 TB/day, **~475 TB/year** in S3.
+- Kafka: 13 TB/day x 1 day retention x 3 replicas = **~39 TB** broker disk.
+
+At these numbers, full-text indexing every field of every line is the dominant cost, so the design must be selective."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Agents** (Fluent Bit/Vector as a DaemonSet) tail container logs, add Kubernetes metadata, batch and compress, and buffer to local disk if the backend is unavailable.
+2. **Kafka** topics partitioned by tenant/service, acting as the shock absorber: if indexing falls behind, data waits in Kafka instead of being lost.
+3. **Processing** (Vector, Flink, or a custom consumer pool): parse JSON or apply grok/regex for known formats, normalize timestamps and levels, redact secrets (tokens, card numbers) with pattern rules, enforce per-tenant rate limits, and sample or drop debug logs above quota.
+4. **Hot tier**: OpenSearch with daily or size-based indexes per tenant group and index lifecycle management (hot nodes on SSD, delete after 7 days). Alternatives: ClickHouse (columnar, great compression and aggregations, token/ngram skip indexes) or Loki (indexes only labels, brute-force scans chunks).
+5. **Cold tier**: an archiver writes Parquet partitioned by date/hour/service to S3; Trino or Athena queries it on demand. Optional rehydration of a time range back into the hot tier for a big investigation.
+6. **Search UI and alerting**: OpenSearch Dashboards/Grafana; alert rules run as streaming counts in the processor or as scheduled queries."""
+
+[[blocks]]
+heading = "Data model"
+body = """**Log record** (grain: one log line): `ts` (event time, nanoseconds), `ingest_ts`, `service`, `env`, `region`, `host`, `pod`, `level`, `trace_id`, `span_id`, `message` (text), `attributes` (map of structured fields), `tenant`.
+
+**Kafka `logs.raw.<tenant>`**: key = host or pod (keeps per-source order), compressed batches (zstd).
+
+**Hot index `logs-<tenantgroup>-<yyyy.mm.dd>`**: keyword fields for service/level/trace_id, full text on message only, dynamic mapping disabled (unknown attributes stored but not indexed) to avoid mapping explosion.
+
+**Cold table `logs_archive`** (Iceberg/Parquet): partitioned by `dt`, `hour`, `service`; sorted by `ts`; `attributes` as a map column."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**What to index.** Indexing every attribute leads to mapping explosion (thousands of unique field names from free-form JSON) and huge clusters. Index a fixed set of keyword fields and full-text on `message`; store the rest unindexed. Engines that index only labels (Loki) or use columnar storage with skip indexes (ClickHouse) trade some query speed for an order of magnitude lower cost; that choice depends on how much free-text search engineers really do.
+
+**Backpressure and overload.** During an incident, log volume spikes exactly when people search most. Kafka absorbs the spike; indexers scale out by partition. If lag still grows, shed load deliberately: drop or sample DEBUG/INFO for tenants over quota while always keeping WARN/ERROR. Agents buffer to disk so transient backend failures do not lose data.
+
+**Multi-tenancy and noisy neighbors.** One service logging in a tight loop can produce more than all others combined. Per-tenant quotas (lines/s and bytes/day) enforced in the processor, per-tenant Kafka partitions, and separate index groups for the biggest tenants limit blast radius. Showing teams their cost per GB changes behavior quickly.
+
+**Hot shard sizing.** OpenSearch performs best with shards in the tens of GB. Roll indexes by size, not just by day, and avoid thousands of tiny per-service indexes, which overload cluster state."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **OpenSearch vs. ClickHouse vs. Loki**: OpenSearch gives the best ad-hoc full-text search but is the most expensive per GB; ClickHouse is excellent for structured logs and aggregations; Loki is cheapest but slow for needle-in-haystack queries over wide time ranges.
+- **Kafka in the middle vs. agents writing directly to the index**: Kafka adds a component but decouples producers from indexing speed and enables multiple consumers (archive, alerting, security SIEM).
+- **Sampling vs. full retention**: sampling INFO logs cuts cost but can hide rare events; keep errors unsampled and correlate with traces.
+- **SaaS (Datadog, Splunk) vs. self-hosted**: SaaS is fast to adopt; at 13 TB/day self-hosting is usually much cheaper but needs a dedicated team.
+- **Parse at ingest vs. at query time**: parsing at ingest makes queries fast but brittle to format changes; keeping the raw message always lets you re-parse."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Indexing lag**: alert on Kafka consumer lag converted to seconds; this is the "search is stale" signal during incidents.
+- **Agent buffer full / dropped lines**: agents export drop counters; alert per node.
+- **Mapping explosion or rejected documents**: monitor field counts and indexing errors per index.
+- **Cluster health**: red/yellow shards, disk watermarks, JVM heap pressure, query latency p99.
+- **Redaction misses**: periodic scans of the hot tier for secret-like patterns; findings trigger rule updates and targeted deletion.
+- **Pipeline self-monitoring**: the logging system must not depend on itself to report its own outage; use separate metrics (Prometheus) and alerting."""
+
+key_points = [
+  "Agents buffer to disk and Kafka absorbs spikes, so indexing slowness does not lose logs.",
+  "Tier storage: about 7 days in a searchable hot tier, months to years in compressed Parquet on S3.",
+  "Index a fixed set of fields plus message text; storing every dynamic field leads to mapping explosion and runaway cost.",
+  "Enforce per-tenant quotas and shed DEBUG/INFO first under overload, always keeping errors.",
+  "Redact secrets before indexing, since deleting from many replicas and snapshots later is hard.",
+  "Monitor the logging pipeline with an independent metrics system.",
+]
+common_mistakes = [
+  "Indexing all fields with dynamic mapping and blowing up cluster state.",
+  "Sending logs directly from apps to Elasticsearch so an indexing slowdown blocks or drops logs.",
+  "Keeping 1 year in the hot tier on SSDs at 10x the necessary cost.",
+  "Creating one index per service per day, producing tens of thousands of tiny shards.",
+  "Having no per-tenant limits, letting one runaway service take down search for everyone.",
+]
+interview_questions = [
+  "How would you find all logs for one request across 40 services?",
+  "Security needs a query over 6 months of access logs. How does it run, and how long does it take?",
+  "During an outage, ingest triples and search lag hits 10 minutes. What do you do right now and what do you change later?",
+  "How would you charge teams for their logging cost?",
+  "A secret was logged for two days. How do you purge it from every tier?",
+]
+
+[[quiz]]
+q = "At 300K lines/s and 500 B per line, roughly how much raw log data per day?"
+options = ["~1.3 TB", "~13 TB", "~130 TB", "~1.3 PB"]
+answer = 1
+why = "300K x 500 B = 150 MB/s; 150 MB/s x 86,400 s is about 12.96 TB/day."
+
+[[quiz]]
+q = "What is the main purpose of Kafka between log agents and the search cluster?"
+options = [
+  "Full-text indexing",
+  "Absorbing spikes and decoupling producers from indexing speed so data waits instead of being dropped",
+  "Long-term archival",
+  "Enforcing access control",
+]
+answer = 1
+why = "Kafka is a durable buffer: if indexers fall behind during an incident, logs queue up with bounded retention and multiple consumers (archive, alerts) can read independently."
+
+[[quiz]]
+q = "Ingest is far over capacity during an incident. Which load-shedding strategy is best?"
+options = [
+  "Drop logs randomly across all levels",
+  "Pause all ingestion until the incident ends",
+  "Sample or drop DEBUG/INFO for over-quota tenants while keeping WARN and ERROR",
+  "Disable replicas on the hot tier",
+]
+answer = 2
+why = "Errors and warnings are what responders need; dropping low-value levels first, targeted at noisy tenants, preserves the signal during the incident."
+
+[[quiz]]
+q = "Why disable dynamic mapping for free-form attributes in the search index?"
+options = [
+  "Dynamic mapping cannot handle JSON",
+  "Arbitrary field names cause mapping explosion, bloating cluster state and cost",
+  "It prevents full-text search on message",
+  "It is required for index lifecycle management",
+]
+answer = 1
+why = "Every new field name becomes part of the index mapping held in cluster state; thousands of unique fields slow the cluster and can cause indexing failures."

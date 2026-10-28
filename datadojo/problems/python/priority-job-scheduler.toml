@@ -1,0 +1,48 @@
+title = "Single-worker priority scheduler"
+lang = "python"
+difficulty = "hard"
+pattern = "py-heaps"
+lists = ["python-de"]
+function = "schedule"
+ordered = true
+source_url = "https://leetcode.com/problems/single-threaded-cpu/"
+statement = '''
+`schedule(jobs)` simulates one worker running batch jobs. Each job is `[id, arrival, duration, priority]` (id a string, the rest non-negative integers; lower priority number = more urgent).
+
+The clock starts at 0. Whenever the worker is free it picks, among jobs that have arrived (`arrival <= now`) and not yet run, the one with the lowest priority number; ties go to the earliest arrival, then the smallest id. It runs that job to completion without interruption. If nothing has arrived, the worker idles until the next arrival.
+
+Return `[id, start, end]` for every job, in the order they run.
+'''
+starter = "def schedule(jobs):\n    pass\n"
+solution = '''
+import heapq
+
+def schedule(jobs):
+    jobs = sorted(jobs, key=lambda j: j[1])
+    out, ready, i, now = [], [], 0, 0
+    while i < len(jobs) or ready:
+        if not ready and now < jobs[i][1]:
+            now = jobs[i][1]
+        while i < len(jobs) and jobs[i][1] <= now:
+            jid, arrival, dur, pri = jobs[i]
+            heapq.heappush(ready, (pri, arrival, jid, dur))
+            i += 1
+        pri, arrival, jid, dur = heapq.heappop(ready)
+        out.append([jid, now, now + dur])
+        now += dur
+    return out
+'''
+hints = [
+    "Sort jobs by arrival; a pointer feeds them into a heap as the clock passes their arrival.",
+    "The heap key is `(priority, arrival, id)`.",
+    "When the heap is empty, jump the clock forward to the next arrival instead of ticking.",
+]
+
+[[tests]]
+args = [[["load", 0, 5, 2], ["urgent", 1, 2, 0], ["clean", 2, 1, 2], ["report", 3, 1, 1]]]
+[[tests]]  # idle gap and ties on priority
+args = [[["b", 10, 2, 1], ["a", 10, 2, 1], ["c", 4, 1, 5], ["d", 9, 3, 1]]]
+[[tests]]  # same priority: earlier arrival beats smaller id
+args = [[["z", 0, 3, 1], ["y", 1, 1, 2], ["x", 2, 1, 2]]]
+[[tests]]
+args = [[]]

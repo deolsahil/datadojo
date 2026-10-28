@@ -1,0 +1,41 @@
+title = "Normalize phone numbers"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-basics"
+function = "solve"
+statement = """
+A CRM export has `contacts(contact_id, phone)` where `phone` was typed by hand:
+`"(415) 555-0100"`, `"+1 415.555.0101"`, `"555-0102"`, or NULL.
+
+Write `solve(spark, contacts)` returning `contact_id, phone_clean`:
+
+- remove every character that is not a digit
+- if what is left is 11 digits starting with `1` (US country code), drop that leading `1`
+- if the result is exactly 10 digits, that is `phone_clean`; otherwise `phone_clean` is NULL
+
+Keep every contact.
+"""
+hints = [
+  "`F.regexp_replace(col, \"[^0-9]\", \"\")` strips everything except digits.",
+  "Use `F.length(...)`, `.startswith(\"1\")` and `F.substring(col, 2, 10)` inside `F.when`.",
+  "A `F.when` without `.otherwise` yields NULL when no branch matches.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, contacts):
+    return contacts
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, contacts):
+    d = F.regexp_replace("phone", "[^0-9]", "")
+    d = F.when((F.length(d) == 11) & d.startswith("1"), F.substring(d, 2, 10)).otherwise(d)
+    return contacts.select("contact_id", F.when(F.length(d) == 10, d).alias("phone_clean"))
+"""
+
+[[tests]]
+tables.contacts = { columns = "contact_id INT, phone STRING", rows = '''[
+  [1, "(415) 555-0100"], [2, "+1 415.555.0101"], [3, "555-0102"], [4, null],
+  [5, "4155550103"], [6, "2 415 555 0104"], [7, "1-800-555-0199 ext 2"], [8, ""]]''' }

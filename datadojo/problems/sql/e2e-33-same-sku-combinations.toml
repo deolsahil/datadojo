@@ -1,0 +1,43 @@
+title = "Orders with Same SKU Combinations"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-pivot"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `Ordertable(OrderID, OrderDate, UserID, Sku1, Sku2, Sku3)`. Each order has three SKUs in no particular order, so
+`(A, B, C)` and `(C, A, B)` are the same combination. A SKU may appear more than once in an order.
+
+For each day and SKU combination, count the orders. Return `OrderDate, Skus, OrderCount`, where `Skus` is the three
+SKUs sorted ascending and joined with `','` (e.g. `'A123,B456,C789'`). Order by `OrderDate`, then `Skus`.
+"""
+ordered = true
+starter = "SELECT OrderDate, Sku1 || ',' || Sku2 || ',' || Sku3 AS Skus, COUNT(*) AS OrderCount\nFROM Ordertable\nGROUP BY ALL\nORDER BY OrderDate, Skus\n"
+solution = """
+SELECT OrderDate,
+       array_to_string(list_sort([Sku1, Sku2, Sku3]), ',') AS Skus,
+       COUNT(*) AS OrderCount
+FROM Ordertable
+GROUP BY OrderDate, Skus
+ORDER BY OrderDate, Skus
+"""
+hints = [
+  "Normalize each order to a canonical key that ignores column order.",
+  "In DuckDB, list_sort([Sku1, Sku2, Sku3]) sorts the three values; array_to_string joins them.",
+  "Without list functions: unpivot to one row per SKU and STRING_AGG(sku, ',' ORDER BY sku) per order. Comparing with < breaks on repeated SKUs.",
+]
+
+[[tests]]
+tables.Ordertable = { columns = "OrderID INT, OrderDate DATE, UserID INT, Sku1 STRING, Sku2 STRING, Sku3 STRING", rows = [
+  [1, "2024-07-01", 101, "A123", "B456", "C789"], [2, "2024-07-01", 102, "B456", "C789", "A123"],
+  [3, "2024-07-01", 102, "G678", "H123", "I456"], [4, "2024-07-01", 103, "I456", "G678", "H123"],
+  [5, "2024-07-01", 104, "H123", "G678", "I456"], [6, "2024-07-02", 105, "C789", "A123", "B456"],
+  [7, "2024-07-02", 106, "B456", "A123", "C789"], [8, "2024-07-03", 107, "A123", "C789", "B456"],
+  [9, "2024-07-04", 101, "D123", "E456", "F789"],
+] }
+
+[[tests]]  # repeated SKUs inside one order
+tables.Ordertable = { columns = "OrderID INT, OrderDate DATE, UserID INT, Sku1 STRING, Sku2 STRING, Sku3 STRING", rows = [
+  [1, "2024-08-01", 1, "B2", "A1", "A1"], [2, "2024-08-01", 2, "A1", "B2", "A1"],
+  [3, "2024-08-01", 3, "A1", "A1", "A1"], [4, "2024-08-02", 4, "A1", "A1", "B2"],
+] }

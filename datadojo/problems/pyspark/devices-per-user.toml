@@ -1,0 +1,42 @@
+title = "Devices per user"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-aggregation"
+function = "solve"
+statement = """
+Security wants to see which devices each account signs in from.
+`logins(user_id, device, login_ts)` has one row per login; `device` is NULL when the client did not
+report one.
+
+Write `solve(spark, logins)` returning `user_id, device_count, devices` where `devices` is the
+ascending-sorted array (plain string order, so uppercase sorts before lowercase) of distinct non-NULL
+devices and `device_count` is its length. A user
+whose logins all have NULL devices gets `0` and an empty array.
+"""
+hints = [
+  "`F.collect_set(\"device\")` gathers distinct values and skips NULLs.",
+  "Sets have no order: wrap it in `F.array_sort(...)`.",
+  "`F.size(...)` or `F.countDistinct(\"device\")` gives the count.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, logins):
+    return logins.groupBy("user_id").agg(F.count("device"), F.collect_list("device"))
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, logins):
+    return (logins.groupBy("user_id")
+            .agg(F.array_sort(F.collect_set("device")).alias("devices"))
+            .select("user_id", F.size("devices").alias("device_count"), "devices"))
+"""
+
+[[tests]]
+tables.logins = { columns = "user_id INT, device STRING, login_ts TIMESTAMP", rows = '''[
+  [1, "iphone", "2024-05-01 08:00:00"], [1, "macbook", "2024-05-01 09:00:00"],
+  [1, "iphone", "2024-05-02 08:00:00"], [1, null, "2024-05-03 08:00:00"],
+  [2, null, "2024-05-01 10:00:00"], [2, null, "2024-05-02 10:00:00"],
+  [3, "pixel", "2024-05-01 07:00:00"], [3, "chromebook", "2024-05-04 07:00:00"],
+  [3, "Pixel", "2024-05-05 07:00:00"]]''' }

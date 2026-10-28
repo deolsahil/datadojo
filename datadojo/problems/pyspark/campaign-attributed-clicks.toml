@@ -1,0 +1,45 @@
+title = "Clicks during each campaign"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-joins"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+Marketing runs date-bounded campaigns and wants to know how much traffic arrived while each was live.
+
+- `campaigns(campaign_id, start_date, end_date)`: both dates inclusive; campaigns may overlap.
+- `clicks(click_id, click_date)`
+
+Write `solve(spark, campaigns, clicks)` returning `campaign_id, clicks`: the number of clicks whose
+`click_date` falls within the campaign's dates. A click during two overlapping campaigns counts for
+both. Campaigns with no clicks must appear with `0`.
+"""
+hints = [
+  "The join condition does not have to be equality: `clicks.click_date.between(campaigns.start_date, campaigns.end_date)`.",
+  "Use a `\"left\"` join from campaigns so campaigns without clicks survive.",
+  "`F.count(\"click_id\")` skips NULLs, so unmatched campaigns count as 0 rather than 1.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, campaigns, clicks):
+    return campaigns.select("campaign_id")
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, campaigns, clicks):
+    on = clicks.click_date.between(campaigns.start_date, campaigns.end_date)
+    return (campaigns.join(clicks, on, "left")
+            .groupBy("campaign_id").agg(F.count("click_id").alias("clicks")))
+"""
+
+[[tests]]
+tables.campaigns = { columns = "campaign_id STRING, start_date DATE, end_date DATE", rows = [
+  ["spring", "2024-03-01", "2024-03-10"], ["flash", "2024-03-10", "2024-03-10"],
+  ["summer", "2024-06-01", "2024-06-30"], ["easter", "2024-03-28", "2024-04-01"],
+] }
+tables.clicks = { columns = "click_id INT, click_date DATE", rows = [
+  [1, "2024-02-29"], [2, "2024-03-01"], [3, "2024-03-05"], [4, "2024-03-10"],
+  [5, "2024-03-11"], [6, "2024-04-01"], [7, "2024-04-02"],
+] }

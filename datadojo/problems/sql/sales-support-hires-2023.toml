@@ -1,0 +1,34 @@
+title = "Mid-band hires in customer-facing teams"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-basics"
+lists = ["sql-essentials"]
+statement = """
+HR is reviewing pay for recent customer-facing hires.
+
+Table `employees(id, name, dept, salary, hire_date)` where `hire_date` is a DATE.
+
+Return `id` and `name` of employees who meet **all** of these:
+
+- `dept` is `Sales` **or** `Support`
+- hired during calendar year 2023 (Jan 1 through Dec 31, inclusive)
+- `salary` between 40000 and 60000, inclusive on both ends
+"""
+starter = "SELECT id, name\nFROM employees\nWHERE dept = 'Sales'\n"
+solution = """
+SELECT id, name FROM employees
+WHERE dept IN ('Sales', 'Support')
+  AND hire_date >= DATE '2023-01-01' AND hire_date < DATE '2024-01-01'
+  AND salary BETWEEN 40000 AND 60000
+"""
+hints = [
+  "AND binds tighter than OR. What does `dept = 'Sales' OR dept = 'Support' AND salary > 0` actually mean?",
+  "Use IN (...) or wrap the OR in parentheses.",
+  "For the year, a half-open range (>= Jan 1 2023 and < Jan 1 2024) is safe; BETWEEN is inclusive on both ends.",
+]
+
+[[tests]]
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT, hire_date DATE", rows = [[1, "Ana", "Sales", 50000, "2023-03-01"], [2, "Ben", "Support", 45000, "2023-11-20"], [3, "Cal", "Eng", 55000, "2023-05-05"], [4, "Dee", "Sales", 70000, "2023-02-02"], [5, "Eve", "Support", 52000, "2022-12-31"]] }
+
+[[tests]]  # boundaries, and an OR-precedence trap (Sales row out of band)
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT, hire_date DATE", rows = [[1, "Fay", "Sales", 40000, "2023-01-01"], [2, "Gus", "Support", 60000, "2023-12-31"], [3, "Hal", "Sales", 90000, "2021-06-01"], [4, "Ivy", "Support", 39999, "2023-07-07"], [5, "Jo", "Sales", 60001, "2024-01-01"]] }

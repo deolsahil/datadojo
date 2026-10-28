@@ -1,0 +1,44 @@
+title = "Pivot daily metrics wide"
+lang = "python"
+difficulty = "medium"
+pattern = "py-records"
+function = "pivot"
+ordered = true
+statement = '''
+`pivot(rows)` gets long-format rows `{"day": "YYYY-MM-DD", "metric": str, "value": number}`.
+
+Return one dict per day, sorted by `day` ascending. Each dict has `"day"` plus one key for **every metric seen anywhere in the input**; a metric with no row for that day is `null`. If the same `(day, metric)` appears more than once, sum the values.
+
+```
+[{"day": "2024-01-02", "metric": "clicks", "value": 5},
+ {"day": "2024-01-01", "metric": "views", "value": 9}]
+→ [{"day": "2024-01-01", "clicks": null, "views": 9},
+   {"day": "2024-01-02", "clicks": 5, "views": null}]
+```
+'''
+starter = "def pivot(rows):\n    pass\n"
+solution = '''
+def pivot(rows):
+    metrics = {r["metric"] for r in rows}
+    days = {}
+    for r in rows:
+        d = days.setdefault(r["day"], {})
+        d[r["metric"]] = d.get(r["metric"], 0) + r["value"]
+    return [{"day": day, **{m: days[day].get(m) for m in metrics}} for day in sorted(days)]
+'''
+hints = [
+    "Two things to collect: the set of all metrics, and a dict of day to {metric: value}.",
+    "Accumulate with `d.get(metric, 0) + value` so duplicates sum.",
+    "Emit days in sorted order and fill every metric with `.get(m)` (None when absent).",
+]
+
+[[tests]]
+args = '''[[{"day": "2024-01-02", "metric": "clicks", "value": 5},
+            {"day": "2024-01-01", "metric": "views", "value": 9}]]'''
+[[tests]]
+args = '''[[{"day": "2024-03-01", "metric": "views", "value": 1},
+            {"day": "2024-03-01", "metric": "views", "value": 2},
+            {"day": "2024-03-01", "metric": "clicks", "value": 0},
+            {"day": "2024-02-28", "metric": "clicks", "value": 4}]]'''
+[[tests]]
+args = [[]]

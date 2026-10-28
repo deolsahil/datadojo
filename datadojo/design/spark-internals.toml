@@ -1,0 +1,93 @@
+title = "Spark: Execution, Shuffles, Skew, and Joins"
+section = "ds-blocks"
+order = 2
+kind = "lesson"
+big_idea = "Spark splits work into stages separated by shuffles, so performance mostly comes down to moving less data across the network and keeping partitions evenly sized."
+summary = """A Spark application has one **driver**, which plans the job, and many **executors**, which run tasks on partitions of data. Transformations are lazy; an **action** (write, count, collect) triggers a **job**. The planner (Catalyst, plus adaptive query execution at runtime) breaks the job into **stages** at **shuffle** boundaries, and each stage runs one **task** per partition.
+
+**Narrow** transformations (filter, select, map) work within a partition. **Wide** transformations (groupBy, join, distinct, repartition) need rows with the same key on the same executor, so data is written to disk, sent over the network, and read back: a **shuffle**. Shuffles are usually the most expensive part of a job.
+
+Most tuning questions are about shuffles: avoid them (broadcast joins, pre-partitioned data), right-size them (shuffle partition count), and keep them balanced (handle **skew**)."""
+diagram = """flowchart LR
+  d[Driver plans DAG] --> s1["Stage 1 - read and filter"]
+  s1 -- shuffle by key --> s2["Stage 2 - join and aggregate"]
+  s2 -- shuffle --> s3["Stage 3 - write"]
+  s1 --> ex[Executors run one task per partition]"""
+
+[[blocks]]
+heading = "Partitions and sizing"
+body = """- Input partitions come from files (roughly one per 128 MB split by default for file sources).
+- Shuffle partitions come from `spark.sql.shuffle.partitions` (default 200). Too few for 1 TB of shuffle means 5 GB tasks that spill to disk or run out of memory; too many for 1 GB means tiny tasks and scheduling overhead. Aim for roughly 100-200 MB per shuffle partition.
+- **Adaptive Query Execution (AQE)**, on by default in Spark 3.2+, coalesces small shuffle partitions, switches join strategies at runtime, and splits skewed partitions.
+- `repartition(n)` does a full shuffle; `coalesce(n)` merges partitions without a full shuffle (good for reducing output file count, but can reduce parallelism upstream)."""
+
+[[blocks]]
+heading = "Join strategies"
+body = """- **Broadcast hash join:** the small table is sent to every executor; the big table is not shuffled at all. Spark does this automatically below `spark.sql.autoBroadcastJoinThreshold` (10 MB by default), or force it with a `broadcast()` hint. Great for fact-to-dimension joins where the dimension fits comfortably in executor memory (tens to a few hundred MB). Broadcasting something too big causes driver or executor OOM.
+- **Sort-merge join:** both sides shuffled by key and sorted, then merged. The default for two large tables; robust but shuffle-heavy.
+- **Shuffle hash join:** both shuffled, one side built into a hash table per partition; can beat sort-merge when one side is moderately small.
+- **Bucketed joins:** if both tables are bucketed on the join key with compatible bucket counts, the shuffle can be skipped."""
+
+[[blocks]]
+heading = "Skew"
+body = """Skew is when one key has far more rows than others, such as a 'null' customer ID or one mega-customer. One task processes 50 GB while 199 finish in seconds; the stage takes as long as the slowest task. Symptoms in the Spark UI: one task's duration and shuffle read far above the median.
+
+Fixes:
+- Filter or handle the hot key separately (nulls often should not be joined at all).
+- **AQE skew join** splitting oversized partitions (`spark.sql.adaptive.skewJoin.enabled`).
+- **Salting:** add a random suffix 0..N-1 to the hot key on the big side, replicate the small side N times with each suffix, join, then aggregate.
+- Broadcast the smaller side, which avoids the shuffle and therefore the skewed partition."""
+
+[[blocks]]
+heading = "Caching and common pitfalls"
+body = """- `cache()` / `persist()` pays off only when a DataFrame is reused by multiple actions and is expensive to recompute. Unpersist when done; caching everything wastes memory and can cause eviction or spills.
+- `collect()` on a large DataFrame pulls everything to the driver and crashes it.
+- Python UDFs serialize rows between the JVM and Python; prefer built-in functions or vectorized pandas UDFs.
+- Spills (memory to disk) in the UI indicate partitions too large for executor memory.
+- Many small input files make the driver spend ages listing and planning; compact upstream."""
+
+key_points = [
+  "Driver plans; executors run one task per partition; stages break at shuffles.",
+  "Wide transformations (join, groupBy, distinct) shuffle data and dominate cost.",
+  "Broadcast small dimension tables to avoid shuffling the large side.",
+  "Target roughly 100-200 MB per shuffle partition; AQE helps coalesce and split.",
+  "Skew makes one task the bottleneck; fix with null handling, AQE skew join, salting, or broadcast.",
+]
+common_mistakes = [
+  "Leaving spark.sql.shuffle.partitions at 200 for a multi-terabyte shuffle without AQE.",
+  "Broadcasting a multi-GB table and crashing executors or the driver.",
+  "Calling collect() or toPandas() on large data.",
+  "Caching every intermediate DataFrame by habit.",
+  "Joining on a key with millions of nulls and creating one giant task.",
+]
+interview_questions = [
+  "What happens when you call an action on a Spark DataFrame?",
+  "What is a shuffle and why is it expensive?",
+  "One task in a stage runs for an hour while others finish in a minute. How do you diagnose and fix it?",
+  "When would you use a broadcast join, and what are its limits?",
+  "What is the difference between repartition and coalesce?",
+]
+
+[[quiz]]
+q = "Which operation causes a shuffle?"
+options = ["filter", "select", "groupBy followed by sum", "withColumn"]
+answer = 2
+why = "Aggregation by key needs all rows for each key in one partition, which requires redistributing data across executors."
+
+[[quiz]]
+q = "Joining a 2 TB fact table to a 50 MB dimension. What is the most efficient strategy?"
+options = ["Sort-merge join", "Broadcast hash join on the dimension", "Cartesian join", "Collect the dimension to the driver and loop"]
+answer = 1
+why = "Broadcasting the 50 MB table to every executor avoids shuffling the 2 TB side entirely."
+
+[[quiz]]
+q = "A stage has 199 tasks finishing in 30 seconds and 1 task taking 40 minutes with a huge shuffle read. What is the likely cause?"
+options = ["Too many executors", "Data skew on the shuffle key", "Caching", "Small files"]
+answer = 1
+why = "One partition receiving far more data than others is the signature of a skewed key."
+
+[[quiz]]
+q = "You want to reduce 2,000 partitions to 100 before writing, without a full shuffle. What do you use?"
+options = ["repartition(100)", "coalesce(100)", "cache()", "broadcast()"]
+answer = 1
+why = "coalesce merges existing partitions locally; repartition triggers a full shuffle (which may be worth it if you need even sizes)."

@@ -1,0 +1,30 @@
+title = "Average daily revenue counting closed days"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-nulls"
+statement = """
+Each store reports one row per calendar day. On days the store was closed, `revenue` is NULL, and the business wants those days to count as **zero** revenue.
+
+Table `daily_sales(store_id, sales_date, revenue)`.
+
+Return `store_id`, `avg_revenue` (average over **all** of that store's days, with closed days as 0, rounded to 2 decimals), and `closed_days` (number of days with NULL revenue).
+"""
+starter = "SELECT store_id, ROUND(AVG(revenue), 2) AS avg_revenue\nFROM daily_sales\nGROUP BY store_id\n"
+solution = """
+SELECT store_id,
+       ROUND(AVG(COALESCE(revenue, 0)), 2) AS avg_revenue,
+       COUNT(*) - COUNT(revenue) AS closed_days
+FROM daily_sales
+GROUP BY store_id
+"""
+hints = [
+  "AVG skips NULLs entirely, so closed days drop out of both the sum and the count.",
+  "Replace NULL with 0 before averaging: AVG(COALESCE(revenue, 0)).",
+  "Closed days = rows minus non-NULL revenues: COUNT(*) - COUNT(revenue).",
+]
+
+[[tests]]
+tables.daily_sales = { columns = "store_id INT, sales_date DATE, revenue DOUBLE", rows = '[[1, "2024-01-01", 100.0], [1, "2024-01-02", null], [1, "2024-01-03", 200.0], [2, "2024-01-01", 50.0], [2, "2024-01-02", 70.0]]' }
+
+[[tests]]  # store closed every day
+tables.daily_sales = { columns = "store_id INT, sales_date DATE, revenue DOUBLE", rows = '[[3, "2024-02-01", null], [3, "2024-02-02", null], [4, "2024-02-01", 10.0], [4, "2024-02-02", null], [4, "2024-02-03", null]]' }

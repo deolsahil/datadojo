@@ -1,0 +1,35 @@
+title = "Expand reserved seat ranges"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-recursive"
+statement = """
+Table `reservations(booking_id, first_seat, last_seat)`. Each booking reserves every seat number from
+`first_seat` to `last_seat` inclusive (a one-seat booking has `first_seat = last_seat`).
+
+Return one row per reserved seat: `booking_id, seat`. Any row order.
+
+Use a recursive CTE that starts at `first_seat` and counts up.
+"""
+starter = "SELECT booking_id, first_seat AS seat\nFROM reservations\n"
+solution = """
+WITH RECURSIVE s AS (
+  SELECT booking_id, first_seat AS seat, last_seat FROM reservations
+  UNION ALL
+  SELECT booking_id, seat + 1, last_seat FROM s WHERE seat < last_seat
+)
+SELECT booking_id, seat FROM s
+"""
+hints = [
+  "Anchor: every booking at its first_seat. Carry last_seat along so the recursive step knows where to stop.",
+  "Recursive step: SELECT booking_id, seat + 1, last_seat FROM the CTE WHERE seat < last_seat.",
+]
+
+[[tests]]
+tables.reservations = { columns = "booking_id INT, first_seat INT, last_seat INT", rows = [
+  [1, 10, 13], [2, 20, 21],
+] }
+
+[[tests]]  # single-seat booking
+tables.reservations = { columns = "booking_id INT, first_seat INT, last_seat INT", rows = [
+  [7, 5, 5], [8, 1, 3],
+] }

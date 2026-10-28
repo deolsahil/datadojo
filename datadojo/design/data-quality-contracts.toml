@@ -1,0 +1,113 @@
+title = "Data Quality, SLAs, and Data Contracts"
+section = "ds-reliability"
+order = 5
+kind = "lesson"
+big_idea = "Treat data like a product with an interface: agree on schema and guarantees with producers, check them automatically at every boundary, and stop bad data before it reaches consumers."
+summary = """Most data incidents are not crashes; the job succeeds and the numbers are wrong. A source renames a column, an upstream bug sends nulls, a partner file arrives half-empty, or a join silently duplicates rows. Data quality engineering is about catching these **before** a stakeholder does.
+
+There are three layers. **Checks** test data itself: schema, nulls, uniqueness, ranges, referential integrity, row counts. **SLAs/SLOs** promise freshness and completeness to consumers, such as "orders table updated by 7:00 UTC with 99.5% of days on time". **Data contracts** are agreements with producers about schema, semantics, and change process, enforced in CI and at ingestion.
+
+Checks can **block** (fail the pipeline and stop publishing) or **warn** (alert but publish). Block on things that make data wrong; warn on things that make it suspicious."""
+diagram = """flowchart LR
+  prod[Producer] -- contract and schema registry --> ing[Ingest]
+  ing --> chk1[Schema and null checks]
+  chk1 -- fail --> q[("Quarantine")]
+  chk1 -- pass --> tr[Transform]
+  tr --> chk2[Volume and business checks]
+  chk2 -- pass --> pub[("Published table")]
+  chk2 -- fail --> alert[Alert and hold]"""
+
+[[blocks]]
+heading = "What to check"
+body = """- **Schema:** expected columns and types; reject or quarantine unknown shapes.
+- **Completeness:** null rates on required fields; row counts versus the same weekday last weeks; all expected partitions present.
+- **Uniqueness:** primary keys unique after dedup; a join did not fan out (row count before = after for a lookup join).
+- **Validity:** ranges (no negative quantities), allowed values (country codes), timestamp sanity (not in the future).
+- **Referential integrity:** every `customer_id` in facts exists in `dim_customer` (or maps to the unknown member).
+- **Consistency / reconciliation:** totals match the source system (sum of orders in the warehouse versus the OLTP database).
+- **Freshness:** max event time or last load time within the SLA.
+
+Tools: dbt tests, Great Expectations, Soda, Deequ for Spark, and observability platforms such as Monte Carlo that add anomaly detection and lineage."""
+
+[[blocks]]
+heading = "Anomaly detection"
+body = """Static thresholds break: Black Friday volume is not an error. Better options compare to history: same weekday over the past 4-8 weeks, with an allowed band (say ±3 standard deviations, or a percentage). Track metrics like row count, null rate, distinct counts, and the sum of a key measure. Seasonal models help for strong weekly or yearly patterns. Start simple and tune; noisy alerts get ignored, which is worse than no alerts."""
+
+[[blocks]]
+heading = "Data contracts"
+body = """A contract specifies, per dataset: schema and types, semantic meaning (what does `amount` include?), keys and uniqueness, freshness, allowed change process, and an owner. Enforcement points:
+- **Producer CI:** a schema change that breaks the contract fails the producer's build, so the break is caught by the team that caused it.
+- **Schema registry:** Kafka topics with backward-compatibility rules reject incompatible schemas.
+- **Ingestion validation:** records that violate the contract go to a dead-letter queue or quarantine table with the error reason.
+
+Contracts shift quality left. They are partly a social agreement, so they work best when producers see consumers and owners are named."""
+
+[[blocks]]
+heading = "Write-audit-publish"
+body = """A robust pattern: **write** new data to a staging location or table-format branch, **audit** it with checks, and **publish** atomically only if checks pass (swap, fast-forward a branch, or overwrite partitions). Consumers never see unaudited data. Iceberg branches and tags, Delta clones or staging tables, and dbt's build-then-test flow all support variants of this."""
+
+key_points = [
+  "Wrong-but-successful runs are the main data incident; checks must test the data, not just job status.",
+  "Check schema, completeness, uniqueness, validity, referential integrity, reconciliation, and freshness.",
+  "Block publishing on correctness failures; warn on suspicious anomalies.",
+  "Anomaly detection should compare to seasonal history, not static thresholds.",
+  "Data contracts and schema registries push enforcement to producers; write-audit-publish keeps bad data from consumers.",
+]
+common_mistakes = [
+  "Monitoring only job success and missing silent data errors.",
+  "Hundreds of noisy alerts that everyone mutes.",
+  "Static row-count thresholds that fire on every holiday.",
+  "Checking data after it is already published to dashboards.",
+  "No owner per dataset, so alerts go nowhere.",
+]
+interview_questions = [
+  "What data quality checks would you add to an orders pipeline?",
+  "How would you detect that a source silently started sending 30% fewer events?",
+  "What is a data contract and how would you enforce it?",
+  "Explain the write-audit-publish pattern.",
+  "Which checks should block a pipeline and which should only alert?",
+]
+
+[[quiz]]
+q = "A lookup join to dim_product doubled the number of order rows. Which check catches this?"
+options = [
+  "Freshness check",
+  "Row count before and after the join, or uniqueness of the fact key",
+  "Schema check",
+  "Null check on product_name",
+]
+answer = 1
+why = "A fan-out join duplicates rows when the dimension key is not unique. Comparing row counts or testing key uniqueness detects it."
+
+[[quiz]]
+q = "Event volume is normally 40% higher on Mondays. Which alerting approach avoids false alarms?"
+options = [
+  "A fixed minimum row count",
+  "Compare each day to the same weekday over recent weeks with a tolerance band",
+  "Alert on any change from yesterday",
+  "Disable volume alerts",
+]
+answer = 1
+why = "Seasonal baselines respect weekly patterns, so normal Monday spikes do not trigger alerts."
+
+[[quiz]]
+q = "What is the main benefit of enforcing a data contract in the producer's CI?"
+options = [
+  "Faster queries",
+  "Breaking changes are caught by the team making them, before they reach the pipeline",
+  "It removes the need for downstream checks",
+  "It compresses data",
+]
+answer = 1
+why = "Shifting enforcement left means incompatible changes fail at the source instead of breaking consumers after deployment."
+
+[[quiz]]
+q = "In write-audit-publish, when do consumers see new data?"
+options = [
+  "As soon as it is written",
+  "Only after audit checks pass and the data is published atomically",
+  "After a manual review every time",
+  "Never; they read the staging table",
+]
+answer = 1
+why = "Data is staged first, audited, and then atomically published, so consumers never see unaudited results."

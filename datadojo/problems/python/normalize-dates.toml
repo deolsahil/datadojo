@@ -1,0 +1,51 @@
+title = "Normalize messy dates"
+lang = "python"
+difficulty = "medium"
+pattern = "py-parsing"
+lists = ["python-de"]
+function = "normalize_dates"
+ordered = true
+statement = '''
+`normalize_dates(values)` cleans a column of dates from different source systems. Return a list of the same length where each entry is an ISO `"YYYY-MM-DD"` string or `null`.
+
+Accepted inputs (surrounding whitespace ignored; month and day may be 1 or 2 digits):
+
+- `YYYY-MM-DD`, e.g. `2024-01-05`
+- `YYYY/MM/DD`, e.g. `2024/1/5`
+- `MM/DD/YYYY` (US order), e.g. `01/05/2024`
+- `D Mon YYYY` with an English 3-letter month, any case, e.g. `5 jan 2024`
+
+Anything else is `null`: other formats, non-strings, and impossible calendar dates like `2023-02-29`.
+'''
+starter = "def normalize_dates(values):\n    pass\n"
+solution = '''
+from datetime import datetime
+
+FORMATS = ["%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%d %b %Y"]
+
+def normalize_dates(values):
+    out = []
+    for v in values:
+        res = None
+        if isinstance(v, str):
+            for f in FORMATS:
+                try:
+                    res = datetime.strptime(v.strip(), f).date().isoformat()
+                    break
+                except ValueError:
+                    pass
+        out.append(res)
+    return out
+'''
+hints = [
+    "`datetime.strptime` validates the calendar for you (no Feb 30).",
+    "Try each format in turn; the first that parses wins.",
+    "`%b` matches 3-letter month names case-insensitively.",
+]
+
+[[tests]]
+args = [["2024-01-05", "2024/1/5", "01/05/2024", "5 jan 2024"]]
+[[tests]]
+args = '''[["2024-02-29", "2023-02-29", "2024-13-01", " 7 MAR 2024 ", null, 20240105, "Jan 5 2024", ""]]'''
+[[tests]]
+args = [[]]

@@ -1,0 +1,27 @@
+title = "Best way to reach each customer"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-nulls"
+lists = ["sql-essentials"]
+statement = """
+The call center wants one contact value per customer, preferring the most direct channel.
+
+Table `customers(id, mobile, home_phone, email)`. Any of the three contact columns may be NULL.
+
+Return `id` and `contact`: the `mobile` if present, otherwise the `home_phone`, otherwise the `email`, otherwise the text `'none'`.
+"""
+starter = "SELECT id, mobile AS contact\nFROM customers\n"
+solution = """
+SELECT id, COALESCE(mobile, home_phone, email, 'none') AS contact FROM customers
+"""
+hints = [
+  "You want the first non-NULL value in a list of columns.",
+  "COALESCE takes any number of arguments and returns the first one that isn't NULL.",
+  "COALESCE(mobile, home_phone, email, 'none')",
+]
+
+[[tests]]
+tables.customers = { columns = "id INT, mobile STRING, home_phone STRING, email STRING", rows = '[[1, "555-1", "555-2", "a@x.com"], [2, null, "555-3", "b@x.com"], [3, null, null, "c@x.com"], [4, null, null, null]]' }
+
+[[tests]]
+tables.customers = { columns = "id INT, mobile STRING, home_phone STRING, email STRING", rows = '[[1, "555-9", null, null], [2, null, null, null]]' }

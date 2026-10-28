@@ -1,0 +1,43 @@
+title = "Running account balance"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-windows"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`ledger(account_id, txn_id, ts, amount)`: deposits are positive, withdrawals negative, and every
+account starts at 0. Several transactions can share a timestamp (batch posting); they are applied
+in `txn_id` order.
+
+Write `solve(spark, ledger)` returning `account_id, txn_id, balance, overdrawn` where `balance` is the
+account balance right after that transaction (rounded to 2 decimals) and `overdrawn` is true when
+that balance is below 0.
+"""
+hints = [
+  "`F.sum(\"amount\").over(w)` with `w = Window.partitionBy(\"account_id\").orderBy(\"ts\", \"txn_id\")` is a running total.",
+  "With only `orderBy(\"ts\")`, Spark's default frame is a RANGE frame: rows tied on `ts` are summed together.",
+  "Being explicit helps: `.rowsBetween(Window.unboundedPreceding, Window.currentRow)`.",
+]
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, ledger):
+    return ledger.select("account_id", "txn_id", "amount", F.col("amount") < 0)
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, ledger):
+    w = (Window.partitionBy("account_id").orderBy("ts", "txn_id")
+         .rowsBetween(Window.unboundedPreceding, Window.currentRow))
+    bal = F.round(F.sum("amount").over(w), 2)
+    return ledger.select("account_id", "txn_id", bal.alias("balance"), (bal < 0).alias("overdrawn"))
+"""
+
+[[tests]]
+tables.ledger = { columns = "account_id STRING, txn_id INT, ts TIMESTAMP, amount DOUBLE", rows = [
+  ["acc-1", 1, "2024-04-01 09:00:00", 100.0], ["acc-1", 2, "2024-04-02 09:00:00", -30.1],
+  ["acc-1", 4, "2024-04-03 00:00:00", 50.0], ["acc-1", 3, "2024-04-03 00:00:00", -90.0],
+  ["acc-1", 5, "2024-04-04 12:00:00", 0.2],
+  ["acc-2", 6, "2024-04-01 09:00:00", -5.0], ["acc-2", 7, "2024-04-01 10:00:00", 5.0],
+] }

@@ -1,0 +1,37 @@
+# Data System Design course: sections in display order. Every lesson's `section` must be one of these ids.
+
+[[sections]]
+id = "ds-foundations"
+group = "Foundations"
+title = "Data Engineering Fundamentals"
+desc = "OLTP vs OLAP, batch vs streaming, and the interview framework for data systems"
+
+[[sections]]
+id = "ds-modeling"
+group = "Foundations"
+title = "Modeling & Storage"
+desc = "Dimensional models, file formats, partitioning, and table formats"
+
+[[sections]]
+id = "ds-reliability"
+group = "Foundations"
+title = "Correctness & Reliability"
+desc = "Idempotency, exactly-once, late data, backfills, and data quality"
+
+[[sections]]
+id = "ds-blocks"
+group = "Building Blocks"
+title = "Core Building Blocks"
+desc = "Kafka, Spark, Flink, warehouses, lakehouses, orchestrators and how they fit"
+
+[[sections]]
+id = "ds-cases-pipelines"
+group = "Case Studies"
+title = "Pipeline Case Studies"
+desc = "Classic design-a-pipeline interview questions, solved end to end"
+
+[[sections]]
+id = "ds-cases-realtime"
+group = "Case Studies"
+title = "Real-time & Platform Case Studies"
+desc = "Streaming, ML platforms, and governance at scale"

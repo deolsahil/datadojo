@@ -1,0 +1,30 @@
+title = "Longest login streak"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-gaps-islands"
+lists = ["sql-essentials"]
+statement = """
+Table `logins(user_id, day)`. A user can log in several times on the same day.
+
+For each user return `user_id, longest_streak`: the longest run of consecutive calendar days
+with at least one login.
+"""
+starter = "SELECT user_id, day\nFROM logins\n"
+solution = """
+WITH d AS (SELECT DISTINCT user_id, day FROM logins),
+g AS (SELECT user_id, day - CAST(ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day) AS INT) AS grp FROM d)
+SELECT user_id, MAX(n) AS longest_streak
+FROM (SELECT user_id, grp, COUNT(*) AS n FROM g GROUP BY user_id, grp)
+GROUP BY user_id
+"""
+
+[[tests]]
+tables.logins = { columns = "user_id INT, day DATE", rows = [
+  [1, "2024-01-01"], [1, "2024-01-02"], [1, "2024-01-03"], [1, "2024-01-05"],
+  [2, "2024-01-10"], [2, "2024-01-12"], [2, "2024-01-13"],
+] }
+
+[[tests]]  # duplicate logins per day, month boundary
+tables.logins = { columns = "user_id INT, day DATE", rows = [
+  [7, "2024-01-31"], [7, "2024-01-31"], [7, "2024-02-01"], [7, "2024-02-01"], [8, "2024-05-05"],
+] }

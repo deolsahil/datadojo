@@ -1,0 +1,48 @@
+title = "Diff two table snapshots"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-dedup-scd"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+To publish only what changed, compare `yesterday(id, name, price)` with `today(id, name, price)`.
+`id` is unique in each table; `name` and `price` can be NULL.
+
+Write `solve(spark, yesterday, today)` returning `id, change` for changed ids only:
+
+- `added`: id only in `today`.
+- `removed`: id only in `yesterday`.
+- `updated`: id in both, and `name` or `price` differs. NULL vs NULL is **not** a change;
+  NULL vs a value **is**. Comparison is case-sensitive.
+- Unchanged ids are omitted.
+"""
+hints = [
+  "A `full` outer join on id keeps rows from both sides; alias the inputs (`yesterday.alias(\"y\")`) to tell columns apart.",
+  "Plain `!=` returns NULL when either side is NULL. Use `Column.eqNullSafe` and negate it.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, yesterday, today):
+    return today.select("id", "name")
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, yesterday, today):
+    y, t = yesterday.alias("y"), today.alias("t")
+    j = y.join(t, F.col("y.id") == F.col("t.id"), "full")
+    same = F.col("y.name").eqNullSafe(F.col("t.name")) & F.col("y.price").eqNullSafe(F.col("t.price"))
+    change = (F.when(F.col("y.id").isNull(), "added").when(F.col("t.id").isNull(), "removed")
+              .when(~same, "updated"))
+    return (j.select(F.coalesce("t.id", "y.id").alias("id"), change.alias("change"))
+            .filter(F.col("change").isNotNull()))
+"""
+
+[[tests]]
+tables.yesterday = { columns = "id INT, name STRING, price DOUBLE", rows = '''[
+  [1, "pen", 1.5], [2, "cup", 3.0], [3, "mug", null], [4, "hat", null], [5, "box", 2.0],
+  [7, "jar", 1.0], [8, null, 4.0]]''' }
+tables.today = { columns = "id INT, name STRING, price DOUBLE", rows = '''[
+  [1, "pen", 1.5], [2, "cup", 3.25], [3, "mug", null], [4, "hat", 9.0], [5, "Box", 2.0],
+  [6, "bag", 4.0], [8, null, 4.0]]''' }

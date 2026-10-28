@@ -1,0 +1,44 @@
+title = "Reconcile two payment ledgers"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-joins"
+statement = """
+Payments are recorded both by the app (`app_ledger`) and by the bank (`bank_ledger`). Finance needs a list of every discrepancy.
+
+Tables `app_ledger(txn_id, amount)` and `bank_ledger(txn_id, amount)`. `txn_id` is unique within each table; `amount` is never NULL.
+
+Return `txn_id` and `issue` for each transaction that does not reconcile:
+
+- `missing_in_bank` when the txn is only in `app_ledger`
+- `missing_in_app` when the txn is only in `bank_ledger`
+- `amount_mismatch` when it is in both but the amounts differ
+
+Transactions present in both with equal amounts are not returned.
+"""
+starter = "SELECT a.txn_id\nFROM app_ledger a\n"
+solution = """
+SELECT COALESCE(a.txn_id, b.txn_id) AS txn_id,
+       CASE WHEN b.txn_id IS NULL THEN 'missing_in_bank'
+            WHEN a.txn_id IS NULL THEN 'missing_in_app'
+            ELSE 'amount_mismatch' END AS issue
+FROM app_ledger a
+FULL OUTER JOIN bank_ledger b ON a.txn_id = b.txn_id
+WHERE a.txn_id IS NULL OR b.txn_id IS NULL OR a.amount <> b.amount
+"""
+hints = [
+  "You need rows that exist on either side, which neither a LEFT nor a RIGHT join gives you alone.",
+  "FULL OUTER JOIN on txn_id; a NULL key on one side tells you which ledger is missing it.",
+  "The output txn_id is COALESCE(a.txn_id, b.txn_id); classify with CASE and filter out matched-and-equal rows.",
+]
+
+[[tests]]
+tables.app_ledger = { columns = "txn_id STRING, amount DOUBLE", rows = [["t1", 10.0], ["t2", 25.5], ["t3", 7.0], ["t5", 1.0]] }
+tables.bank_ledger = { columns = "txn_id STRING, amount DOUBLE", rows = [["t1", 10.0], ["t2", 25.0], ["t4", 99.0], ["t5", 1.0]] }
+
+[[tests]]  # bank ledger empty
+tables.app_ledger = { columns = "txn_id STRING, amount DOUBLE", rows = [["x", 5.0]] }
+tables.bank_ledger = { columns = "txn_id STRING, amount DOUBLE", rows = [] }
+
+[[tests]]  # only bank-side extras
+tables.app_ledger = { columns = "txn_id STRING, amount DOUBLE", rows = [["a", 1.0]] }
+tables.bank_ledger = { columns = "txn_id STRING, amount DOUBLE", rows = [["a", 1.0], ["b", 2.0], ["c", 3.0]] }

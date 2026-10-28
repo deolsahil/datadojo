@@ -1,0 +1,40 @@
+title = "Top sales reps per region"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-windows"
+function = "solve"
+statement = """
+`deals(region, rep, amount)` has one row per closed deal.
+
+Write `solve(spark, deals)` returning `region, rep, total, rnk` for the reps with the **two highest
+distinct totals** in each region, where `total` is the rep's summed deal amount and `rnk` is 1 for
+the highest total. Reps with equal totals share a rank, and ranks have no gaps (two reps tied at 1,
+then the next total is 2), so a region can return more than two reps.
+"""
+hints = [
+  "Aggregate first: `groupBy(\"region\", \"rep\").agg(F.sum(\"amount\"))`.",
+  "`F.dense_rank()` over `Window.partitionBy(\"region\").orderBy(F.desc(\"total\"))` gives tied, gap-free ranks.",
+  "`row_number` would cut ties and `rank` would leave gaps.",
+]
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, deals):
+    return deals
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, deals):
+    t = deals.groupBy("region", "rep").agg(F.sum("amount").alias("total"))
+    w = Window.partitionBy("region").orderBy(F.desc("total"))
+    return t.withColumn("rnk", F.dense_rank().over(w)).filter("rnk <= 2")
+"""
+
+[[tests]]
+tables.deals = { columns = "region STRING, rep STRING, amount INT", rows = [
+  ["west", "ana", 500], ["west", "ana", 300], ["west", "bo", 800], ["west", "cy", 700],
+  ["west", "dee", 100], ["west", "eli", 650], ["west", "eli", 50],
+  ["east", "fay", 400], ["east", "gus", 900], ["east", "hal", 400], ["east", "ivy", 200],
+  ["north", "jo", 10],
+] }

@@ -1,0 +1,28 @@
+title = "Second highest distinct price"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-nulls"
+lists = ["sql-essentials"]
+statement = """
+Table `products(id, price)`.
+
+Return a single row with one column `second_price`: the second highest **distinct** price.
+If there is no such price, return one row containing NULL.
+"""
+starter = "SELECT price AS second_price\nFROM products\n"
+solution = """
+SELECT MAX(price) AS second_price FROM products
+WHERE price < (SELECT MAX(price) FROM products)
+"""
+
+[[tests]]
+tables.products = { columns = "id INT, price INT", rows = [[1, 10], [2, 30], [3, 20]] }
+
+[[tests]]  # duplicates of the max
+tables.products = { columns = "id INT, price INT", rows = [[1, 30], [2, 30], [3, 20], [4, 20]] }
+
+[[tests]]  # only one distinct price -> NULL
+tables.products = { columns = "id INT, price INT", rows = [[1, 5], [2, 5]] }
+
+[[tests]]
+tables.products = { columns = "id INT, price INT", rows = [] }

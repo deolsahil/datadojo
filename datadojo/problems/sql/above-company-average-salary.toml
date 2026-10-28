@@ -1,0 +1,28 @@
+title = "Paid above the company average"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-subqueries"
+lists = ["sql-essentials"]
+statement = """
+Compensation wants to see who earns more than the average employee.
+
+Table `employees(id, name, dept, salary)`.
+
+Return `name` and `salary` of employees whose salary is **strictly greater** than the average salary across the whole company.
+"""
+starter = "SELECT name, salary\nFROM employees\n"
+solution = """
+SELECT name, salary FROM employees
+WHERE salary > (SELECT AVG(salary) FROM employees)
+"""
+hints = [
+  "You can't write `WHERE salary > AVG(salary)`: aggregates aren't allowed in WHERE.",
+  "Compute the average in its own query and use it as a single value.",
+  "WHERE salary > (SELECT AVG(salary) FROM employees)",
+]
+
+[[tests]]
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT", rows = [[1, "Ann", "Eng", 100], [2, "Bo", "Eng", 60], [3, "Cy", "Ops", 50], [4, "Di", "Ops", 90]] }
+
+[[tests]]  # someone exactly at the average is excluded
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT", rows = [[1, "Eve", "A", 10], [2, "Fay", "A", 20], [3, "Gus", "B", 30]] }

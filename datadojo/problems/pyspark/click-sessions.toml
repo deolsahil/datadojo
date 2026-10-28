@@ -1,0 +1,52 @@
+title = "Sessionize clickstream"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-dates"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`clicks(user_id, ts, page)` is a raw clickstream. Rows arrive out of order, the same timestamp can
+repeat, and a few rows have a NULL `ts` (ignore those).
+
+A user's session ends when they go **more than 30 minutes** without a click; a gap of exactly 30
+minutes stays in the same session.
+
+Write `solve(spark, clicks)` returning one row per session:
+`user_id, session_no, session_start, session_end, clicks, pages`
+
+- `session_no` counts the user's sessions from 1 in time order.
+- `session_start` / `session_end` are the first and last click timestamps.
+- `clicks` is the number of clicks; `pages` is the number of distinct pages.
+"""
+hints = [
+  "Order each user's clicks with `Window.partitionBy(\"user_id\").orderBy(\"ts\")` and get the previous click via `F.lag`.",
+  "Flag a new session when there is no previous click or `unix_timestamp` difference > 1800, then a running `F.sum` of the flag numbers the sessions.",
+  "Group by user and session number to get the bounds and counts (`F.countDistinct` for pages).",
+]
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, clicks):
+    return clicks
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, clicks):
+    c = clicks.filter(F.col("ts").isNotNull())
+    w = Window.partitionBy("user_id").orderBy("ts")
+    gap = F.unix_timestamp("ts") - F.unix_timestamp(F.lag("ts").over(w))
+    c = c.withColumn("new", F.when(gap.isNull() | (gap > 1800), 1).otherwise(0))
+    c = c.withColumn("session_no", F.sum("new").over(w.rowsBetween(Window.unboundedPreceding, 0)))
+    return c.groupBy("user_id", "session_no").agg(
+        F.min("ts").alias("session_start"), F.max("ts").alias("session_end"),
+        F.count("*").alias("clicks"), F.countDistinct("page").alias("pages"))
+"""
+
+[[tests]]
+tables.clicks = { columns = "user_id INT, ts TIMESTAMP, page STRING", rows = '''[
+  [1, "2024-01-01 10:00:00", "a"], [1, "2024-01-01 10:30:00", "b"],
+  [1, "2024-01-01 11:00:01", "a"], [1, "2024-01-01 11:00:01", "c"], [1, "2024-01-01 11:10:00", "a"],
+  [2, "2024-01-01 09:50:00", "x"], [2, "2024-01-01 09:00:00", "x"], [2, "2024-01-01 09:20:00", "y"],
+  [2, null, "z"],
+  [3, "2024-01-01 23:50:00", "p"], [3, "2024-01-02 00:10:00", "p"], [3, "2024-01-02 03:00:00", "q"]]''' }

@@ -1,0 +1,98 @@
+title = "Kafka: Topics, Partitions, Consumer Groups"
+section = "ds-blocks"
+order = 1
+kind = "lesson"
+big_idea = "Kafka is a durable, partitioned, append-only log: producers append, consumers read at their own pace by offset, and the partition is the unit of ordering, parallelism, and scaling."
+summary = """A **topic** is a named stream of records, split into **partitions**. Each partition is an ordered, append-only log stored on brokers and replicated (commonly 3 replicas). Every record in a partition has an increasing **offset**. Records are kept for a configured **retention** time or size regardless of whether anyone has read them, which is why many consumers can read the same data independently and why you can replay.
+
+Producers choose a partition, usually by hashing the record **key**. All records with the same key go to the same partition, so they are **ordered relative to each other**. There is no ordering across partitions.
+
+Consumers in the same **consumer group** split partitions among themselves: each partition is read by at most one consumer in the group. So the number of partitions caps the group's parallelism. Different groups (analytics, search indexer, fraud) each get the full stream and track their own offsets."""
+diagram = """flowchart LR
+  p[Producers] -- hash of key --> t["Topic orders - partitions 0, 1, 2"]
+  t --> g1c1["Group A consumer 1"]
+  t --> g1c2["Group A consumer 2"]
+  t --> g2["Group B consumer"]
+  t --> ret[("Retained 7 days or compacted")]"""
+
+[[blocks]]
+heading = "How it works"
+body = """- **Replication:** each partition has a leader and followers. With `acks=all` and `min.insync.replicas=2` on a replication factor of 3, a write is acknowledged once at least 2 in-sync replicas have it, so one broker can fail without data loss.
+- **Offsets:** consumers commit the offset they have processed (stored in an internal topic). On restart or rebalance they resume from it. Commit after processing for at-least-once.
+- **Retention:** time-based (`retention.ms`, e.g. 7 days) or size-based. **Log compaction** instead keeps at least the latest record per key, which is ideal for changelogs and CDC current-state topics. **Tiered storage** (in recent Kafka versions and several managed services) offloads old segments to object storage for long, cheaper retention.
+- **Rebalancing:** when consumers join or leave, partitions are reassigned. Newer cooperative rebalancing protocols reduce stop-the-world pauses.
+- **Metadata:** modern Kafka uses KRaft instead of ZooKeeper (ZooKeeper mode was removed in Kafka 4.0)."""
+
+[[blocks]]
+heading = "Choosing partitions and keys"
+body = """- **Partition count:** at least the maximum consumer parallelism you need, and enough for throughput. If one partition handles ~5-10 MB/s in your setup and peak is 100 MB/s, you need at least 10-20; many teams round up for growth. Adding partitions later changes key-to-partition mapping, which breaks per-key ordering for existing keys during the transition, so plan ahead.
+- **Key choice:** key by the entity whose events must stay ordered (order_id, account_id). Beware **hot keys**: keying by country or by one huge customer sends most traffic to one partition. Salt the key or pick a finer key if strict ordering is not needed for that entity.
+- Too many partitions has costs too: more open files, longer leader elections, more metadata. Thousands per cluster is normal; hundreds of thousands needs care."""
+
+[[blocks]]
+heading = "Failure modes"
+body = """- **Consumer lag:** consumers fall behind producers. Monitor lag per partition; scale consumers up to the partition count, then you must add partitions or make processing faster.
+- **Poison messages:** one record that always fails blocks its partition. Send it to a dead-letter topic after N retries.
+- **Retention shorter than downtime:** if consumers are down longer than retention, unread data is deleted.
+- **Ordering broken by retries:** with older producer settings, retries plus multiple in-flight requests could reorder records; the idempotent producer (default in recent clients) preserves order per partition.
+- **Slow consumer triggers rebalance:** processing longer than `max.poll.interval.ms` kicks the consumer out of the group, causing rebalances and reprocessing."""
+
+[[blocks]]
+heading = "In an interview"
+body = """Use Kafka when you need a durable buffer between producers and consumers, multiple independent consumers, replay, or decoupled scaling. Say what the key is and why ("key by user_id so each user's events stay ordered"), the partition count with a rough estimate, retention ("7 days, enough to replay after an incident; raw data also lands in the lake for long-term replay"), and the delivery semantics. Mention a schema registry with Avro or Protobuf for contracts."""
+
+key_points = [
+  "A topic is split into partitions; each partition is an ordered, replicated, append-only log.",
+  "Ordering is guaranteed only within a partition; same key means same partition.",
+  "In a consumer group, each partition goes to one consumer, so partitions cap parallelism.",
+  "Retention is independent of consumption, enabling replay and multiple consumer groups.",
+  "Choose keys for required ordering while avoiding hot partitions; size partition count for peak and growth.",
+]
+common_mistakes = [
+  "Expecting global ordering across a multi-partition topic.",
+  "Running more consumers than partitions and expecting more throughput.",
+  "Keying by a low-cardinality or skewed field, creating a hot partition.",
+  "Adding partitions later without realizing it remaps keys.",
+  "Treating Kafka as permanent storage without tiered storage or a lake copy.",
+]
+interview_questions = [
+  "How does Kafka guarantee ordering, and what are its limits?",
+  "How many partitions would you create for a topic with 200 MB/s peak, and how many consumers?",
+  "What happens when a consumer in a group crashes?",
+  "What is log compaction and when would you use it?",
+  "How would you handle a message that always fails processing?",
+]
+
+[[quiz]]
+q = "A topic has 12 partitions. A consumer group has 20 consumers. How many consumers actively read?"
+options = ["20", "12", "6", "1"]
+answer = 1
+why = "Each partition is assigned to at most one consumer in a group, so 8 consumers sit idle."
+
+[[quiz]]
+q = "You need all events for each order to be processed in order. What should you do?"
+options = [
+  "Use a single partition",
+  "Use order_id as the message key",
+  "Use a random key",
+  "Increase replication factor",
+]
+answer = 1
+why = "Same key maps to the same partition, which preserves per-order ordering while still allowing parallelism across orders."
+
+[[quiz]]
+q = "Which retention policy keeps at least the latest value for each key indefinitely?"
+options = ["Time-based retention", "Size-based retention", "Log compaction", "Tiered storage"]
+answer = 2
+why = "Compaction removes older records for a key while keeping the newest, which suits changelog and current-state topics."
+
+[[quiz]]
+q = "With replication factor 3, acks=all and min.insync.replicas=2, what happens if two of three replicas are down?"
+options = [
+  "Writes continue with one replica",
+  "Producers with acks=all get errors because fewer than 2 in-sync replicas are available",
+  "Data is silently lost",
+  "The topic is deleted",
+]
+answer = 1
+why = "The broker refuses acks=all writes when in-sync replicas fall below the minimum, trading availability for durability."

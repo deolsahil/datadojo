@@ -1,0 +1,59 @@
+title = "Fraction of Users Upgrading to Prime Membership"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-strings-dates"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Amazon tracks sign-ups in `users(user_id, name, join_date)` and activity in `events(user_id, type, access_date)`.
+`type = 'Music'` means the user accessed Amazon Music; `type = 'P'` means the user upgraded to Prime.
+
+Consider only users who accessed Amazon Music at least once. Among them, find how many upgraded to Prime
+**fewer than 30 days** after their `join_date` (`access_date - join_date < 30`).
+
+Return one row: `total_users` (users who accessed Music), `p_memb` (how many of those upgraded within the window),
+and `prime_members`: `p_memb / total_users * 100`, rounded to 2 decimal places. Each user counts at most once.
+"""
+starter = "SELECT COUNT(*) AS total_users, 0 AS p_memb, 0.0 AS prime_members\nFROM users\n"
+solution = """
+WITH music AS (
+  SELECT DISTINCT user_id FROM events WHERE type = 'Music'
+),
+fast AS (
+  SELECT DISTINCT u.user_id
+  FROM users u
+  JOIN events e ON e.user_id = u.user_id AND e.type = 'P'
+  WHERE date_diff('day', u.join_date, e.access_date) < 30
+)
+SELECT COUNT(*) AS total_users,
+       COUNT(f.user_id) AS p_memb,
+       ROUND(COUNT(f.user_id) * 100.0 / COUNT(*), 2) AS prime_members
+FROM music m
+JOIN users u ON u.user_id = m.user_id
+LEFT JOIN fast f ON f.user_id = m.user_id
+"""
+hints = [
+  "Start from the set of users who have a 'Music' event; that set is the denominator.",
+  "LEFT JOIN the Prime ('P') events onto that set so users who never upgraded still count in the denominator.",
+  "date_diff('day', join_date, access_date) < 30 decides the numerator. Count each user once even if they have several events.",
+]
+
+[[tests]]
+tables.users = { columns = "user_id INT, name STRING, join_date DATE", rows = [
+  [1, "Jon", "2020-02-14"], [2, "Jane", "2020-02-14"], [3, "Jill", "2020-02-15"], [4, "Josh", "2020-02-15"],
+  [5, "Jean", "2020-02-16"], [6, "Justin", "2020-02-17"], [7, "Jeremy", "2020-02-18"],
+] }
+tables.events = { columns = "user_id INT, type STRING, access_date DATE", rows = [
+  [1, "Pay", "2020-03-01"], [2, "Music", "2020-03-02"], [2, "P", "2020-03-12"], [3, "Music", "2020-03-15"],
+  [4, "Music", "2020-03-15"], [1, "P", "2020-03-16"], [3, "P", "2020-03-22"],
+] }
+
+[[tests]]  # repeated Music events, Prime without Music, day 29 vs day 30
+tables.users = { columns = "user_id INT, name STRING, join_date DATE", rows = [
+  [1, "A", "2021-01-01"], [2, "B", "2021-01-01"], [3, "C", "2021-01-01"], [4, "D", "2021-01-01"],
+] }
+tables.events = { columns = "user_id INT, type STRING, access_date DATE", rows = [
+  [1, "Music", "2021-01-02"], [1, "Music", "2021-01-03"], [1, "P", "2021-01-30"],
+  [2, "Music", "2021-01-02"], [2, "P", "2021-01-31"], [3, "P", "2021-01-05"],
+  [4, "Music", "2021-01-02"], [4, "P", "2021-01-10"], [4, "P", "2021-01-11"],
+] }

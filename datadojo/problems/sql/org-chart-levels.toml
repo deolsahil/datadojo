@@ -1,0 +1,37 @@
+title = "Org chart levels"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-recursive"
+lists = ["sql-essentials"]
+statement = """
+Table `employees(id, name, manager_id)`. `manager_id` is NULL for people at the top of the company (there may
+be more than one, e.g. after an acquisition). There are no reporting cycles.
+
+Return `id, name, level` for every employee, where people with no manager are level `1`, their direct reports
+level `2`, and so on. Any row order.
+"""
+starter = "SELECT id, name, CASE WHEN manager_id IS NULL THEN 1 ELSE 2 END AS level\nFROM employees\n"
+solution = """
+WITH RECURSIVE chain AS (
+  SELECT id, name, 1 AS level FROM employees WHERE manager_id IS NULL
+  UNION ALL
+  SELECT e.id, e.name, c.level + 1
+  FROM employees e JOIN chain c ON e.manager_id = c.id
+)
+SELECT id, name, level FROM chain
+"""
+hints = [
+  "A recursive CTE has an anchor (the starting rows) and a recursive part that joins back to the CTE itself.",
+  "Anchor: employees WHERE manager_id IS NULL, at level 1.",
+  "Recursive step: join employees e to the CTE c ON e.manager_id = c.id, with level c.level + 1.",
+]
+
+[[tests]]
+tables.employees = { columns = "id INT, name STRING, manager_id INT", rows = '''[
+  [1, "Ceo", null], [2, "Vp", 1], [3, "Dir", 2], [4, "Eng", 3], [5, "Cfo", 1]
+]''' }
+
+[[tests]]  # two roots, a lone root, ids not in hierarchy order
+tables.employees = { columns = "id INT, name STRING, manager_id INT", rows = '''[
+  [10, "Leaf", 30], [20, "Root A", null], [30, "Mid", 20], [40, "Solo", null], [50, "Leaf2", 30], [60, "Deep", 50]
+]''' }

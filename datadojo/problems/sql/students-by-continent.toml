@@ -1,0 +1,42 @@
+title = "Students side by side by continent"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-pivot"
+ordered = true
+statement = """
+Table `students(name, continent)`; `continent` is `'America'`, `'Asia'` or `'Europe'`. Names are unique.
+
+Produce a three-column roster `america, asia, europe`. Each column lists that continent's student names in
+alphabetical order, top to bottom. Row *k* holds the *k*-th name of each continent; once a continent runs out of
+names its cells are NULL. There are as many rows as the largest continent has students.
+Order rows by *k*.
+"""
+starter = "SELECT name AS america, NULL AS asia, NULL AS europe\nFROM students\nWHERE continent = 'America'\nORDER BY name\n"
+solution = """
+WITH r AS (
+  SELECT name, continent, ROW_NUMBER() OVER (PARTITION BY continent ORDER BY name) AS k
+  FROM students
+)
+SELECT MAX(CASE WHEN continent = 'America' THEN name END) AS america,
+       MAX(CASE WHEN continent = 'Asia' THEN name END) AS asia,
+       MAX(CASE WHEN continent = 'Europe' THEN name END) AS europe
+FROM r
+GROUP BY k
+ORDER BY k
+"""
+hints = [
+  "You need something that lines up the 1st American with the 1st Asian and 1st European student.",
+  "ROW_NUMBER() OVER (PARTITION BY continent ORDER BY name) gives that alignment key k.",
+  "GROUP BY k and pick each column with MAX(CASE WHEN continent = ... THEN name END).",
+]
+source_url = "https://leetcode.com/problems/students-report-by-geography/"
+
+[[tests]]
+tables.students = { columns = "name STRING, continent STRING", rows = [
+  ["Jane", "America"], ["Pascal", "Europe"], ["Xi", "Asia"], ["Jack", "America"],
+] }
+
+[[tests]]  # Europe is the largest; a continent with nobody is all NULL
+tables.students = { columns = "name STRING, continent STRING", rows = [
+  ["Zoe", "Europe"], ["Anna", "Europe"], ["Mark", "Europe"], ["Bo", "America"],
+] }

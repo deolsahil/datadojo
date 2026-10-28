@@ -1,0 +1,31 @@
+title = "Emails used by more than one account"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-aggregation"
+lists = ["sql-essentials"]
+source_url = "https://leetcode.com/problems/duplicate-emails/"
+statement = """
+Trust & safety suspects people are opening multiple accounts with the same email.
+
+Table `accounts(id, email)`. Emails are already stored in lowercase.
+
+Return each `email` that belongs to **two or more** accounts, once per email.
+"""
+starter = "SELECT email\nFROM accounts\n"
+solution = """
+SELECT email FROM accounts GROUP BY email HAVING COUNT(*) > 1
+"""
+hints = [
+  "Group the rows so each email becomes one group.",
+  "You can't use COUNT(*) in WHERE; filtering on a group's size happens in HAVING.",
+  "GROUP BY email HAVING COUNT(*) > 1",
+]
+
+[[tests]]
+tables.accounts = { columns = "id INT, email STRING", rows = [[1, "a@x.com"], [2, "b@x.com"], [3, "a@x.com"]] }
+
+[[tests]]  # an email used three times appears once
+tables.accounts = { columns = "id INT, email STRING", rows = [[1, "z@y.io"], [2, "z@y.io"], [3, "z@y.io"], [4, "q@y.io"], [5, "r@y.io"], [6, "r@y.io"]] }
+
+[[tests]]  # all unique
+tables.accounts = { columns = "id INT, email STRING", rows = [[1, "a@a.a"], [2, "b@b.b"]] }

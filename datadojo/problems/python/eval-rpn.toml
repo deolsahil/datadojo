@@ -1,0 +1,43 @@
+title = "Evaluate reverse Polish notation"
+lang = "python"
+difficulty = "medium"
+pattern = "py-stack-queue"
+lists = ["python-de"]
+function = "eval_rpn"
+source_url = "https://leetcode.com/problems/evaluate-reverse-polish-notation/"
+statement = """
+`eval_rpn(tokens)` evaluates an expression in postfix order. Each token is an integer (possibly
+negative, like `"-11"`) or one of `+ - * /`. An operator applies to the two most recent values,
+in order `left op right`. Division **truncates toward zero** (`-7 / 2` is `-3`). The input is
+always a valid expression, never divides by zero, and the result is an `int`.
+
+- `["2", "1", "+", "3", "*"]` → `9`
+"""
+hints = [
+    "Push numbers on a stack; an operator pops two values and pushes the result.",
+    "The first value popped is the right operand.",
+    "Python's `//` floors (`-7 // 2 == -4`); use `int(a / b)` to truncate toward zero.",
+]
+starter = "def eval_rpn(tokens):\n    pass\n"
+solution = """
+def eval_rpn(tokens):
+    st = []
+    for t in tokens:
+        if t in ("+", "-", "*", "/"):
+            b, a = st.pop(), st.pop()
+            st.append(a + b if t == "+" else a - b if t == "-" else a * b if t == "*" else int(a / b))
+        else:
+            st.append(int(t))
+    return st[0]
+"""
+
+[[tests]]
+args = [["2", "1", "+", "3", "*"]]
+[[tests]]  # operand order matters
+args = [["4", "13", "5", "/", "+"]]
+[[tests]]
+args = [["10", "6", "9", "3", "+", "-11", "*", "/", "*", "17", "+", "5", "+"]]
+[[tests]]  # truncate, not floor
+args = [["-7", "2", "/"]]
+[[tests]]
+args = [["42"]]

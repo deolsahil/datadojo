@@ -1,0 +1,108 @@
+title = "Idempotency and Deterministic Reruns"
+section = "ds-reliability"
+order = 1
+kind = "lesson"
+big_idea = "Every pipeline will be rerun, so design each step so that running it twice with the same input produces exactly the same output as running it once."
+summary = """Jobs fail halfway, orchestrators retry, engineers rerun last Tuesday after fixing a bug. If a rerun appends the same rows again, you get duplicates; if it depends on 'now', you get different results each time. An **idempotent** step can be run any number of times with the same effect as running it once.
+
+The two main techniques are **overwrite a well-defined slice** (replace the whole partition for `2024-06-01`) and **upsert by a key** (`MERGE` on a natural or event ID). Both make the output a function of the input, not of how many times the job ran.
+
+Idempotency pairs with **determinism**: the job should compute the same result from the same input. That means parameterizing by the logical run date instead of reading the clock, pinning input snapshots, and avoiding nondeterministic functions in keys."""
+diagram = """flowchart LR
+  sched["Scheduler run for 2024-06-01"] --> job[Job]
+  job -- reads --> src[("Input partition 2024-06-01")]
+  job -- overwrite partition --> out[("Output partition 2024-06-01")]
+  retry[Retry or backfill] --> job"""
+
+[[blocks]]
+heading = "How to make writes idempotent"
+body = """- **Partition overwrite:** compute the full result for a slice and replace it atomically. Spark with `partitionOverwriteMode=dynamic`, `INSERT OVERWRITE ... PARTITION (dt='2024-06-01')`, Delta `replaceWhere`, or a table-format overwrite. The slice must be fully recomputable from inputs.
+- **MERGE / upsert on a key:** `MERGE INTO target USING staged ON target.event_id = staged.event_id WHEN MATCHED THEN UPDATE ... WHEN NOT MATCHED THEN INSERT ...`. Needs a stable, unique key and deduplicated staging input (MERGE fails or misbehaves when several source rows match one target row, depending on engine).
+- **Delete-then-insert inside one transaction:** a common warehouse pattern when MERGE is awkward. It must be atomic, or a crash between steps loses data.
+- **Write to a temp location, then atomic swap or rename:** classic for file outputs; on object storage, rely on a table format commit since renames are not atomic there.
+
+Avoid plain `INSERT INTO ... SELECT` / append mode for anything that can be retried, unless the append is guarded by a dedup key."""
+
+[[blocks]]
+heading = "Determinism checklist"
+body = """- Use the **logical date** passed by the orchestrator (`ds` / `data_interval_start` in Airflow), never `current_date()` or `now()` inside the transformation.
+- Read a bounded input: a specific partition, a fixed offset range, or a table snapshot/version, not 'whatever is there now'.
+- Generate IDs from content (a hash of business keys), not `uuid()` or `monotonically_increasing_id()`, which change on rerun.
+- Make tie-breaking explicit: `ROW_NUMBER() OVER (PARTITION BY id ORDER BY updated_at DESC, ingest_offset DESC)` instead of ordering by a column with ties.
+- Version the code and config used, so a rerun next month uses known logic."""
+
+[[blocks]]
+heading = "Side effects outside the data store"
+body = """Emails, API calls, payments, and Kafka publishes are harder. Options:
+- Send an **idempotency key** with the request (many payment and messaging APIs support this), derived from the business event.
+- Record what was sent in a table and check before sending (an outbox or ledger), accepting a small window where a crash can still cause one duplicate unless the check and send are transactional.
+- Make the side effect a separate, idempotent stage that reads the finalized output instead of happening mid-transformation."""
+
+[[blocks]]
+heading = "In an interview"
+body = """Say the phrase "every task is idempotent and keyed by the logical date" early, then show how: "the daily job overwrites the `dt` partition; the CDC job MERGEs on primary key with the latest LSN winning." Interviewers often follow up with "what if the job fails halfway?", and the answer is "nothing partial is visible because the overwrite is an atomic table-format commit, and the retry simply recomputes the partition.\""""
+
+key_points = [
+  "Idempotent means running a step twice has the same effect as once; assume every step will be retried.",
+  "Use partition overwrite or MERGE on a stable key instead of blind appends.",
+  "Parameterize jobs by the logical run date, never the wall clock.",
+  "Derive IDs and tie-breakers deterministically so reruns produce identical output.",
+  "External side effects need idempotency keys or a ledger of what was sent.",
+]
+common_mistakes = [
+  "Appending results on every run, so each retry duplicates a day of data.",
+  "Using current_date() in a job, so backfilling June 1 computes today's data instead.",
+  "Generating random UUIDs as keys, breaking MERGE on rerun.",
+  "Non-atomic delete-then-insert that loses a partition when the job crashes in between.",
+  "MERGE with duplicate keys in the source batch.",
+]
+interview_questions = [
+  "How do you make a daily aggregation job safe to rerun?",
+  "Your job failed after writing half its output. What happens on retry?",
+  "How would you make a job that sends notifications idempotent?",
+  "What makes a pipeline nondeterministic, and how do you fix it?",
+]
+
+[[quiz]]
+q = "A daily job uses INSERT INTO daily_sales SELECT ... and Airflow retried it after a timeout. What happens?"
+options = [
+  "Nothing; Airflow prevents duplicates",
+  "The day's rows are appended again and totals double",
+  "The second run fails with a key conflict",
+  "Only new rows are inserted",
+]
+answer = 1
+why = "Plain appends are not idempotent. The retry writes the same rows again unless the write overwrites the partition or merges on a key."
+
+[[quiz]]
+q = "Which choice makes a backfill of 2024-03-10 compute data for that date?"
+options = [
+  "Filter on current_date() - 1",
+  "Filter on the orchestrator's logical date parameter",
+  "Read the latest partition",
+  "Filter on now() minus 24 hours",
+]
+answer = 1
+why = "The logical date ties the run to the data interval it represents, so reruns and backfills compute the intended slice."
+
+[[quiz]]
+q = "Why is a hash of business keys better than uuid() for a surrogate event ID in a rerunnable job?"
+options = [
+  "Hashes are shorter",
+  "The same input produces the same ID on every run, so MERGE and dedup work",
+  "UUIDs are not unique",
+  "Hashes sort faster",
+]
+answer = 1
+why = "Deterministic IDs let reruns match previously written rows; random IDs make every rerun look like new data."
+
+[[quiz]]
+q = "A delete-then-insert pattern for a partition runs as two separate auto-committed statements. What is the risk?"
+options = [
+  "Duplicates",
+  "If the job crashes between them, the partition is empty until a rerun succeeds",
+  "Slower reads",
+  "Schema drift",
+]
+answer = 1
+why = "Without a single transaction, readers can see the deleted state, and a crash leaves the data missing."

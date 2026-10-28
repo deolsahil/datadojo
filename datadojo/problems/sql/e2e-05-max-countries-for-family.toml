@@ -1,0 +1,48 @@
+title = "Maximum Countries a Person Can Live In"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-joins"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `FAMILIES(ID, NAME, FAMILY_SIZE)` lists families (`ID` is unique; names may repeat). Table
+`COUNTRIES(ID, NAME, MIN_SIZE, MAX_SIZE)` lists countries that accept families whose size is between `MIN_SIZE`
+and `MAX_SIZE`, inclusive.
+
+Return a single column `maximum_countries`: the largest number of countries any one family can live in.
+"""
+starter = "SELECT COUNT(*) AS maximum_countries\nFROM COUNTRIES\n"
+solution = """
+SELECT MAX(cnt) AS maximum_countries
+FROM (
+  SELECT f.ID, COUNT(*) AS cnt
+  FROM FAMILIES f
+  JOIN COUNTRIES c ON f.FAMILY_SIZE BETWEEN c.MIN_SIZE AND c.MAX_SIZE
+  GROUP BY f.ID
+) t
+"""
+hints = [
+  "Join on a range condition: FAMILY_SIZE BETWEEN MIN_SIZE AND MAX_SIZE.",
+  "Count countries per family, then take the MAX of those counts.",
+  "Group by the family ID, not the name: two different families can share a name.",
+]
+
+[[tests]]
+tables.FAMILIES = { columns = "ID STRING, NAME STRING, FAMILY_SIZE INT", rows = [
+  ["c00dac11bde74750b4d207b9c182a85f", "Alex Thomas", 9], ["eb6f2d3426694667ae3e79d6274114a4", "Chris Gray", 2],
+  ["3f7b5b8e835d4e1c8b3e12e964a741f3", "Emily Johnson", 4], ["9a345b079d9f4d3cafb2d4c11d20f8ce", "Michael Brown", 6],
+  ["e0a5f57516024de2a231d09de2cbe9d1", "Jessica Wilson", 3],
+] }
+tables.COUNTRIES = { columns = "ID STRING, NAME STRING, MIN_SIZE INT, MAX_SIZE INT", rows = [
+  ["023fd23615bd4ff4b2ae0a13ed7efec9", "Bolivia", 2, 4], ["be247f73de0f4b2d810367cb26941fb9", "Cook Islands", 4, 8],
+  ["3e85ab80a6f84ef3b9068b21dbcc54b3", "Brazil", 4, 7], ["e571e164152c4f7c8413e2734f67b146", "Australia", 5, 9],
+  ["f35a7bb7d44342f7a8a42a53115294a8", "Canada", 3, 5], ["a1b5a4b5fc5f46f891d9040566a78f27", "Japan", 10, 12],
+] }
+
+[[tests]]  # two families named the same must not be merged; boundaries are inclusive
+tables.FAMILIES = { columns = "ID STRING, NAME STRING, FAMILY_SIZE INT", rows = [
+  ["f1", "Sam Lee", 2], ["f2", "Sam Lee", 5], ["f3", "Ana Ruiz", 20],
+] }
+tables.COUNTRIES = { columns = "ID STRING, NAME STRING, MIN_SIZE INT, MAX_SIZE INT", rows = [
+  ["c1", "Peru", 1, 2], ["c2", "Chile", 2, 3], ["c3", "Fiji", 5, 5], ["c4", "Oman", 4, 6],
+] }

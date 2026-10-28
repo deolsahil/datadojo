@@ -1,0 +1,54 @@
+title = "Minimum window containing all characters"
+lang = "python"
+difficulty = "hard"
+pattern = "py-two-pointers"
+lists = ["python-de"]
+function = "min_window"
+source_url = "https://leetcode.com/problems/minimum-window-substring/"
+statement = """
+`min_window(s, t)` returns the shortest contiguous substring of `s` that contains every
+character of `t` **with multiplicity** (if `t` has two `a`s, the window needs at least two).
+Case-sensitive. If several windows share the minimum length, return the one that starts
+earliest. If none exists, return `""`. `t` is non-empty.
+
+- `min_window("ADOBECODEBANC", "ABC")` → `"BANC"`
+- `min_window("a", "aa")` → `""`
+"""
+hints = [
+    "Expand `right` until the window covers `t`, then shrink `left` as far as it stays valid.",
+    "Track needed counts with a Counter and a single `missing` number so the validity check is O(1).",
+    "Record the window whenever it is strictly shorter than the best; scanning left to right keeps the earliest tie.",
+]
+starter = "def min_window(s, t):\n    pass\n"
+solution = """
+from collections import Counter
+
+def min_window(s, t):
+    need = Counter(t)
+    missing = len(t)
+    left, best = 0, (float("inf"), 0, 0)
+    for right, c in enumerate(s):
+        if need[c] > 0:
+            missing -= 1
+        need[c] -= 1
+        while missing == 0:
+            if right - left + 1 < best[0]:
+                best = (right - left + 1, left, right + 1)
+            d = s[left]
+            need[d] += 1
+            if need[d] > 0:
+                missing += 1
+            left += 1
+    return s[best[1]:best[2]]
+"""
+
+[[tests]]
+args = ["ADOBECODEBANC", "ABC"]
+[[tests]]  # multiplicity matters
+args = ["a", "aa"]
+[[tests]]
+args = ["baab", "aa"]
+[[tests]]  # tie: earliest window wins
+args = ["abba", "ab"]
+[[tests]]  # case-sensitive
+args = ["aAbB", "ab"]

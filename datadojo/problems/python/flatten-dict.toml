@@ -1,0 +1,31 @@
+title = "Flatten a nested dict"
+lang = "python"
+difficulty = "easy"
+pattern = "py-recursion"
+lists = ["python-de"]
+function = "flatten"
+statement = """
+Write `flatten(d)` that turns a nested dict into a flat dict with dot-joined keys.
+Non-dict values (including lists) are leaves. An empty nested dict disappears.
+
+`{"a": 1, "b": {"c": 2, "d": {"e": 3}}}` → `{"a": 1, "b.c": 2, "b.d.e": 3}`
+"""
+starter = "def flatten(d):\n    pass\n"
+solution = """
+def flatten(d, prefix=""):
+    out = {}
+    for k, v in d.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict):
+            out.update(flatten(v, key + "."))
+        else:
+            out[key] = v
+    return out
+"""
+
+[[tests]]
+args = [{ a = 1, b = { c = 2, d = { e = 3 } } }]
+[[tests]]
+args = [{ x = [1, 2], y = {} }]
+[[tests]]
+args = [{}]

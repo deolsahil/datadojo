@@ -1,0 +1,38 @@
+title = "Student Performance: Percentage Scoring Above 90"
+lang = "sql"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+difficulty = "easy"
+pattern = "sql-aggregation"
+statement = """
+Table `students(studentid, studentname, subject, marks, testid, testdate)` has one row per student per subject
+test (the same student appears once per subject).
+
+Return one column `percentage`: the percentage of distinct students who scored **above 90 in at least one
+subject**, out of all distinct students in the table, rounded to 2 decimal places.
+"""
+starter = "SELECT ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM students), 2) AS percentage\nFROM students\nWHERE marks > 90\n"
+solution = """
+SELECT ROUND(100.0 * COUNT(DISTINCT CASE WHEN marks > 90 THEN studentid END) / COUNT(DISTINCT studentid), 2) AS percentage
+FROM students
+"""
+hints = [
+  "The unit is a student, not a row: a student with two high marks counts once.",
+  "COUNT(DISTINCT CASE WHEN marks > 90 THEN studentid END) counts qualifying students.",
+  "Divide by COUNT(DISTINCT studentid), multiply by 100.0 to avoid integer division, ROUND to 2.",
+]
+
+[[tests]]
+tables.students = { columns = "studentid INT, studentname STRING, subject STRING, marks INT, testid INT, testdate DATE", rows = [
+  [2, "Max Ruin", "Subject1", 63, 1, "2022-01-02"], [3, "Arnold", "Subject1", 95, 1, "2022-01-02"],
+  [4, "Krish Star", "Subject1", 61, 1, "2022-01-02"], [5, "John Mike", "Subject1", 91, 1, "2022-01-02"],
+  [4, "Krish Star", "Subject2", 71, 1, "2022-01-02"], [3, "Arnold", "Subject2", 32, 1, "2022-01-02"],
+  [5, "John Mike", "Subject2", 61, 2, "2022-11-02"], [1, "John Deo", "Subject2", 60, 1, "2022-01-02"],
+  [2, "Max Ruin", "Subject2", 84, 1, "2022-01-02"], [2, "Max Ruin", "Subject3", 29, 3, "2022-01-03"],
+  [5, "John Mike", "Subject3", 98, 2, "2022-11-02"],
+] }
+
+[[tests]]  # one student above 90 in two subjects; exactly 90 does not count
+tables.students = { columns = "studentid INT, studentname STRING, subject STRING, marks INT, testid INT, testdate DATE", rows = [
+  [1, "A", "Math", 95, 1, "2022-01-01"], [1, "A", "Art", 92, 1, "2022-01-01"], [2, "B", "Math", 90, 1, "2022-01-01"],
+] }

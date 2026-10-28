@@ -1,0 +1,64 @@
+title = "Fully justify text"
+lang = "python"
+difficulty = "hard"
+pattern = "py-strings"
+function = "full_justify"
+ordered = true
+source_url = "https://leetcode.com/problems/text-justification/"
+statement = """
+`full_justify(words, width)` lays out `words` (non-empty strings, each at most `width` long,
+at least one word) into lines of exactly `width` characters and returns the list of lines.
+
+- Pack greedily: put as many words on a line as fit with at least one space between them.
+- Every line except the last is **fully justified**: spread the extra spaces between words as
+  evenly as possible; when they do not divide evenly, the leftmost gaps get one more space.
+- A non-last line with a single word is left-justified and padded with spaces on the right.
+- The last line is left-justified (single spaces between words) and padded on the right.
+
+```
+full_justify(["This", "is", "an", "example", "of", "text", "justification."], 16)
+["This    is    an",
+ "example  of text",
+ "justification.  "]
+```
+"""
+hints = [
+    "First decide which words go on each line: a line with words totalling `L` chars and `n` words needs `L + n - 1 <= width`.",
+    "For a full line, total spaces = `width - L`; `divmod(spaces, gaps)` gives the base width and how many left gaps get +1.",
+    "Handle the single-word line and the last line separately: both are `' '.join(...)` padded with `ljust(width)`.",
+]
+starter = "def full_justify(words, width):\n    pass\n"
+solution = """
+def full_justify(words, width):
+    lines, cur, length = [], [], 0
+    for w in words:
+        if cur and length + len(cur) + len(w) > width:
+            lines.append(cur)
+            cur, length = [], 0
+        cur.append(w)
+        length += len(w)
+    out = []
+    for line in lines:
+        gaps = len(line) - 1
+        if gaps == 0:
+            out.append(line[0].ljust(width))
+            continue
+        q, r = divmod(width - sum(map(len, line)), gaps)
+        s = ""
+        for i, w in enumerate(line[:-1]):
+            s += w + " " * (q + (i < r))
+        out.append(s + line[-1])
+    out.append(" ".join(cur).ljust(width))
+    return out
+"""
+
+[[tests]]
+args = [["This", "is", "an", "example", "of", "text", "justification."], 16]
+[[tests]]  # single-word middle line, uneven gaps
+args = [["What", "must", "be", "acknowledgment", "shall", "be"], 16]
+[[tests]]
+args = [["Science", "is", "what", "we", "understand", "well", "enough", "to", "explain", "to", "a", "computer.", "Art", "is", "everything", "else", "we", "do"], 20]
+[[tests]]
+args = [["a"], 1]
+[[tests]]
+args = [["ab", "c", "d", "e"], 4]

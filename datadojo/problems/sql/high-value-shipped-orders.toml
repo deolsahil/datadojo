@@ -1,0 +1,32 @@
+title = "High-value shipped orders"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-basics"
+lists = ["sql-essentials"]
+ordered = true
+statement = """
+The fulfillment team wants to double-check large parcels that already left the warehouse.
+
+Table `orders(id, customer_id, amount, status)`. `status` is always lowercase, one of `pending`, `shipped`, `cancelled`.
+
+Return `id` and `amount` for every order that is **shipped** and has an `amount` of **at least 100**.
+
+Sort by `amount` descending; break ties by `id` ascending.
+"""
+starter = "SELECT id, amount\nFROM orders\n"
+solution = """
+SELECT id, amount FROM orders
+WHERE status = 'shipped' AND amount >= 100
+ORDER BY amount DESC, id
+"""
+hints = [
+  "Two conditions must both hold, so combine them with AND in the WHERE clause.",
+  "\"At least 100\" includes 100 itself: use >=, not >.",
+  "ORDER BY accepts several keys: ORDER BY amount DESC, id ASC.",
+]
+
+[[tests]]
+tables.orders = { columns = "id INT, customer_id INT, amount INT, status STRING", rows = [[1, 10, 250, "shipped"], [2, 11, 90, "shipped"], [3, 12, 400, "pending"], [4, 10, 100, "shipped"], [5, 13, 250, "shipped"], [6, 14, 300, "cancelled"]] }
+
+[[tests]]  # nothing qualifies
+tables.orders = { columns = "id INT, customer_id INT, amount INT, status STRING", rows = [[1, 10, 99, "shipped"], [2, 11, 500, "pending"]] }

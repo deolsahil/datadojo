@@ -1,0 +1,29 @@
+title = "Monthly order summary"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-strings-dates"
+lists = ["sql-essentials"]
+statement = """
+The exec dashboard shows order volume by month.
+
+Table `orders(id, order_date, amount)` where `order_date` is a DATE.
+
+Return `month_start` (the first day of the order's month, as a **DATE**), `orders` (count) and `revenue` (sum of `amount`), one row per month that has orders.
+"""
+starter = "SELECT order_date AS month_start, COUNT(*) AS orders, SUM(amount) AS revenue\nFROM orders\nGROUP BY order_date\n"
+solution = """
+SELECT CAST(DATE_TRUNC('month', order_date) AS DATE) AS month_start, COUNT(*) AS orders, SUM(amount) AS revenue
+FROM orders
+GROUP BY CAST(DATE_TRUNC('month', order_date) AS DATE)
+"""
+hints = [
+  "Grouping by order_date gives one row per day. You need to map every date to its month first.",
+  "DATE_TRUNC('month', order_date) snaps a date to the first of its month.",
+  "In DuckDB DATE_TRUNC returns a TIMESTAMP, so wrap it: CAST(DATE_TRUNC('month', order_date) AS DATE).",
+]
+
+[[tests]]
+tables.orders = { columns = "id INT, order_date DATE, amount INT", rows = [[1, "2024-01-03", 10], [2, "2024-01-31", 20], [3, "2024-02-01", 5], [4, "2024-02-29", 7], [5, "2024-04-15", 100]] }
+
+[[tests]]  # same month, different years
+tables.orders = { columns = "id INT, order_date DATE, amount INT", rows = [[1, "2023-12-31", 1], [2, "2024-12-01", 2], [3, "2024-12-25", 3]] }

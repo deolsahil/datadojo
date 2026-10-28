@@ -1,0 +1,48 @@
+title = "Consecutive Days with Low Stock"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-gaps-islands"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `stock(supplier_id, product_id, stock_quantity, record_date)` has at most one row per supplier, product and
+day; some days are missing.
+
+Find every streak of **2 or more consecutive calendar days** on which a (supplier, product) had a recorded
+`stock_quantity` below 50. A missing day breaks the streak. Return `supplier_id, product_id,
+total_consecutive_count, first_date` (streak length and its first day), one row per streak. Any row order.
+"""
+starter = "SELECT supplier_id, product_id, COUNT(*) AS total_consecutive_count, MIN(record_date) AS first_date\nFROM stock\nWHERE stock_quantity < 50\nGROUP BY supplier_id, product_id\n"
+solution = """
+WITH low AS (
+  SELECT supplier_id, product_id, record_date,
+         record_date - CAST(ROW_NUMBER() OVER (PARTITION BY supplier_id, product_id ORDER BY record_date) AS INT) AS grp
+  FROM stock
+  WHERE stock_quantity < 50
+)
+SELECT supplier_id, product_id, COUNT(*) AS total_consecutive_count, MIN(record_date) AS first_date
+FROM low
+GROUP BY supplier_id, product_id, grp
+HAVING COUNT(*) >= 2
+"""
+hints = [
+  "Filter to low-stock rows first; consecutive low days then have consecutive dates.",
+  "record_date minus ROW_NUMBER() (per supplier and product, ordered by date) is constant within a streak.",
+  "Group by supplier, product and that key, keep groups with COUNT(*) >= 2.",
+]
+
+[[tests]]
+tables.stock = { columns = "supplier_id INT, product_id INT, stock_quantity INT, record_date DATE", rows = [
+  [1, 1, 60, "2022-01-01"], [1, 1, 40, "2022-01-02"], [1, 1, 35, "2022-01-03"], [1, 1, 45, "2022-01-04"],
+  [1, 1, 51, "2022-01-06"], [1, 1, 55, "2022-01-09"], [1, 1, 25, "2022-01-10"], [1, 1, 48, "2022-01-11"],
+  [1, 1, 45, "2022-01-15"], [1, 1, 38, "2022-01-16"], [1, 2, 45, "2022-01-08"], [1, 2, 40, "2022-01-09"],
+  [2, 1, 45, "2022-01-06"], [2, 1, 55, "2022-01-07"], [2, 2, 45, "2022-01-08"], [2, 2, 48, "2022-01-09"],
+  [2, 2, 35, "2022-01-10"], [2, 2, 52, "2022-01-15"], [2, 2, 23, "2022-01-16"],
+] }
+
+[[tests]]  # a missing day breaks a streak; exactly 50 is not low; streak across a month end
+tables.stock = { columns = "supplier_id INT, product_id INT, stock_quantity INT, record_date DATE", rows = [
+  [1, 1, 10, "2022-01-01"], [1, 1, 10, "2022-01-03"], [1, 1, 10, "2022-01-04"],
+  [1, 2, 49, "2022-01-30"], [1, 2, 50, "2022-01-31"], [1, 2, 49, "2022-02-01"],
+  [3, 3, 1, "2022-01-31"], [3, 3, 2, "2022-02-01"],
+] }

@@ -1,0 +1,34 @@
+title = "Keep the first account per email"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-dedup-scd"
+statement = """
+Table `accounts(id, email)`. Duplicate signups exist, and emails were stored as typed, so `Ana@Mail.com ` and
+`ana@mail.com` are the same address.
+
+Two emails are duplicates when they match after trimming surrounding spaces and ignoring letter case. From each
+group of duplicates keep only the account with the **smallest `id`**. Return the kept rows as `id, email`, with
+`email` exactly as stored on that row. Any row order.
+"""
+starter = "SELECT MIN(id) AS id, email\nFROM accounts\nGROUP BY email\n"
+solution = """
+SELECT id, email FROM (
+  SELECT id, email, ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(email)) ORDER BY id) AS rn
+  FROM accounts
+) t WHERE rn = 1
+"""
+hints = [
+  "Group by a normalized key, LOWER(TRIM(email)), not the raw email.",
+  "GROUP BY can't easily return the original email of the smallest id; ROW_NUMBER() over the normalized key can.",
+]
+source_url = "https://leetcode.com/problems/delete-duplicate-emails/"
+
+[[tests]]
+tables.accounts = { columns = "id INT, email STRING", rows = [
+  [1, "john@example.com"], [2, "bob@example.com"], [3, "john@example.com"],
+] }
+
+[[tests]]  # case and whitespace variants; the kept row keeps its own spelling
+tables.accounts = { columns = "id INT, email STRING", rows = [
+  [7, " Ana@Mail.com"], [4, "ana@mail.com "], [9, "ANA@MAIL.COM"], [5, "lee@x.io"],
+] }

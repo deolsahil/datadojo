@@ -1,0 +1,47 @@
+title = "Summarize browsing sessions"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-sessions-funnels"
+statement = """
+Table `pageviews(user_id, ts)`. The same user can have several pageviews at the identical timestamp.
+
+Split each user's pageviews into sessions: a new session starts at the user's first pageview and whenever the
+gap since that user's previous pageview is **20 minutes or more**. A gap of 19:59 continues the session; exactly
+20:00 starts a new one.
+
+Return one row per session: `user_id, session_start, session_end, pageviews` (timestamps of the first and last
+pageview, and the number of pageviews in it). Any row order.
+"""
+starter = "SELECT user_id, MIN(ts) AS session_start, MAX(ts) AS session_end, COUNT(*) AS pageviews\nFROM pageviews\nGROUP BY user_id\n"
+solution = """
+WITH f AS (
+  SELECT user_id, ts,
+         CASE WHEN LAG(ts) OVER (PARTITION BY user_id ORDER BY ts) IS NULL
+                OR ts - LAG(ts) OVER (PARTITION BY user_id ORDER BY ts) >= INTERVAL 20 MINUTE
+              THEN 1 ELSE 0 END AS is_new
+  FROM pageviews
+), s AS (
+  SELECT *, SUM(is_new) OVER (PARTITION BY user_id ORDER BY ts ROWS UNBOUNDED PRECEDING) AS session_no
+  FROM f
+)
+SELECT user_id, MIN(ts) AS session_start, MAX(ts) AS session_end, COUNT(*) AS pageviews
+FROM s
+GROUP BY user_id, session_no
+"""
+hints = [
+  "Use LAG(ts) per user to measure the gap to the previous pageview, and flag rows that start a session.",
+  "A running SUM of the flag numbers the sessions. Use a ROWS frame so tied timestamps don't share a cumulative value in unexpected ways.",
+  "GROUP BY user_id, session number and take MIN, MAX and COUNT.",
+]
+
+[[tests]]
+tables.pageviews = { columns = "user_id INT, ts TIMESTAMP", rows = [
+  [1, "2024-01-01 09:00:00"], [1, "2024-01-01 09:10:00"], [1, "2024-01-01 10:00:00"],
+  [2, "2024-01-01 09:00:00"],
+] }
+
+[[tests]]  # exactly 20 minutes splits; 19:59 does not; duplicate timestamps stay together
+tables.pageviews = { columns = "user_id INT, ts TIMESTAMP", rows = [
+  [1, "2024-01-01 10:00:00"], [1, "2024-01-01 10:00:00"], [1, "2024-01-01 10:19:59"],
+  [1, "2024-01-01 10:39:59"], [1, "2024-01-01 10:39:59"], [2, "2024-01-01 23:50:00"], [2, "2024-01-02 00:05:00"],
+] }

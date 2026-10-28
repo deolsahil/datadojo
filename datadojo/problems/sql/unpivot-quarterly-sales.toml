@@ -1,0 +1,33 @@
+title = "Unpivot a wide sales table"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-pivot"
+statement = """
+Table `sales_wide(product, q1, q2, q3, q4)` stores one column per quarter. A NULL means the product was not on
+sale that quarter; `0` means it was on sale and sold nothing.
+
+Reshape it into long form: `product, quarter, amount` with `quarter` one of `'Q1'`, `'Q2'`, `'Q3'`, `'Q4'`.
+Leave out NULL cells, but keep zeros. Any row order.
+"""
+starter = "SELECT product, 'Q1' AS quarter, q1 AS amount\nFROM sales_wide\n"
+solution = """
+SELECT product, 'Q1' AS quarter, q1 AS amount FROM sales_wide WHERE q1 IS NOT NULL
+UNION ALL SELECT product, 'Q2', q2 FROM sales_wide WHERE q2 IS NOT NULL
+UNION ALL SELECT product, 'Q3', q3 FROM sales_wide WHERE q3 IS NOT NULL
+UNION ALL SELECT product, 'Q4', q4 FROM sales_wide WHERE q4 IS NOT NULL
+"""
+hints = [
+  "Each quarter column becomes its own SELECT with a literal quarter label.",
+  "Stack them with UNION ALL, filtering each with WHERE qN IS NOT NULL (WHERE qN > 0 would also drop zeros).",
+]
+source_url = "https://leetcode.com/problems/rearrange-products-table/"
+
+[[tests]]
+tables.sales_wide = { columns = "product STRING, q1 INT, q2 INT, q3 INT, q4 INT", rows = '''[
+  ["lamp", 10, 20, 30, 40], ["desk", null, 5, null, 7]
+]''' }
+
+[[tests]]  # zeros are kept, an all-NULL product disappears
+tables.sales_wide = { columns = "product STRING, q1 INT, q2 INT, q3 INT, q4 INT", rows = '''[
+  ["mug", 0, 0, 3, null], ["ghost", null, null, null, null]
+]''' }

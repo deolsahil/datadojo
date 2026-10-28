@@ -1,0 +1,111 @@
+title = "Late and Out-of-Order Data: Event Time and Watermarks"
+section = "ds-reliability"
+order = 3
+kind = "lesson"
+big_idea = "Group events by when they happened, not when they arrived, and use watermarks to decide how long to wait for stragglers before declaring a result final."
+summary = """**Event time** is when something happened (the timestamp on the phone when the user tapped). **Processing time** is when your system saw it. They differ because of network delays, mobile devices going offline, retries, and backlogs. A phone that reconnects after a flight may deliver yesterday's events today.
+
+If you aggregate by processing time, results are easy but wrong: a backlog makes a quiet hour look busy. Aggregating by event time is correct but raises a question: when is the 10:00-10:05 window **complete**? A **watermark** is the system's estimate that no more events older than time T will arrive; in practice it is usually "max event time seen minus an allowed delay".
+
+Anything arriving after the watermark passes is **late**: drop it, route it to a side output, or update an already-emitted result. The allowed delay trades latency (wait longer) against completeness (catch more stragglers)."""
+diagram = """flowchart LR
+  dev[Devices] -- delayed and reordered --> k[("Kafka")]
+  k --> s["Stream job keyed by event time"]
+  s --> w["Watermark = max event time minus 10 min"]
+  w -- window closes --> out[("Results")]
+  s -- after watermark --> late[("Late events side output")]
+  late --> fix[Batch correction job]"""
+
+[[blocks]]
+heading = "How watermarks work"
+body = """Example: 5-minute tumbling windows, watermark = max event time seen − 10 minutes.
+
+- Events up to 10:17 have been seen, so the watermark is 10:07. Window 10:00-10:05 closes and is emitted (or finalized).
+- An event stamped 10:03 arrives now: it is behind the watermark, so it is late.
+
+In Spark Structured Streaming, `withWatermark('event_ts', '10 minutes')` bounds state and determines when windows finalize in append mode. In Flink, a `WatermarkStrategy` such as bounded out-of-orderness generates watermarks per source partition, and the operator's watermark is the **minimum** across inputs, so one idle or slow partition can hold everything back (Flink offers idleness detection for that).
+
+Watermarks also **bound state**: without them, a stream aggregation must keep every window open forever."""
+
+[[blocks]]
+heading = "Handling late data"
+body = """- **Drop:** simplest; acceptable for approximate monitoring. Measure how much you drop.
+- **Allowed lateness / updates:** keep windows around longer and emit updated results (Flink allowed lateness; Spark update mode). Downstream must accept upserts.
+- **Side output:** send late events somewhere (a table) and reconcile with a periodic batch job.
+- **Batch restatement:** the streaming result is provisional; a nightly job recomputes yesterday by event time from the raw lake and overwrites. Common for finance-grade numbers.
+
+For batch pipelines, late data shows up as events landing in an already-processed partition. Options: partition by event date and reprocess the last N days each run (a rolling lookback window), or partition raw data by **ingestion date** and use event-date filters downstream with a lookback."""
+
+[[blocks]]
+heading = "Choosing the delay"
+body = """Measure it. Plot the distribution of `ingest_ts − event_ts`: maybe p99 is 2 minutes but mobile offline sync has a long tail of days. Pick a watermark that covers, say, p99 for real-time output, and use a batch correction for the tail. Also guard against **clock skew** and bogus device timestamps (events from 1970 or next year): clamp or reject them, or a single future timestamp can push the watermark ahead and make everything else 'late'."""
+
+[[blocks]]
+heading = "In an interview"
+body = """Whenever you aggregate events over time, say which time you use and why. Then state the lateness policy: "10-minute watermark for the live dashboard, late events to a side table, and a nightly event-time recompute of the last 3 days for the official numbers." That sentence covers event time, watermarks, state bounding, and correctness."""
+
+key_points = [
+  "Event time is when it happened; processing time is when you saw it; aggregate business metrics by event time.",
+  "A watermark is a moving threshold, usually max event time minus allowed delay, that marks windows as complete.",
+  "Watermarks bound state; without them, streaming aggregations grow forever.",
+  "Late data can be dropped, used to update results, side-output, or fixed by batch restatement.",
+  "Choose the delay from the measured lateness distribution and sanitize bad device timestamps.",
+]
+common_mistakes = [
+  "Aggregating by processing time, so outages and backlogs distort metrics.",
+  "No watermark on a streaming aggregation, causing unbounded state growth.",
+  "Trusting client timestamps blindly; one far-future timestamp advances the watermark and drops valid data.",
+  "Batch jobs that only process 'yesterday' and never pick up events that arrive two days late.",
+  "Ignoring idle partitions in Flink, which stall the watermark.",
+]
+interview_questions = [
+  "What is the difference between event time and processing time?",
+  "Explain watermarks and what happens to events that arrive after them.",
+  "How would you handle mobile events that arrive days late?",
+  "How do you pick a watermark delay?",
+  "Why can a single idle Kafka partition stall a Flink job's output?",
+]
+
+[[quiz]]
+q = "Watermark is max event time minus 10 minutes. The max event time seen is 12:30. An event stamped 12:15 arrives. What is it?"
+options = [
+  "On time, since 12:15 is before 12:30",
+  "Late, since the watermark is 12:20 and 12:15 is behind it",
+  "Dropped because it is out of order",
+  "Assigned to the 12:30 window",
+]
+answer = 1
+why = "The watermark is 12:30 minus 10 minutes = 12:20. An event older than the watermark is late."
+
+[[quiz]]
+q = "A Kafka outage delays events by an hour. A dashboard aggregated by processing time will show what?"
+options = [
+  "Correct counts",
+  "A dip during the outage and a spike when the backlog is processed",
+  "No change",
+  "Only late events",
+]
+answer = 1
+why = "Processing-time buckets reflect arrival, so the backlog lands in the wrong buckets. Event-time aggregation avoids this."
+
+[[quiz]]
+q = "What is a key operational reason streaming aggregations need watermarks?"
+options = [
+  "To encrypt state",
+  "To know when windows can be finalized and their state discarded",
+  "To speed up Kafka",
+  "To guarantee exactly-once",
+]
+answer = 1
+why = "Without a watermark the engine cannot tell whether an old window might still receive events, so it must keep all state."
+
+[[quiz]]
+q = "Finance needs exact daily revenue, but some events arrive up to 3 days late. What is the best design?"
+options = [
+  "A streaming job with a 3-day watermark",
+  "Drop late events",
+  "Provisional streaming numbers plus a daily batch recompute of the last few days by event time",
+  "Aggregate by processing time",
+]
+answer = 2
+why = "A long watermark holds huge state and delays output; batch restatement over a lookback window gives correct final numbers cheaply."

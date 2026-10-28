@@ -1,0 +1,102 @@
+title = "Batch vs Streaming vs Micro-batch"
+section = "ds-foundations"
+order = 3
+kind = "lesson"
+big_idea = "Choose the processing model by the latency the consumer actually needs, because every step toward lower latency costs more in complexity, state management, and operations."
+summary = """**Batch** processes a bounded chunk of data on a schedule: last hour, last day. It is simple, cheap, easy to rerun, and handles most reporting. **Streaming** processes unbounded data continuously, event by event, giving latency from milliseconds to seconds, at the cost of managing long-running state, late data, and 24/7 operations. **Micro-batch** sits in between: a streaming engine (classically Spark Structured Streaming) processes small batches every few seconds to minutes.
+
+Two classic architectures combine these. **Lambda** runs a batch layer for accurate historical results and a speed layer for fresh approximate results, merging them at query time. **Kappa** uses only a stream: one code path, and reprocessing means replaying the log (for example, from Kafka or a table format) through a new version of the job.
+
+Most real platforms are mixed: a stream for the few use cases that need it, batch for everything else, often reading the same raw data."""
+diagram = """flowchart LR
+  src[Events] --> log[("Kafka")]
+  log --> stream["Stream job (seconds)"]
+  log --> lake[("Raw lake")]
+  lake --> batch["Batch job (hourly or daily)"]
+  stream --> serve[Serving layer]
+  batch --> serve"""
+
+[[blocks]]
+heading = "When to use what"
+body = """- **Batch (hours/daily):** finance reports, daily KPIs, ML training sets, anything where correctness and cost matter more than freshness. Default choice.
+- **Micro-batch (roughly 10 s to 15 min):** near-real-time dashboards, incremental lake ingestion, CDC merges into a table format. Good when you already run Spark and minutes are fine.
+- **Streaming (ms to seconds):** fraud detection, alerting, real-time personalization, operational monitoring, anything that triggers an action while it still matters.
+
+Rule of thumb: ask "what decision is made with this data, and how much value is lost per minute of delay?" If the answer is "a human looks at it tomorrow morning", batch it."""
+
+[[blocks]]
+heading = "Lambda vs Kappa"
+body = """**Lambda** gives correct batch results plus fresh streaming results, but you maintain **two codebases** that must produce identical logic, and they drift. **Kappa** keeps one streaming code path; to fix a bug, you deploy a new job version, replay history from the retained log, and swap outputs when it catches up. Kappa requires long retention (or tiered storage) and a processor that can handle replay throughput.
+
+A modern variant: write the stream into an open table format (Delta, Iceberg, Hudi), and run both streaming and batch jobs on the same tables with the same engine, which reduces the two-codebase problem."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """| | Batch | Micro-batch | Streaming |
+|---|---|---|---|
+| Latency | Hours | Seconds to minutes | Milliseconds to seconds |
+| Complexity | Low | Medium | High (state, watermarks, checkpoints) |
+| Reruns | Easy: rerun the partition | Medium | Hard: replay and reconcile state |
+| Cost | Pay per run | Always-on cluster | Always-on cluster |
+| Late data | Naturally absorbed if you wait | Needs watermarks | Needs watermarks and update handling |
+
+Note that Spark Structured Streaming also has a lower-latency continuous mode and newer real-time options depending on version, and Flink can run batch jobs; the labels describe execution models more than products."""
+
+key_points = [
+  "Batch is the default: simplest, cheapest, and easiest to rerun.",
+  "Pick latency from the business decision, not from the word 'real-time' in the prompt.",
+  "Micro-batch trades a little latency for reuse of batch tooling and simpler semantics.",
+  "Lambda has two code paths that drift; Kappa has one path and reprocesses by replaying the log.",
+  "Streaming adds state, watermarks, checkpoints, and on-call; budget for it.",
+]
+common_mistakes = [
+  "Building a streaming pipeline for a dashboard that is looked at once a day.",
+  "Proposing Lambda without acknowledging the cost of keeping two implementations consistent.",
+  "Proposing Kappa without enough log retention to actually replay history.",
+  "Forgetting that streaming results may need corrections when late events arrive.",
+]
+interview_questions = [
+  "When would you choose micro-batch over true streaming?",
+  "Explain Lambda and Kappa architectures and when you would pick each.",
+  "How do you reprocess six months of data in a Kappa architecture?",
+  "Your stakeholder asks for real-time metrics. How do you decide what 'real-time' means?",
+]
+
+[[quiz]]
+q = "A fraud team must block suspicious card transactions before authorization completes (about 200 ms). Which model fits?"
+options = ["Daily batch", "Hourly batch", "Micro-batch every 5 minutes", "Event-at-a-time streaming"]
+answer = 3
+why = "The decision must happen within the transaction. Only low-latency streaming (or an online service) meets a sub-second budget."
+
+[[quiz]]
+q = "What is the main operational drawback of a Lambda architecture?"
+options = [
+  "It cannot handle late data",
+  "It requires keeping batch and streaming implementations of the same logic consistent",
+  "It cannot store historical data",
+  "It only works with Kafka",
+]
+answer = 1
+why = "Two code paths for the same metric drift over time, producing results that disagree between the speed and batch layers."
+
+[[quiz]]
+q = "What does Kappa architecture require in order to reprocess history?"
+options = [
+  "A second batch codebase",
+  "A retained, replayable log or table long enough to cover the history",
+  "Exactly-once delivery from producers",
+  "A data warehouse",
+]
+answer = 1
+why = "In Kappa you reprocess by replaying events through a new job version, so the events must still be available."
+
+[[quiz]]
+q = "Leadership wants a revenue dashboard 'in real time'. They check it a few times a day. What is the best proposal?"
+options = [
+  "Flink with sub-second updates",
+  "Lambda architecture",
+  "Micro-batch or scheduled refresh every 5 to 15 minutes",
+  "Weekly batch",
+]
+answer = 2
+why = "Minutes of latency serve a human-viewed dashboard well at a fraction of streaming's cost and complexity."

@@ -1,0 +1,28 @@
+title = "Paid above their department's average"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-subqueries"
+lists = ["sql-essentials"]
+statement = """
+Pay equity review: within each department, who earns more than that department's average?
+
+Table `employees(id, name, dept, salary)`.
+
+Return `name`, `dept`, `salary` for every employee whose salary is **strictly greater** than the average salary of **their own** department.
+"""
+starter = "SELECT name, dept, salary\nFROM employees\nWHERE salary > (SELECT AVG(salary) FROM employees)\n"
+solution = """
+SELECT e.name, e.dept, e.salary FROM employees e
+WHERE e.salary > (SELECT AVG(i.salary) FROM employees i WHERE i.dept = e.dept)
+"""
+hints = [
+  "The comparison value is different for each row: it depends on that row's department.",
+  "A correlated subquery references the outer row: `(SELECT AVG(salary) FROM employees i WHERE i.dept = e.dept)`.",
+  "Or precompute department averages in a CTE / derived table and join on dept.",
+]
+
+[[tests]]
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT", rows = [[1, "Ann", "Eng", 200], [2, "Bo", "Eng", 100], [3, "Cy", "Ops", 60], [4, "Di", "Ops", 40], [5, "Ed", "Ops", 50]] }
+
+[[tests]]  # single-person dept and an all-equal dept: nobody above their own average
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT", rows = [[1, "Fay", "Legal", 500], [2, "Gil", "HR", 30], [3, "Hal", "HR", 30], [4, "Ivy", "Eng", 90], [5, "Jo", "Eng", 70]] }

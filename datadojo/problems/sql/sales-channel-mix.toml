@@ -1,0 +1,37 @@
+title = "Sales channel mix per rep"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-pivot"
+statement = """
+Table `sales(sale_id, rep, channel, amount)`; `channel` is `'online'`, `'store'` or `'phone'`, amounts are
+positive.
+
+For each rep, show what share of their total sales amount came through each channel:
+`rep, online_pct, store_pct, phone_pct`, each `100 * channel_amount / rep_total` rounded to 2 decimals.
+A channel the rep never used shows `0`. Any row order.
+"""
+starter = "SELECT rep, 0 AS online_pct, 0 AS store_pct, 0 AS phone_pct\nFROM sales\nGROUP BY rep\n"
+solution = """
+SELECT rep,
+       ROUND(100.0 * SUM(CASE WHEN channel = 'online' THEN amount ELSE 0 END) / SUM(amount), 2) AS online_pct,
+       ROUND(100.0 * SUM(CASE WHEN channel = 'store' THEN amount ELSE 0 END) / SUM(amount), 2) AS store_pct,
+       ROUND(100.0 * SUM(CASE WHEN channel = 'phone' THEN amount ELSE 0 END) / SUM(amount), 2) AS phone_pct
+FROM sales
+GROUP BY rep
+"""
+hints = [
+  "One conditional SUM per channel, divided by the rep's overall SUM(amount).",
+  "Weigh by amount, not by number of sales: COUNT-based shares give a different answer.",
+]
+
+[[tests]]
+tables.sales = { columns = "sale_id INT, rep STRING, channel STRING, amount DOUBLE", rows = [
+  [1, "ana", "online", 50.0], [2, "ana", "store", 30.0], [3, "ana", "phone", 20.0],
+  [4, "raj", "store", 10.0],
+] }
+
+[[tests]]  # many small online sales vs one big store sale; repeating fractions
+tables.sales = { columns = "sale_id INT, rep STRING, channel STRING, amount DOUBLE", rows = [
+  [1, "kim", "online", 1.0], [2, "kim", "online", 1.0], [3, "kim", "online", 1.0], [4, "kim", "store", 97.0],
+  [5, "lou", "phone", 1.0], [6, "lou", "online", 2.0],
+] }

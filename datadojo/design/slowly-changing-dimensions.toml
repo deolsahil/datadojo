@@ -1,0 +1,117 @@
+title = "Slowly Changing Dimensions"
+section = "ds-modeling"
+order = 2
+kind = "lesson"
+big_idea = "When a dimension attribute changes, you must decide whether history should see the old value or the new one, and SCD types 1, 2, and 3 are the standard answers to that question."
+summary = """Customers move, products get recategorized, sales reps change territory. These attributes change rarely relative to facts, hence **slowly changing dimensions (SCD)**. The modeling question is: when you report on last year's sales by region, should a customer who moved this year count in the old region or the new one?
+
+**Type 1** overwrites the old value: simple, no history, and past reports change. **Type 2** adds a new row for each version with validity dates, so facts point to the version that was true when the event happened. **Type 3** keeps a "previous value" column next to the current one, giving limited history.
+
+Type 2 is the one interviewers care about most, because it touches surrogate keys, fact loading, and merge logic."""
+diagram = """flowchart LR
+  src[Source change] --> cmp[Attribute changed?]
+  cmp -- no --> skip[Do nothing]
+  cmp -- type 1 --> over[Overwrite row]
+  cmp -- type 2 --> close["Close old row (valid_to, is_current false)"]
+  close --> ins["Insert new row with new surrogate key"]"""
+
+[[blocks]]
+heading = "How each type works"
+body = """Example: customer 42 moves from Austin to Denver on 2024-06-01.
+
+- **Type 0:** never change (for example, original signup date).
+- **Type 1:** `UPDATE dim_customer SET city = 'Denver' WHERE customer_id = 42`. All history now shows Denver.
+- **Type 2:** the existing row gets `valid_to = 2024-06-01, is_current = false`; a new row is inserted with a new `customer_sk`, `city = 'Denver'`, `valid_from = 2024-06-01`, `valid_to = 9999-12-31`, `is_current = true`. Orders before June join to the Austin row, after June to the Denver row.
+- **Type 3:** columns `current_city = 'Denver'`, `previous_city = 'Austin'`. Only one prior value survives.
+
+Hybrids exist (sometimes called types 4, 6, 7), for example a Type 2 table that also carries a Type 1 `current_city` column on every row so you can report either way."""
+
+[[blocks]]
+heading = "Loading facts against a Type 2 dimension"
+body = """Each fact must get the surrogate key of the version valid at the **event time**:
+
+```sql
+SELECT f.*, d.customer_sk
+FROM staged_orders f
+JOIN dim_customer d
+  ON f.customer_id = d.customer_id
+ AND f.order_ts >= d.valid_from
+ AND f.order_ts <  d.valid_to
+```
+
+Use half-open intervals (`>=` and `<`) so a timestamp never matches two versions. Late-arriving facts are handled correctly by this range join; using `is_current = true` instead would assign old orders to the new version. A late-arriving **dimension** (fact arrives before its customer exists) is usually handled with a placeholder 'unknown' member or an inferred row that is updated later."""
+
+[[blocks]]
+heading = "Implementing Type 2"
+body = """- Detect changes by comparing tracked columns, often via a hash of the tracked attributes.
+- Use `MERGE` in a warehouse or table format (Delta, Iceberg, Hudi all support it), or dbt **snapshots**, which implement Type 2 with timestamp or check strategies.
+- Decide which columns are Type 2 (city, segment) and which are Type 1 (fixing a typo in a name). Not every column deserves history.
+- Watch for **churny attributes**: tracking `last_login` as Type 2 creates a new row per login and explodes the table. Move such attributes to a fact or a separate mini-dimension."""
+
+[[blocks]]
+heading = "When to use what"
+body = """- **Type 1:** corrections, attributes where only the current value matters, or when the business explicitly wants restated history.
+- **Type 2:** anything where reporting must reflect the state at event time: region, pricing tier, customer segment, org hierarchy for commission.
+- **Type 3:** a one-time reorganization where people want to compare 'old territory' versus 'new territory' side by side.
+
+Ask the stakeholder: "If this value changes, should last quarter's report change?" Yes means Type 1, no means Type 2."""
+
+key_points = [
+  "Type 1 overwrites (no history), Type 2 adds versioned rows, Type 3 keeps a previous-value column.",
+  "Type 2 requires surrogate keys plus valid_from, valid_to, and usually an is_current flag.",
+  "Facts join to the dimension version valid at event time using a half-open range join.",
+  "Choose the type per column; corrections are Type 1 even in a Type 2 table.",
+  "Rapidly changing attributes do not belong in a Type 2 dimension.",
+]
+common_mistakes = [
+  "Joining facts on is_current = true, which reassigns historical facts to today's attribute values.",
+  "Using inclusive ranges on both ends so an event matches two dimension versions.",
+  "Tracking every column as Type 2, including noisy ones, and exploding row counts.",
+  "Using the natural key as the fact foreign key, which makes Type 2 history impossible to join.",
+  "Not handling facts that arrive before their dimension row exists.",
+]
+interview_questions = [
+  "Explain SCD types 1, 2, and 3 with an example.",
+  "How would you implement a Type 2 dimension with MERGE?",
+  "How do you load a fact table so each row points to the correct dimension version?",
+  "How do you handle a fact that references a customer who does not yet exist in the dimension?",
+]
+
+[[quiz]]
+q = "Finance wants Q1 revenue by region to stay the same even after customers move regions in Q2. Which SCD type?"
+options = ["Type 0", "Type 1", "Type 2", "Type 3"]
+answer = 2
+why = "Type 2 preserves the version valid when each order happened, so historical reports do not shift."
+
+[[quiz]]
+q = "Joining a late-arriving order from January to dim_customer using is_current = true would do what?"
+options = [
+  "Assign the order to the correct January version",
+  "Assign the order to the customer's current attributes, which may be wrong for January",
+  "Fail the join",
+  "Create a new dimension row",
+]
+answer = 1
+why = "is_current picks today's version. The range join on valid_from and valid_to picks the version true at the event time."
+
+[[quiz]]
+q = "A customer's name had a typo that is now corrected. In a Type 2 dimension, how should this usually be handled?"
+options = [
+  "Create a new Type 2 version",
+  "Overwrite the value on all versions as a Type 1 correction",
+  "Store it in a previous_name column",
+  "Ignore the correction",
+]
+answer = 1
+why = "A correction is not a real-world change. Overwriting avoids a meaningless version and fixes the typo across history."
+
+[[quiz]]
+q = "Why use half-open intervals (valid_from <= ts < valid_to) for Type 2 rows?"
+options = [
+  "They are faster to index",
+  "A timestamp at the boundary matches exactly one version",
+  "They are required by SQL",
+  "They allow overlapping versions",
+]
+answer = 1
+why = "If both ends were inclusive, an event at the exact change time would match the old and new rows and be double counted."

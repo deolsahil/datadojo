@@ -1,0 +1,28 @@
+title = "Signups per email domain"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-strings-dates"
+statement = """
+Sales wants to spot companies whose employees are signing up for the free tier.
+
+Table `users(id, email)`. Every email contains exactly one `@`, but the casing is inconsistent (`Bob@Acme.com` and `amy@acme.COM` are the same domain).
+
+Return `domain` (the part after the `@`, in lowercase) and `signups` (number of users with that domain).
+"""
+starter = "SELECT email AS domain, COUNT(*) AS signups\nFROM users\nGROUP BY email\n"
+solution = """
+SELECT LOWER(SUBSTRING(email, POSITION('@' IN email) + 1)) AS domain, COUNT(*) AS signups
+FROM users
+GROUP BY LOWER(SUBSTRING(email, POSITION('@' IN email) + 1))
+"""
+hints = [
+  "Find where the `@` is, then take everything after it.",
+  "POSITION('@' IN email) gives the index; SUBSTRING(email, pos + 1) takes the rest. (DuckDB also has split_part(email, '@', 2).)",
+  "Lowercase it before grouping, and group by the same expression you select.",
+]
+
+[[tests]]
+tables.users = { columns = "id INT, email STRING", rows = [[1, "bob@acme.com"], [2, "amy@acme.com"], [3, "zed@globex.io"], [4, "kim@acme.com"]] }
+
+[[tests]]  # mixed case
+tables.users = { columns = "id INT, email STRING", rows = [[1, "Bob@Acme.com"], [2, "amy@acme.COM"], [3, "X@Initech.NET"]] }

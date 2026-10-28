@@ -1,0 +1,96 @@
+title = "ETL vs ELT and the Medallion Layers"
+section = "ds-foundations"
+order = 5
+kind = "lesson"
+big_idea = "ETL transforms data before loading it into the target; ELT loads raw data first and transforms it inside a scalable warehouse or lakehouse, and modern platforms mostly do ELT because storage is cheap and raw data lets you fix mistakes."
+summary = """In classic **ETL** (extract, transform, load), a separate engine (Informatica, SSIS, custom code, Spark) cleans and reshapes data in flight, and only the finished result lands in the warehouse. This made sense when warehouse storage and compute were expensive and inflexible.
+
+In **ELT** (extract, load, transform), you land data as-is in a warehouse or lake, then transform it with SQL inside that system, often managed with dbt. Cloud warehouses separate storage from compute, so keeping raw data is cheap and transformations scale on demand. The big win: when business logic changes or a bug is found, you can rebuild from raw instead of re-extracting from sources.
+
+Most teams organize ELT into layers, often called **bronze / silver / gold** (the medallion pattern) or raw / staging / marts: raw as received, cleaned and conformed, then business-ready models."""
+diagram = """flowchart LR
+  src[Sources] --> el["Extract and load (Fivetran, Airbyte, CDC)"]
+  el --> bronze[("Bronze - raw")]
+  bronze --> silver[("Silver - cleaned")]
+  silver --> gold[("Gold - marts")]
+  gold --> bi[BI and ML]"""
+
+[[blocks]]
+heading = "When to use what"
+body = """**Prefer ELT when:** the target is a cloud warehouse or lakehouse, transformations are expressible in SQL, you want analysts to own models, and you value the ability to replay from raw.
+
+**ETL still fits when:**
+- Data must be filtered, masked, or tokenized **before** it lands (PII or regulatory constraints).
+- Volume reduction is huge and raw is not worth keeping (for example, IoT sensor data downsampled at the edge).
+- Transformations are not SQL-friendly: parsing binary formats, calling ML models, complex enrichment.
+- The target is an operational system (reverse ETL into a CRM, or a search index) rather than a warehouse.
+
+In practice most platforms are hybrid: light ETL on ingest (schema validation, PII hashing) followed by ELT for business logic."""
+
+[[blocks]]
+heading = "What each layer holds"
+body = """- **Bronze / raw:** append-only copy of source data, minimal changes, plus ingestion metadata (load time, source file, offsets). Lets you replay everything.
+- **Silver / cleaned:** deduplicated, typed, conformed keys and time zones, bad records quarantined, CDC applied to current state.
+- **Gold / marts:** business-level models such as facts, dimensions, aggregates, and feature tables, documented and tested, with SLAs.
+
+Layer names vary by company; what matters is a clear contract at each boundary and that downstream layers can be rebuilt from upstream ones."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- ELT keeps raw data, so **storage and governance** grow: raw PII sitting in bronze must be access-controlled and deletable.
+- ELT pushes compute into the warehouse; inefficient SQL models can become the largest line on the cloud bill.
+- ETL pipelines are harder to change: a logic fix often means re-extracting from sources that may no longer hold the history.
+- Many layers add latency and cost; do not create five layers when two serve the consumers."""
+
+key_points = [
+  "ETL transforms before loading; ELT loads raw and transforms inside the target system.",
+  "ELT dominates on cloud warehouses and lakehouses because storage is cheap and compute scales.",
+  "Keeping raw data is what makes reprocessing and bug fixes possible without re-extracting.",
+  "Transform before loading when compliance requires masking PII before it lands.",
+  "Bronze/silver/gold separates raw, cleaned, and business-ready data with contracts between layers.",
+]
+common_mistakes = [
+  "Landing raw PII in bronze with broad access because 'it is just the raw layer'.",
+  "Treating ELT as 'no design needed' and ending up with hundreds of unowned SQL models.",
+  "Overwriting raw data during cleaning, which destroys the ability to replay.",
+  "Adding layers by habit when consumers only need one curated table.",
+]
+interview_questions = [
+  "What is the difference between ETL and ELT, and why has ELT become popular?",
+  "When would you still transform data before loading it?",
+  "What belongs in bronze, silver, and gold layers?",
+  "How do you handle a GDPR deletion request when raw data is retained in bronze?",
+]
+
+[[quiz]]
+q = "What is the main reason ELT became the default on cloud warehouses?"
+options = [
+  "SQL is faster than every other language",
+  "Separated, elastic compute and cheap storage make it practical to keep raw data and transform in place",
+  "ETL tools no longer exist",
+  "ELT never needs orchestration",
+]
+answer = 1
+why = "Cheap storage lets you retain raw data, and elastic warehouse compute runs transformations at scale, so a separate transform engine is often unnecessary."
+
+[[quiz]]
+q = "Regulations forbid storing raw national ID numbers anywhere in the analytics platform. What is the right approach?"
+options = [
+  "Load raw into bronze and mask in silver",
+  "Tokenize or hash the field during extraction, before loading",
+  "Restrict bronze to admins only",
+  "Delete bronze weekly",
+]
+answer = 1
+why = "If the value may not land at all, it must be transformed in flight: a case where ETL-style processing is required."
+
+[[quiz]]
+q = "A bug in a revenue model is found after 3 months. Why is keeping a raw layer valuable?"
+options = [
+  "It makes queries faster",
+  "You can rebuild the corrected model from raw without re-extracting from sources",
+  "It removes the need for tests",
+  "Raw data is already aggregated",
+]
+answer = 1
+why = "Sources may no longer hold the history, or re-extracting is costly. Raw retention lets you replay transformations with fixed logic."

@@ -1,0 +1,27 @@
+title = "Fix name capitalization"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-strings-dates"
+source_url = "https://leetcode.com/problems/fix-names-in-a-table/"
+statement = """
+Names in the CRM were typed in by hand: `aLiCe`, `BOB`, `carol`.
+
+Table `contacts(id, name)`. Each name is a single word of letters only, at least one character long.
+
+Return `id` and `name` with the name rewritten so that the **first letter is uppercase** and **all other letters are lowercase**.
+"""
+starter = "SELECT id, name\nFROM contacts\n"
+solution = """
+SELECT id, UPPER(SUBSTRING(name, 1, 1)) || LOWER(SUBSTRING(name, 2)) AS name FROM contacts
+"""
+hints = [
+  "Split the name into its first character and the rest.",
+  "SUBSTRING(name, 1, 1) is the first character; SUBSTRING(name, 2) is everything after it. SQL strings are 1-indexed.",
+  "UPPER(first) || LOWER(rest)",
+]
+
+[[tests]]
+tables.contacts = { columns = "id INT, name STRING", rows = [[1, "aLiCe"], [2, "BOB"], [3, "carol"]] }
+
+[[tests]]  # one-letter name
+tables.contacts = { columns = "id INT, name STRING", rows = [[1, "x"], [2, "Dave"], [3, "eVE"]] }

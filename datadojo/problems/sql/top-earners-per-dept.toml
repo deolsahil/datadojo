@@ -1,0 +1,33 @@
+title = "Top 2 earners per department"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-ranking"
+lists = ["sql-essentials"]
+statement = """
+Table `employees(id, name, dept, salary)`.
+
+Return `dept, name, salary` for employees whose salary is among the **top 2 distinct salaries**
+in their department. Ties share a rank, so a department can return more than 2 people.
+Any row order.
+"""
+starter = "SELECT dept, name, salary\nFROM employees\n"
+solution = """
+SELECT dept, name, salary FROM (
+  SELECT *, DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS rk FROM employees
+) WHERE rk <= 2
+"""
+
+[[tests]]
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT", rows = [
+  [1, "Asha", "eng", 120], [2, "Ben", "eng", 110], [3, "Chen", "eng", 100],
+  [4, "Dev", "ops", 90], [5, "Eli", "ops", 80],
+] }
+
+[[tests]]  # ties at rank 1 and 2
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT", rows = [
+  [1, "A", "eng", 100], [2, "B", "eng", 100], [3, "C", "eng", 90], [4, "D", "eng", 90], [5, "E", "eng", 80],
+  [6, "F", "hr", 50],
+] }
+
+[[tests]]  # empty table
+tables.employees = { columns = "id INT, name STRING, dept STRING, salary INT", rows = [] }

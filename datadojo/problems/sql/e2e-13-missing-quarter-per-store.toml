@@ -1,0 +1,36 @@
+title = "Missing Quarter for Each Store"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-joins"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `STORES(Store, Quarter, Amount)` holds quarterly sales; `Quarter` is one of `'Q1'`..`'Q4'` and each
+(Store, Quarter) appears at most once.
+
+Return `Store, missing_quarter` for every quarter `Q1`..`Q4` in which a store that appears in the table has no
+row. A store can be missing more than one quarter (one output row each). Any row order.
+"""
+starter = "SELECT Store, MIN(Quarter) AS missing_quarter\nFROM STORES\nGROUP BY Store\n"
+solution = """
+SELECT s.Store, q.Quarter AS missing_quarter
+FROM (SELECT DISTINCT Store FROM STORES) s
+CROSS JOIN (VALUES ('Q1'), ('Q2'), ('Q3'), ('Q4')) q(Quarter)
+WHERE NOT EXISTS (SELECT 1 FROM STORES x WHERE x.Store = s.Store AND x.Quarter = q.Quarter)
+"""
+hints = [
+  "You cannot find a missing row by looking at rows that exist. Build every (store, quarter) combination first.",
+  "CROSS JOIN the distinct stores with a 4-row list of quarters.",
+  "Then remove the combinations that do exist (NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT). The 'sum of quarter numbers' trick breaks when two quarters are missing.",
+]
+
+[[tests]]
+tables.STORES = { columns = "Store STRING, Quarter STRING, Amount INT", rows = [
+  ["S1", "Q1", 200], ["S1", "Q2", 300], ["S1", "Q4", 400], ["S2", "Q1", 500], ["S2", "Q3", 600],
+  ["S2", "Q4", 700], ["S3", "Q1", 800], ["S3", "Q2", 750], ["S3", "Q3", 900],
+] }
+
+[[tests]]  # a store missing two quarters, a complete store, a store with only one quarter
+tables.STORES = { columns = "Store STRING, Quarter STRING, Amount INT", rows = [
+  ["A", "Q1", 1], ["A", "Q4", 1], ["B", "Q1", 1], ["B", "Q2", 1], ["B", "Q3", 1], ["B", "Q4", 1], ["C", "Q3", 5],
+] }

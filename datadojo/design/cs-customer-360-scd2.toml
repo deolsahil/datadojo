@@ -1,0 +1,165 @@
+title = "Design a Customer 360 Pipeline with an SCD Type 2 Dimension"
+section = "ds-cases-pipelines"
+order = 4
+kind = "case_study"
+difficulty = "hard"
+companies = ["Salesforce", "Target", "Capital One"]
+big_idea = "Resolve many source records into one stable customer key, then track changes to that customer as versioned rows with validity intervals so any fact can be joined to the customer as they were at the time."
+summary = """Marketing, support and analytics each have a partial view of the customer: the e-commerce DB, the CRM, the loyalty program, the support desk and the email platform. A **customer 360** combines them into one profile per real person, with a history of how attributes like address, tier and segment changed.
+
+There are two hard problems. **Identity resolution** decides which source records are the same person and gives them a durable `customer_key` even as matches change. **SCD Type 2** keeps history: each change closes the current row (`valid_to`) and inserts a new one, so a 2023 order joins to the customer's 2023 tier, not today's. Both must be idempotent, rerunnable, and able to backfill late or corrected source data."""
+diagram = """flowchart LR
+  ecom[("E-commerce DB")] --> land[("Raw landing")]
+  crm[CRM export] --> land
+  loy[Loyalty system] --> land
+  sup[Support desk] --> land
+  land --> std[Standardize and cleanse]
+  std --> idr[Identity resolution]
+  idr --> xref[("Identity crosswalk")]
+  xref --> surv[Survivorship rules]
+  surv --> scd[SCD2 merge job]
+  scd --> dim[("dim_customer SCD2")]
+  dim --> cur[("Current profile view")]
+  dim --> facts[Fact joins in warehouse]"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- How many sources, and which is authoritative for which attribute (CRM for name, e-commerce for address, loyalty for tier)?
+- Is there a shared identifier (login id, email, phone) or must we do fuzzy matching?
+- Which attributes need history (SCD2) and which can be overwritten (SCD1), like a typo fix?
+- What latency: a nightly batch, or near-real-time profile updates for personalization?
+- Can a match be undone (two people wrongly merged) and how should history look after a split?
+- Privacy: consent flags, deletion requests, and who can see PII?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- One golden record per real customer with a stable `customer_key`.
+- Full attribute history (SCD2) for tier, segment, address region, marketing consent.
+- A current-state view for operational use (CRM sync, email targeting).
+- Facts (orders, tickets) joinable to the version valid at the event time.
+- Handle merges and splits of identities.
+
+**Non-functional**
+- Nightly run finished in under 2 hours; optional hourly delta for consent changes.
+- Idempotent: rerunning the same input produces no new versions.
+- Backfill: reprocess a source for past dates without corrupting history.
+- PII columns masked for non-privileged roles; deletions honored within 30 days."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- Customers: **200M** golden profiles from ~350M source records across 5 systems.
+- Daily change rate ~2%: 200M x 0.02 = **4M changed customers/day**.
+- Row width ~1 KB (about 60 attributes): current-state size = 200M x 1 KB = **200 GB**.
+- SCD2 growth: 4M new versions/day x 1 KB = **4 GB/day**, x 365 = **~1.5 TB/year** uncompressed (much less in columnar format).
+- Identity resolution: comparing all pairs is impossible (350M^2 / 2 is about 6 x 10^16). With blocking on normalized email, phone and name+zip, candidate pairs drop to roughly a few billion and the job becomes tractable in Spark.
+
+The dimension itself is moderate; the expensive steps are matching and the daily MERGE into a 200M+ row table."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Land** daily extracts or CDC from each source into raw tables, unchanged, with load dates.
+2. **Standardize**: lowercase and trim emails, E.164 phone numbers, parsed and normalized addresses, name normalization. Keep raw values alongside.
+3. **Identity resolution** (Spark, or a tool like Zingg, Senzing, or a CDP): deterministic rules first (same verified email or login id), then probabilistic matching within blocks. Output a **crosswalk** `source_system, source_id -> customer_key`. Existing keys are preserved: a new record joining an existing cluster inherits its key; merges keep the older key and record the retired one.
+4. **Survivorship**: per attribute, pick the value by source priority and recency (CRM wins for name; most recent verified address wins).
+5. **SCD2 merge**: compute a hash of tracked attributes per customer; compare to the current row; for changed customers, close the current row and insert a new one. Untracked (SCD1) attributes update in place on all versions or just the current one, by agreement.
+6. **Serve**: `dim_customer` (all versions) in Snowflake/BigQuery or a Delta/Iceberg table; a `customer_current` view; reverse ETL (Hightouch/Census) pushes current profiles to CRM and marketing tools."""
+
+[[blocks]]
+heading = "Data model"
+body = """**`identity_crosswalk`** (grain: one row per source record): source_system, source_id, customer_key, match_rule, match_score, valid_from, valid_to.
+
+**`dim_customer`** (grain: one row per customer_key per version): customer_sk (surrogate per version), customer_key (durable), name, email_hash, region, tier, segment, consent_marketing, attr_hash, valid_from, valid_to (`9999-12-31` for current), is_current, source_updated_at, run_id.
+
+**`customer_key_merges`** (grain: one row per retired key): retired_key, surviving_key, merged_at, reason.
+
+**Facts** (e.g. `fct_orders`) store either `customer_key` plus event time (join with `valid_from <= order_ts < valid_to`) or the `customer_sk` resolved at load time."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Idempotent SCD2 with change hashing.** Compute `attr_hash = sha256(concat of normalized tracked attributes)` and only create a version when the hash differs from the current row. Without this, a rerun or a no-op source update creates duplicate versions. Use the source's effective timestamp for `valid_from`, not the job run time, so a rerun produces identical intervals. In Delta/Iceberg, the classic pattern is a single MERGE whose source is the union of (changed rows keyed to match and close the current version) and (the same rows with a null merge key so they insert as new versions).
+
+**Late and out-of-order changes.** If an address change effective May 1 arrives after a tier change effective May 10 was already applied, appending at the end gives wrong history. Correct handling splits the existing interval: rebuild the affected customer's history from the ordered set of all changes (a window function over effective timestamps with `LEAD(valid_from)` as `valid_to`). Rebuilding history for only the customers touched by late data keeps it cheap.
+
+**Identity merges and splits.** When two keys turn out to be the same person, keep the older key, re-point crosswalk rows, and either rewrite the retired key's history under the survivor or keep a merge map that queries resolve through. A wrong merge (split) is the painful case; keeping the crosswalk versioned makes it reversible. Downstream facts that stored customer_key need a remap table or a periodic rewrite.
+
+**Skew.** Blocking keys like a default phone number or `test@example.com` create giant blocks that blow up pairwise comparison; cap block size and blacklist junk values."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **SCD2 vs. daily full snapshots**: snapshots (one copy of the table per day) are trivially correct and easy to query as of a date, but 200 GB x 365 is ~73 TB/year. SCD2 stores only changes. Some teams keep snapshots for 30 days plus SCD2 for long-term history.
+- **SCD2 vs. SCD1 per attribute**: tracking every column bloats versions on noisy fields (last_login). Track only attributes analysts slice by historically.
+- **Deterministic vs. probabilistic matching**: deterministic is explainable and precise but misses matches; probabilistic finds more but needs tuning and review queues for borderline scores.
+- **Build vs. buy a CDP** (Segment, mParticle, Salesforce Data Cloud): buying gives connectors and UI; building gives control over matching and warehouse-native history.
+- **Surrogate key per version vs. join on interval**: storing customer_sk in facts makes joins fast and fixed; interval joins handle late dimension corrections automatically."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Overlapping or gapped intervals**: test that per customer_key, intervals do not overlap and exactly one row has is_current = true.
+- **Version explosion**: alert if new versions per day exceed baseline (a source sending reformatted values every day).
+- **Over-merging**: monitor cluster sizes; a cluster with 10,000 source records is almost certainly a junk match.
+- **Source missing**: if the CRM extract is absent, do not interpret absence as deletion; fail or skip that source.
+- **Key churn**: track how many customer_keys change per day; it should be near zero for existing customers.
+- **Freshness and row counts** per source; dbt tests for uniqueness of (customer_key, valid_from)."""
+
+key_points = [
+  "Identity resolution produces a durable customer_key via a versioned crosswalk; keys must be stable across runs.",
+  "SCD2 closes the current row and inserts a new version with valid_from and valid_to; join facts on the interval or a per-version surrogate key.",
+  "Hash tracked attributes and use source effective timestamps so reruns create no new versions.",
+  "Late changes require rebuilding the affected customers' intervals, not appending at the end.",
+  "Blocking makes matching tractable; cap block sizes and blacklist junk values to avoid skew.",
+  "Test invariants: no overlapping intervals and exactly one current row per key.",
+]
+common_mistakes = [
+  "Using job run time as valid_from, so a rerun shifts history.",
+  "Creating a new version on every load because the comparison includes noisy columns or unnormalized values.",
+  "Treating a missing source extract as a mass deletion.",
+  "Generating new customer keys on every run so downstream joins break.",
+  "Joining facts to the current dimension row and reporting today's tier for last year's orders.",
+]
+interview_questions = [
+  "Two customers were wrongly merged six months ago. How do you split them and fix downstream reports?",
+  "How would you write the SCD2 MERGE in Delta Lake or Snowflake in one statement?",
+  "Marketing wants consent changes reflected in under 5 minutes. What changes in the design?",
+  "How do you honor a deletion request for a customer whose history lives in SCD2 versions and facts?",
+  "How do you decide which attributes are Type 1 vs. Type 2?",
+]
+
+[[quiz]]
+q = "A nightly SCD2 job is rerun on the same input and creates a second version for every customer. What is the likely bug?"
+options = [
+  "The table is not partitioned",
+  "Versions are created without comparing a hash of tracked attributes to the current row",
+  "The job uses a surrogate key",
+  "valid_to is set to 9999-12-31",
+]
+answer = 1
+why = "SCD2 must only insert a version when tracked attributes actually changed. Comparing an attribute hash (and using source effective times) makes the job idempotent."
+
+[[quiz]]
+q = "How should an order from 2023 be joined to dim_customer to get the customer's tier at that time?"
+options = [
+  "Join on customer_key where is_current = true",
+  "Join on customer_key where valid_from <= order_ts < valid_to",
+  "Join on email",
+  "Join on the max valid_from",
+]
+answer = 1
+why = "The interval condition selects the version that was valid at the order timestamp; is_current would give today's tier."
+
+[[quiz]]
+q = "Why use blocking in identity resolution?"
+options = [
+  "To encrypt PII before matching",
+  "To reduce candidate pairs from all-pairs (about 10^16 here) to only records sharing a key like normalized email or phone",
+  "To ensure deterministic matching",
+  "To sort records by date",
+]
+answer = 1
+why = "All-pairs comparison of hundreds of millions of records is infeasible. Blocking compares only records that share a cheap key, shrinking the work by many orders of magnitude."
+
+[[quiz]]
+q = "With 200M customers, 2% changing daily and 1 KB rows, how much SCD2 growth per year (uncompressed)?"
+options = ["~150 GB", "~1.5 TB", "~15 TB", "~73 TB"]
+answer = 1
+why = "200M x 0.02 = 4M versions/day x 1 KB = 4 GB/day; x 365 is about 1.46 TB. (73 TB is what daily full snapshots would cost.)"

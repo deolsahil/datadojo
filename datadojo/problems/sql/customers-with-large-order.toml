@@ -1,0 +1,29 @@
+title = "Customers with at least one large order"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-subqueries"
+statement = """
+Sales wants to call every customer who has ever placed an order over 1000.
+
+Tables `customers(id, name)` and `orders(id, customer_id, amount)`.
+
+Return `id` and `name` of each customer with **at least one** order whose `amount` is greater than 1000. Each customer appears exactly once, however many large orders they have.
+"""
+starter = "SELECT c.id, c.name\nFROM customers c\nJOIN orders o ON o.customer_id = c.id\nWHERE o.amount > 1000\n"
+solution = """
+SELECT c.id, c.name FROM customers c
+WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.amount > 1000)
+"""
+hints = [
+  "A plain join returns one row per matching order, so a customer with two big orders shows up twice.",
+  "You only need to know whether a matching order exists, not how many.",
+  "WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.amount > 1000)",
+]
+
+[[tests]]
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Acme"], [2, "Bolt"], [3, "Core"]] }
+tables.orders = { columns = "id INT, customer_id INT, amount INT", rows = [[1, 1, 1500], [2, 1, 2500], [3, 2, 1000], [4, 3, 1001]] }
+
+[[tests]]  # no large orders
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Dyn"]] }
+tables.orders = { columns = "id INT, customer_id INT, amount INT", rows = [[1, 1, 10]] }

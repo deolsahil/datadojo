@@ -1,0 +1,176 @@
+title = "Design a Self-Serve Data Platform with Catalog, Lineage and Access Control"
+section = "ds-cases-realtime"
+order = 6
+kind = "case_study"
+difficulty = "medium"
+companies = ["Airbnb", "Netflix", "Spotify"]
+big_idea = "Make the safe path the easy path: teams publish datasets through templates that automatically register metadata, emit lineage and inherit tag-based access policies, so governance scales with the number of teams instead of a central bottleneck."
+summary = """As a company grows, a central data team cannot build every pipeline. A **self-serve platform** lets domain teams create and own their datasets while the platform provides shared infrastructure: storage and compute, orchestration, a **catalog** for discovery, **lineage** for impact analysis, **data quality** checks, and **access control** that enforces policy consistently.
+
+Interviewers want to see that you treat this as a product: who the users are (analysts, analytics engineers, ML engineers), the golden path they follow (a template that creates a pipeline, a table, ownership, tests and tags), and how metadata is collected automatically rather than by asking people to fill in forms. Typical building blocks are Iceberg/Delta on S3 or a warehouse, Airflow/Dagster, dbt, DataHub/OpenMetadata/Unity Catalog, OpenLineage, Great Expectations/dbt tests, and policy enforcement via Lake Formation, Unity Catalog, Ranger or warehouse-native row/column policies."""
+diagram = """flowchart TD
+  dev[Domain team repo and template] --> ci["CI: contracts, tests, tags"]
+  ci --> orch[Airflow or Dagster]
+  orch --> comp["Spark, dbt, warehouse jobs"]
+  comp --> store[("Iceberg tables and warehouse")]
+  comp -- OpenLineage events --> meta[("Catalog and lineage: DataHub")]
+  ci --> meta
+  meta --> pol["Policy engine: tag-based access"]
+  pol --> store
+  store --> q["Query engines: Trino, Snowflake"]
+  q -- query and access logs --> meta
+  meta --> ui[Discovery UI and impact analysis]"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- Who are the users and how many: analysts writing SQL, engineers writing Spark, ML engineers? Which pain is biggest today: discovery, trust, access requests, or pipeline creation?
+- Existing stack: one warehouse, a lake, or both? Multiple clouds?
+- Regulatory needs: PII, financial data, HIPAA? Who approves access?
+- Ownership model: central team, domain teams (data mesh), or hybrid?
+- Required granularity of access control: dataset, column, row?
+- Is column-level lineage needed or is table-level enough to start?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Golden path: create a new dataset (pipeline, table, tests, owner, tags) from a template in under a day.
+- Catalog search across all tables, dashboards and ML features with owners, descriptions, freshness and popularity.
+- Lineage at table level (column level for key domains) to answer "what breaks if I change this?"
+- Access control by role and data classification tag, with self-service requests and approvals.
+- Data quality checks and freshness SLAs visible in the catalog.
+
+**Non-functional**
+- Metadata collected automatically from CI, orchestrator, query engines; minimal manual entry.
+- Policy enforced at the query engine or storage layer, not by convention.
+- Lineage and catalog updates within minutes of a job run.
+- Audit logs of who accessed which sensitive data, retained for years.
+- Platform supports hundreds of teams without a central team in the critical path."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- Users: **2,000** analysts and engineers across **150** teams.
+- Assets: **50K tables**, ~**500K columns**, 10K dashboards, 3K ML features.
+- Pipeline runs: **20K/day**; each run emits a few OpenLineage events (start, complete, datasets), say 3 x 20K = **60K lineage events/day**.
+- Lineage graph: 50K tables x ~5 upstream edges = **~250K table edges**; column level ~500K columns x 3 inputs = **~1.5M edges**, easily held in a graph or relational store.
+- Queries: **200K/day**; access/audit log at ~2 KB per query: 200K x 2 KB = **400 MB/day**, ~146 GB/year.
+- Access requests: maybe 200/day; if each needs a human approval taking hours, that is the real bottleneck, not compute.
+
+Data volume of metadata is small. The design challenge is integration, automation and adoption, not throughput."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Golden path templates**: a CLI or portal (Backstage-style) scaffolds a repo or folder with a dbt model or Spark job, a data contract (schema, grain, owner, SLA, classification tags), tests and an orchestrator definition.
+2. **CI**: validates contracts (no breaking schema changes without a version bump), requires owner and classification tags, runs tests on sample data, and pushes metadata to the catalog.
+3. **Orchestration and compute**: Airflow/Dagster run jobs on shared Spark or warehouse compute with per-team quotas and cost attribution.
+4. **Metadata ingestion**: the catalog (DataHub/OpenMetadata/Unity Catalog) pulls schemas from the metastore and warehouse, lineage from OpenLineage events emitted by Airflow/Spark/dbt, usage from query logs, and quality results from test runs.
+5. **Access control**: data is classified with tags (public, internal, confidential, PII). Policies are written against tags and roles (attribute-based), e.g. "PII columns are masked unless the user has the pii_reader role for that domain". Enforcement happens in the engine: Lake Formation/Unity Catalog for the lake, masking and row access policies in Snowflake/BigQuery, Ranger/Trino access control for Trino.
+6. **Access requests**: self-service in the catalog; non-sensitive data auto-approved by policy, sensitive data routed to the dataset owner, time-boxed grants that expire.
+7. **Observability**: freshness, volume and test status surfaced on each dataset page; alerts go to the owning team."""
+
+[[blocks]]
+heading = "Data model"
+body = """**Dataset entity** (grain: one per table/view): urn, platform, name, owner_team, description, domain, classification, tags, schema version, sla, last_updated, popularity.
+
+**Column entity** (grain: one per column): dataset_urn, name, type, description, tags (e.g. pii.email).
+
+**Lineage edge** (grain: one per upstream-to-downstream relationship): upstream_urn, downstream_urn, job_urn, column mapping (optional), last_seen_run.
+
+**Policy** (grain: one per rule): policy_id, principal (role/group), resource selector (tag or domain), action (select, mask, deny), condition (row filter), expires_at.
+
+**Access grant** (grain: one per approved request): principal, dataset_urn, granted_by, reason, expires_at.
+
+**Audit log** (grain: one per query): user, query_id, datasets touched, columns, policy decisions, ts."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Automatic, trustworthy lineage.** Hand-documented lineage goes stale immediately. Emit lineage from execution: OpenLineage integrations for Airflow, Spark and dbt report inputs and outputs per run; query-log parsing (SQL lineage) fills gaps for ad-hoc warehouse jobs. Mark edges with last-seen time so retired pipelines age out. Column-level lineage is more expensive and parser-dependent; prioritize domains where impact analysis or PII propagation matters.
+
+**Tag-based access control at scale.** Granting access table by table across 50K tables does not scale. Attach classification tags (often auto-suggested by scanners that detect emails or phone numbers, then confirmed by owners) and write a small number of policies against tags. Tags should propagate along lineage as suggestions: a column derived from a PII column is probably PII. Enforcement must live in every query path; if one engine bypasses policies (direct S3 reads with broad IAM roles), the whole model fails, so lock down raw storage access to the engines.
+
+**Contracts and change management.** Producers publish a contract (schema, semantics, SLA). CI compares a change to the contract and to downstream lineage: adding a column passes; dropping or retyping one fails unless versioned, and the PR lists affected downstream owners. This turns lineage into a safety net, not just a diagram.
+
+**Adoption.** A platform succeeds only if the golden path is faster than the workaround. Measure time to first dataset, percentage of tables with owners and descriptions, and access-request turnaround."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **Central team builds everything vs. self-serve (data mesh)**: central gives consistency but becomes a bottleneck; self-serve scales but requires strong defaults and guardrails, and domain teams must have data skills.
+- **Buy vs. build catalog**: open source DataHub/OpenMetadata or a platform-native catalog (Unity, Dataplex, Purview) covers most needs; building one is rarely justified.
+- **RBAC vs. ABAC**: role-based grants are simple but explode in number; attribute/tag-based policies scale but need accurate tags.
+- **Table vs. column lineage**: table level is cheap and covers most impact analysis; column level helps PII tracking and precise impact at higher cost.
+- **Enforce in storage vs. in engines**: storage-level (Lake Formation, Unity) covers all engines consistently; engine-level policies must be duplicated for each engine."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Policy bypass**: alert on direct storage access by principals other than approved engine roles.
+- **Stale or missing metadata**: track percentage of tables without owner, description or classification; block publishing for new ones.
+- **Lineage gaps**: datasets with no upstream and no declared source are flagged; compare lineage against observed query logs.
+- **Orphaned datasets**: tables with no owner team (after reorganizations) or no reads in 180 days get flagged for deprecation.
+- **Access sprawl**: grants without expiry, or roles with excessive breadth; periodic access reviews.
+- **Platform reliability**: orchestrator health, catalog ingestion lag, quota exhaustion per team."""
+
+key_points = [
+  "Treat the platform as a product with a golden path that is faster than the workaround.",
+  "Collect metadata automatically from CI, orchestrators, OpenLineage and query logs instead of manual forms.",
+  "Data contracts plus lineage let CI block breaking changes and notify downstream owners.",
+  "Write a few tag-based policies instead of thousands of per-table grants, and enforce them in every query path.",
+  "Lock raw storage so only governed engines can read it; one bypass undermines the model.",
+  "Measure adoption: ownership coverage, time to first dataset and access-request turnaround.",
+]
+common_mistakes = [
+  "Building a catalog that relies on people manually documenting tables, which goes stale within months.",
+  "Granting broad S3 or IAM roles that let users bypass engine-level access policies.",
+  "Requiring central-team approval for every new dataset, recreating the bottleneck.",
+  "Granting access without expiry, leading to permanent access sprawl.",
+  "Starting with column-level lineage everywhere before table-level lineage is reliable.",
+]
+interview_questions = [
+  "How would you let a team drop a column safely when 30 dashboards might depend on it?",
+  "A PII column is copied into an untagged derived table. How does the platform catch it?",
+  "How do you design access so analysts can see aggregates of PII data without seeing raw values?",
+  "What metrics tell you the platform is succeeding?",
+  "How would you migrate 150 teams from ad-hoc pipelines onto the golden path?",
+]
+
+[[quiz]]
+q = "Why emit lineage from job execution (e.g. OpenLineage) rather than relying on documentation?"
+options = [
+  "Documentation is not searchable",
+  "Execution-time lineage reflects what actually ran and stays current automatically",
+  "OpenLineage is required by Airflow",
+  "It removes the need for a catalog",
+]
+answer = 1
+why = "Lineage captured from runs reports real inputs and outputs every time a job executes, so it does not drift the way manual documentation does."
+
+[[quiz]]
+q = "50K tables need consistent PII protection. Which approach scales best?"
+options = [
+  "Per-table grants maintained by a central team",
+  "Classification tags on columns plus a small set of tag-based masking and access policies",
+  "Separate copies of every table without PII",
+  "Trusting users not to query PII",
+]
+answer = 1
+why = "Tag-based (attribute-based) policies apply automatically to every column carrying the tag, so new tables are protected as soon as they are classified."
+
+[[quiz]]
+q = "Engine-level masking policies are in place, but users also have broad IAM access to the S3 bucket. What is the risk?"
+options = [
+  "Queries will be slower",
+  "Users can read raw files directly and bypass masking entirely",
+  "Lineage will be lost",
+  "Iceberg metadata will be corrupted",
+]
+answer = 1
+why = "Policies only protect paths that go through the engine. Direct object-store access must be restricted to the governed engines' roles."
+
+[[quiz]]
+q = "In this platform, what is the most likely scaling bottleneck?"
+options = [
+  "Storing 1.5M lineage edges",
+  "Ingesting 60K lineage events per day",
+  "Human processes such as manual access approvals and dataset creation reviews",
+  "Writing 400 MB/day of audit logs",
+]
+answer = 2
+why = "The metadata volumes are small. Organizational bottlenecks (approvals, central reviews) limit self-serve platforms, which is why policy-driven automation matters."

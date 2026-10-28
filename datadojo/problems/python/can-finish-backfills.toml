@@ -1,0 +1,46 @@
+title = "Can every backfill job finish?"
+lang = "python"
+difficulty = "medium"
+pattern = "py-graphs"
+lists = ["python-de"]
+function = "can_finish"
+source_url = "https://leetcode.com/problems/course-schedule/"
+statement = '''
+`can_finish(n, prereqs)` describes `n` backfill jobs numbered `0` to `n - 1`. Each pair `[a, b]` in `prereqs` means job `a` cannot start until job `b` has finished. Pairs may repeat.
+
+Return `true` if there is some order that runs every job, and `false` if circular requirements make that impossible (a job requiring itself counts).
+'''
+starter = "def can_finish(n, prereqs):\n    pass\n"
+solution = '''
+from collections import deque
+
+def can_finish(n, prereqs):
+    indeg = [0] * n
+    down = [[] for _ in range(n)]
+    for a, b in prereqs:
+        indeg[a] += 1
+        down[b].append(a)
+    q = deque(i for i in range(n) if indeg[i] == 0)
+    done = 0
+    while q:
+        j = q.popleft()
+        done += 1
+        for k in down[j]:
+            indeg[k] -= 1
+            if indeg[k] == 0:
+                q.append(k)
+    return done == n
+'''
+hints = [
+    "This is cycle detection on a directed graph.",
+    "Topological sort: if you can process all `n` jobs, there is no cycle.",
+]
+
+[[tests]]
+args = [4, [[1, 0], [2, 1], [3, 1], [3, 2]]]
+[[tests]]
+args = [3, [[0, 1], [1, 2], [2, 0]]]
+[[tests]]
+args = [2, [[1, 1]]]
+[[tests]]  # repeated pair, isolated jobs
+args = [5, [[1, 0], [1, 0], [4, 3]]]

@@ -1,0 +1,38 @@
+title = "Group anagrams"
+lang = "python"
+difficulty = "medium"
+pattern = "py-hashing"
+lists = ["python-de"]
+function = "group_anagrams"
+source_url = "https://leetcode.com/problems/group-anagrams/"
+statement = """
+`group_anagrams(words)` groups words that are anagrams of each other (same letters with the
+same counts). Return a list of groups. Inside each group, keep words in the order they appear
+in the input, **including duplicates**. The groups themselves may come in any order.
+
+- `["eat", "tea", "tan", "ate", "nat", "bat"]` → `[["eat", "tea", "ate"], ["tan", "nat"], ["bat"]]`
+"""
+hints = [
+    "Anagrams share a canonical key. What key is identical for `eat` and `tea`?",
+    "`tuple(sorted(w))` (or a 26-letter count tuple) works as a dict key.",
+    "A `defaultdict(list)` collects groups in one pass; return `list(d.values())`.",
+]
+starter = "def group_anagrams(words):\n    pass\n"
+solution = """
+from collections import defaultdict
+
+def group_anagrams(words):
+    groups = defaultdict(list)
+    for w in words:
+        groups[tuple(sorted(w))].append(w)
+    return list(groups.values())
+"""
+
+[[tests]]
+args = [["eat", "tea", "tan", "ate", "nat", "bat"]]
+[[tests]]  # duplicates stay
+args = [["ab", "ba", "ab", "c"]]
+[[tests]]
+args = [[""]]
+[[tests]]
+args = [[]]

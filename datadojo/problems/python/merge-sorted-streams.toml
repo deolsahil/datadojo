@@ -1,0 +1,44 @@
+title = "Merge K sorted event streams"
+lang = "python"
+difficulty = "medium"
+pattern = "py-heaps"
+lists = ["python-de"]
+function = "merge_streams"
+ordered = true
+source_url = "https://leetcode.com/problems/merge-k-sorted-lists/"
+statement = '''
+`merge_streams(streams)` gets a list of event streams, one per Kafka partition. Each stream is a list of `[ts, event]` pairs already sorted by `ts` (integer).
+
+Return one list of `[ts, event]` sorted by `ts`. Ties on `ts` are broken by **stream position** (events from `streams[0]` before `streams[1]`, ...), then by original order within the stream. Do not sort by `event`. Some streams may be empty.
+
+Aim for O(N log K) using a heap, the way you would merge files too large to load at once.
+'''
+starter = "def merge_streams(streams):\n    pass\n"
+solution = '''
+import heapq
+
+def merge_streams(streams):
+    heap = [(s[0][0], i, 0) for i, s in enumerate(streams) if s]
+    heapq.heapify(heap)
+    out = []
+    while heap:
+        ts, i, j = heapq.heappop(heap)
+        out.append(streams[i][j])
+        if j + 1 < len(streams[i]):
+            heapq.heappush(heap, (streams[i][j + 1][0], i, j + 1))
+    return out
+'''
+hints = [
+    "Keep one cursor per stream; the heap holds the next unread event from each.",
+    "Push `(ts, stream_index, position)` so ties resolve by stream, never by the event payload.",
+    "`heapq.merge(*streams, key=...)` is the stdlib version once you understand it.",
+]
+
+[[tests]]
+args = [[[[1, "a"], [4, "d"], [9, "i"]], [[2, "b"], [3, "c"]], [[5, "e"]]]]
+[[tests]]  # ties keep stream order, not alphabetical
+args = [[[[1, "z"], [1, "y"], [2, "x"]], [], [[1, "a"], [2, "b"]]]]
+[[tests]]
+args = [[[], []]]
+[[tests]]
+args = [[]]

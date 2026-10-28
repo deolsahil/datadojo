@@ -1,0 +1,36 @@
+title = "Number the lines of each order"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-nested"
+function = "solve"
+statement = """
+`orders(order_id, skus)`: `skus` is an `ARRAY<STRING>` of the items on the order, in cart order.
+It can be empty or NULL, and it can contain NULL elements.
+
+Write `solve(spark, orders)` returning one row per line item: `order_id, line_no, sku`.
+
+- `line_no` is the 1-based position of the item in the array.
+- Repeated SKUs are separate lines. A NULL element is still a line (with `sku` NULL).
+- An order with an empty or NULL `skus` array must still appear **once**, with `line_no` and `sku` both NULL.
+"""
+hints = [
+  "`F.explode` drops rows whose array is empty or NULL. There is an `_outer` variant that keeps them.",
+  "`F.posexplode_outer(\"skus\").alias(\"pos\", \"sku\")` gives you a 0-based position as well.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, orders):
+    return orders
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, orders):
+    e = orders.select("order_id", F.posexplode_outer("skus").alias("pos", "sku"))
+    return e.select("order_id", (F.col("pos") + 1).alias("line_no"), "sku")
+"""
+
+[[tests]]
+tables.orders = { columns = "order_id INT, skus ARRAY<STRING>", rows = '''[
+  [1, ["a", "b", "a"]], [2, []], [3, null], [4, ["c", null]]]''' }

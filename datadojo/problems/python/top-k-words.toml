@@ -1,0 +1,28 @@
+title = "Top K frequent words"
+lang = "python"
+difficulty = "medium"
+pattern = "py-hashing"
+lists = ["python-de"]
+function = "top_k"
+ordered = true
+statement = """
+`top_k(text, k)`: split `text` on whitespace, lowercase each word, strip the punctuation `.,!?`
+from both ends, drop empty words. Return the `k` most frequent words, highest count first,
+ties broken alphabetically.
+"""
+starter = "def top_k(text, k):\n    pass\n"
+solution = """
+from collections import Counter
+
+def top_k(text, k):
+    words = [w.lower().strip(".,!?") for w in text.split()]
+    c = Counter(w for w in words if w)
+    return [w for w, _ in sorted(c.items(), key=lambda x: (-x[1], x[0]))[:k]]
+"""
+
+[[tests]]
+args = ["the cat and the hat. The end!", 2]
+[[tests]]
+args = ["b a c b a", 3]
+[[tests]]
+args = ["... !!", 1]

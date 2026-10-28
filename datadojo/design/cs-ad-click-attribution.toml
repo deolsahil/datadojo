@@ -1,0 +1,167 @@
+title = "Design Ad Impression and Click Attribution"
+section = "ds-cases-realtime"
+order = 3
+kind = "case_study"
+difficulty = "hard"
+companies = ["Google", "Meta", "Criteo"]
+big_idea = "Deduplicate each stream on stable ids, join clicks to impressions and conversions to clicks with bounded event-time windows in a stream, and reconcile with an authoritative batch job because advertisers are billed on the result."
+summary = """An ad platform serves billions of impressions a day. Advertisers pay per click or per conversion and want near-real-time dashboards of spend, clicks and conversions per campaign. Budget pacing needs spend within seconds to stop overspending.
+
+The core is a **stream-stream join**: each click must be matched to the impression that caused it (within minutes to an hour), and each conversion attributed to an earlier click (within a 7-day window, last-click or another model). Along the way the pipeline must **deduplicate** retries, filter **invalid traffic** (bots, click fraud), handle **late events**, and produce numbers that hold up as an invoice. The usual answer pairs a Flink real-time path with a batch reconciliation that produces the billing-grade totals."""
+diagram = """flowchart LR
+  ads[Ad servers] --> imp[("Kafka: impressions")]
+  trk[Click tracker] --> clk[("Kafka: clicks")]
+  px[Conversion pixel and S2S API] --> conv[("Kafka: conversions")]
+  imp --> dedup[Flink dedup and IVT filter]
+  clk --> dedup
+  dedup --> join[Flink interval joins]
+  conv --> join
+  join --> attr[("Kafka: attributed events")]
+  attr --> olap[("Pinot or Druid: campaign stats")]
+  attr --> pacing[Budget pacing service]
+  imp --> lake[("Lakehouse raw events")]
+  lake --> batch[Spark daily reconciliation]
+  batch --> billing[("Billing tables")]"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- Billing model: CPM (impressions), CPC (clicks), CPA (conversions)? Billing needs exact, auditable numbers.
+- Attribution model and windows: last-click within 7 days? View-through conversions within 1 day?
+- Freshness: seconds for budget pacing, minutes for advertiser dashboards, daily for invoices?
+- Where do conversions come from: browser pixel, mobile SDK, server-to-server postbacks? Are they keyed by click id or by user id?
+- What counts as invalid traffic and who decides (rules, ML, third-party verification)?
+- Privacy constraints: consent, limited identifiers on mobile, aggregation thresholds?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Ingest impressions, clicks and conversions; dedupe each.
+- Join click to impression (click must reference a served impression within 1 hour).
+- Attribute conversions to the last valid click within 7 days.
+- Real-time campaign metrics (impressions, clicks, spend, conversions) by minute; budget pacing feed.
+- Daily billing totals per advertiser and campaign.
+
+**Non-functional**
+- Real-time path lag under 30 s; pacing under 10 s.
+- Billing correctness: no double counting, invalid traffic excluded, reproducible from raw logs.
+- Handle 3x peak traffic; no data loss.
+- Late events up to hours (mobile offline) handled for billing."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- Impressions: **5B/day**; 5B / 86,400 = **~58K/s average**, ~150K/s peak.
+- Clicks at ~1% CTR: **50M/day** (~580/s). Conversions: **5M/day** (~58/s).
+- Impression size ~500 B: 5B x 500 B = **2.5 TB/day**, ~900 TB/year raw.
+- Click-to-impression join state: keep impressions for 1 hour, but store only the fields needed (impression_id, campaign_id, ad_id, user_key, ts, price), ~100 B. 58K/s x 3,600 s = ~209M impressions x 100 B = **~21 GB** of state (more at peak), spread across Flink task managers with RocksDB.
+- Conversion attribution state: clicks for 7 days at ~200 B: 50M x 7 x 200 B = **70 GB**.
+- Dedup state: impression ids seen in the last hour ~209M; a keyed state with TTL or a Bloom filter per window."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Producers**: ad servers emit an impression with a unique `impression_id` and embed it in the click URL; the click tracker logs the click (with impression_id and a new click_id) then redirects. Conversions arrive via pixel/SDK or server-to-server with click_id when available.
+2. **Kafka** topics for each stream, keyed by impression_id or click_id, with long enough retention to replay a day.
+3. **Dedup + IVT** (Flink): drop repeated ids within a TTL window; score clicks with rules (too many clicks per IP/device, data-center IPs, impossible timing) and flag invalid ones rather than deleting them.
+4. **Joins** (Flink, event time with watermarks): interval join click to impression on impression_id where click_ts is between impression_ts and impression_ts + 1 h. Conversion-to-click attribution keyed by click_id (or by user_key, keeping the latest click per user and campaign in 7-day state).
+5. **Outputs**: attributed events to Kafka; Pinot/Druid ingests them for advertiser dashboards; the pacing service consumes per-campaign spend aggregates.
+6. **Batch reconciliation** (Spark, daily): recompute dedup, IVT and attribution from raw lake data with the full set of late events and final IVT decisions; this produces billing numbers. Differences against real time are tracked."""
+
+[[blocks]]
+heading = "Data model"
+body = """**`impressions`** (grain: one row per served impression): impression_id, ts, campaign_id, ad_id, placement_id, user_key, device_type, country, price_micros (for CPM), auction_id.
+
+**`clicks`** (grain: one row per click): click_id, impression_id, ts, ip_hash, user_agent_hash, is_valid, ivt_reason.
+
+**`conversions`** (grain: one row per conversion): conversion_id, click_id (nullable), user_key, advertiser_id, event_type, value_micros, ts.
+
+**`attributed_conversions`** (grain: one row per conversion): conversion_id, click_id, impression_id, campaign_id, attribution_model, lag_seconds.
+
+**`campaign_stats_minute`** (grain: campaign x minute): impressions, valid_clicks, spend_micros, conversions. **`billing_daily`** (grain: advertiser x campaign x day): billable units and amount, run_id."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Deduplication.** Clicks get retried by browsers and redirects; impressions get logged twice when ad servers retry. Dedup by id with keyed state and a TTL matching the maximum retry delay. Stream dedup with TTL is approximate for very late duplicates, so the batch job dedupes again over the whole day with exact semantics. A Bloom filter cuts memory but has false positives, which would drop real events; for billing, prefer exact keyed state.
+
+**Joins with late and out-of-order data.** A click can arrive before its impression (different pipelines, different lag). Event-time interval joins buffer both sides until the watermark passes the window end. The watermark delay is a trade-off: too small and late impressions are dropped (clicks left unmatched); too large and state and latency grow. Unmatched clicks go to a side output and are retried in batch.
+
+**Exactly-once outputs.** Flink checkpoints with Kafka transactional sinks give exactly-once into Kafka for consumers that read committed data. Downstream stores should upsert by event id (Pinot upsert tables or dedup in the OLAP store) so replays do not double count spend.
+
+**Attribution windows and skew.** Conversion attribution needs 7 days of click state; holding it in RocksDB is fine at ~70 GB, but popular campaigns can create hot keys if keyed by campaign. Key by click_id or user_key instead, then aggregate by campaign later. For billing, attribution runs in batch over the full window, so late conversions within 7 days are included."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **Real-time only vs. real-time + batch reconciliation**: streaming alone is fresh but hard to make billing-exact with late data and evolving IVT decisions. Keeping a batch truth job costs compute but gives auditable invoices.
+- **Pinot/Druid vs. a warehouse for dashboards**: OLAP stores handle thousands of advertisers querying concurrently with sub-second latency; a warehouse is fine for internal analysts.
+- **Exact dedup vs. Bloom filter**: Bloom filters are memory-efficient but have false positives (dropping valid events); acceptable for monitoring, not for billing.
+- **Last-click vs. multi-touch attribution**: last-click is simple and deterministic; multi-touch needs the full path per user and is typically batch.
+- **Join in stream vs. at query time**: precomputing joins makes dashboards fast; query-time joins over billions of rows are too slow."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Unmatched click rate** rising: impressions are late or lost; alert on the ratio of clicks without impressions.
+- **Watermark stall** from an idle or slow Kafka partition: configure idleness timeouts and alert on watermark lag.
+- **Real-time vs. batch drift**: daily diff per campaign; a gap above ~1% triggers investigation.
+- **State growth**: RocksDB state size per operator and checkpoint duration; long checkpoints signal backpressure.
+- **IVT attack**: spikes in clicks per IP/device or CTR anomalies per placement.
+- **Pacing lag**: spend freshness per campaign; a lagging feed causes overspend, so pacing should fail safe by slowing delivery."""
+
+key_points = [
+  "Propagate a stable impression_id into the click and a click_id into conversions so joins are key lookups, not fuzzy matching.",
+  "Deduplicate each stream on its id with keyed state and TTL; dedupe again exactly in batch for billing.",
+  "Use event-time interval joins with watermarks; the watermark delay trades completeness against state and latency.",
+  "Store only the fields needed for the join to keep state small (about 21 GB for one hour of impressions here).",
+  "Real-time numbers drive dashboards and pacing; a batch reconciliation over raw logs produces invoices.",
+  "Key state by click or user rather than campaign to avoid hot keys.",
+]
+common_mistakes = [
+  "Joining on processing time, so a short delay in one stream breaks matches.",
+  "Billing directly from the streaming aggregates with no reproducible batch truth.",
+  "Using Bloom filters for billing dedup and silently dropping valid events.",
+  "Deleting invalid clicks instead of flagging them, losing the audit trail.",
+  "Keeping full impression payloads in join state and running out of memory.",
+]
+interview_questions = [
+  "A click arrives 10 minutes before its impression. What happens in your join?",
+  "How would you support view-through attribution (conversion after an impression without a click)?",
+  "The dashboard shows 3% more clicks than the invoice. Explain why and how you communicate it.",
+  "How would you make budget pacing stop a campaign within seconds of hitting its budget?",
+  "What changes if user identifiers become unavailable for a large share of mobile traffic?",
+]
+
+[[quiz]]
+q = "Why does a click carry the impression_id?"
+options = [
+  "To compress the click payload",
+  "So the click-to-impression join is an exact key match instead of a fuzzy match on user and time",
+  "Because Kafka requires it",
+  "To encrypt the click",
+]
+answer = 1
+why = "Propagating ids through the funnel makes joins deterministic, keyed lookups and makes dedup and auditing straightforward."
+
+[[quiz]]
+q = "Keeping 1 hour of impressions at 58K/s and 100 B each in join state needs roughly how much?"
+options = ["~2 GB", "~21 GB", "~210 GB", "~2 TB"]
+answer = 1
+why = "58K x 3,600 is about 209M impressions; 209M x 100 B is about 21 GB (more at peak)."
+
+[[quiz]]
+q = "What is the main cost of increasing the watermark delay in the click-impression join?"
+options = [
+  "More events are dropped as late",
+  "Larger buffered state and higher output latency",
+  "Lower Kafka throughput",
+  "Loss of exactly-once guarantees",
+]
+answer = 1
+why = "A larger allowed lateness means the join waits longer before closing windows, holding more state and emitting results later, in exchange for matching more late events."
+
+[[quiz]]
+q = "Why keep a batch reconciliation job when the streaming path already computes clicks and spend?"
+options = [
+  "Streaming cannot count",
+  "Billing needs exact, reproducible numbers that include very late events and final invalid-traffic decisions",
+  "Batch is always faster",
+  "Dashboards cannot read streams",
+]
+answer = 1
+why = "Streams make trade-offs around lateness and approximate dedup. A batch job over the complete raw logs produces auditable invoices and measures real-time drift."

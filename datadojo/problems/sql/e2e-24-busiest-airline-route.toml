@@ -1,0 +1,51 @@
+title = "Busiest Airline Route"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-aggregation"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `tickets(airline_number, origin, destination, oneway_round, ticket_count)`. `oneway_round` is `'O'` for one-way
+tickets and `'R'` for round trips.
+
+A route is directional (`DEL -> NYC` differs from `NYC -> DEL`). A one-way ticket counts only on `origin -> destination`.
+A round-trip ticket also flies back, so its `ticket_count` counts on **both** `origin -> destination` and
+`destination -> origin`.
+
+Return `origin, destination, ticket_count` for the busiest route (highest total ticket count). If several routes tie
+for the top, return all of them.
+"""
+starter = "SELECT origin, destination, SUM(ticket_count) AS ticket_count\nFROM tickets\nGROUP BY origin, destination\n"
+solution = """
+WITH legs AS (
+  SELECT origin, destination, ticket_count FROM tickets
+  UNION ALL
+  SELECT destination, origin, ticket_count FROM tickets WHERE oneway_round = 'R'
+),
+routes AS (
+  SELECT origin, destination, SUM(ticket_count) AS ticket_count
+  FROM legs
+  GROUP BY origin, destination
+)
+SELECT origin, destination, ticket_count
+FROM routes
+WHERE ticket_count = (SELECT MAX(ticket_count) FROM routes)
+"""
+hints = [
+  "Turn every round-trip ticket into two legs: UNION ALL the table with a copy of its 'R' rows where origin and destination are swapped.",
+  "Then GROUP BY origin, destination and SUM the tickets.",
+  "LIMIT 1 drops ties. Keep every route whose total equals the MAX total.",
+]
+
+[[tests]]
+tables.tickets = { columns = "airline_number STRING, origin STRING, destination STRING, oneway_round STRING, ticket_count INT", rows = [
+  ["DEF456", "BOM", "DEL", "O", 150], ["GHI789", "DEL", "BOM", "R", 50], ["JKL012", "BOM", "DEL", "R", 75],
+  ["MNO345", "DEL", "NYC", "O", 200], ["PQR678", "NYC", "DEL", "O", 180], ["STU901", "NYC", "DEL", "R", 60],
+  ["ABC123", "DEL", "BOM", "O", 100], ["VWX234", "DEL", "NYC", "R", 90],
+] }
+
+[[tests]]  # the return leg of a round trip creates a tie for the top
+tables.tickets = { columns = "airline_number STRING, origin STRING, destination STRING, oneway_round STRING, ticket_count INT", rows = [
+  ["A1", "AAA", "BBB", "O", 100], ["A2", "BBB", "AAA", "R", 60],
+  ["C1", "CCC", "DDD", "O", 150], ["C2", "DDD", "CCC", "R", 10],
+] }

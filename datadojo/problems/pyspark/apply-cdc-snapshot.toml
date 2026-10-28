@@ -1,0 +1,50 @@
+title = "Apply a change feed to a snapshot"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-dedup-scd"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+You have yesterday's table `base(id, name, amount)` and the changes captured since:
+`changes(id, op, seq, name, amount)`. `op` is `I` (insert), `U` (update) or `D` (delete), each change
+carries the full row, and `seq` orders changes per id. Changes arrive out of order.
+
+Write `solve(spark, base, changes)` returning today's table `id, name, amount`:
+
+- Only the change with the highest `seq` per id matters.
+- If it is `D`, the id is gone (whether or not it was in `base`).
+- If it is `I` or `U`, the row becomes that change's values (an update to an unknown id acts as an insert).
+- Ids with no changes keep their `base` row.
+"""
+hints = [
+  "Reduce the feed to the last change per id with `F.row_number()` over a window ordered by `seq` descending.",
+  "Base rows that were never touched: `base.join(last, \"id\", \"left_anti\")`.",
+  "Union those with the non-delete last changes using `unionByName`.",
+]
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, base, changes):
+    return base
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, base, changes):
+    w = Window.partitionBy("id").orderBy(F.col("seq").desc())
+    last = changes.withColumn("rn", F.row_number().over(w)).filter("rn = 1")
+    untouched = base.join(last.select("id"), "id", "left_anti")
+    upserts = last.filter(F.col("op") != "D").select("id", "name", "amount")
+    return untouched.unionByName(upserts)
+"""
+
+[[tests]]
+tables.base = { columns = "id INT, name STRING, amount INT", rows = [
+  [1, "ann", 10], [2, "bob", 20], [3, "cat", 30], [4, "dan", 40],
+] }
+tables.changes = { columns = "id INT, op STRING, seq INT, name STRING, amount INT", rows = '''[
+  [2, "U", 5, "bob", 25], [2, "U", 3, "bobby", 22],
+  [3, "D", 7, "cat", 30], [3, "U", 2, "cat", 31],
+  [4, "D", 1, "dan", 40], [4, "I", 4, "dan", 44],
+  [5, "I", 1, "eve", 50], [6, "I", 1, "fay", 60], [6, "D", 2, "fay", 60],
+  [7, "D", 1, null, null], [8, "U", 1, "gus", 80]]''' }

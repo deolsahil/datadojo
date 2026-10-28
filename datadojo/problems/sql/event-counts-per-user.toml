@@ -1,0 +1,32 @@
+title = "Event type counts per user"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-aggregation"
+lists = ["sql-essentials"]
+statement = """
+Growth wants one row per user with how many times they did each key action in the app.
+
+Table `app_events(user_id, event_type, event_at)`. `event_type` includes `view`, `click`, `purchase`, and other types that should be ignored for the counts (but the user still appears).
+
+Return `user_id`, `views`, `clicks`, `purchases`, one row for every user that has any event. Counts with no matching events must be `0`, not NULL.
+"""
+starter = "SELECT user_id, COUNT(*) AS views\nFROM app_events\nGROUP BY user_id\n"
+solution = """
+SELECT user_id,
+       SUM(CASE WHEN event_type = 'view' THEN 1 ELSE 0 END) AS views,
+       SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks,
+       SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) AS purchases
+FROM app_events
+GROUP BY user_id
+"""
+hints = [
+  "One pass, one row per user: GROUP BY user_id and compute several aggregates side by side.",
+  "Put the condition inside the aggregate: SUM(CASE WHEN event_type = 'view' THEN 1 ELSE 0 END).",
+  "Careful: COUNT(CASE WHEN ... THEN 1 ELSE 0 END) counts the zeros too, since 0 is not NULL.",
+]
+
+[[tests]]
+tables.app_events = { columns = "user_id INT, event_type STRING, event_at TIMESTAMP", rows = [[1, "view", "2024-01-01 10:00:00"], [1, "view", "2024-01-01 10:01:00"], [1, "click", "2024-01-01 10:02:00"], [1, "purchase", "2024-01-01 10:05:00"], [2, "view", "2024-01-02 09:00:00"], [2, "click", "2024-01-02 09:01:00"]] }
+
+[[tests]]  # user with only ignored events still appears with zeros
+tables.app_events = { columns = "user_id INT, event_type STRING, event_at TIMESTAMP", rows = [[3, "login", "2024-02-01 08:00:00"], [3, "logout", "2024-02-01 09:00:00"], [4, "purchase", "2024-02-01 10:00:00"]] }

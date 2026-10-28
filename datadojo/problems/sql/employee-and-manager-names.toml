@@ -1,0 +1,29 @@
+title = "Employees with their manager's name"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-joins"
+lists = ["sql-essentials"]
+statement = """
+The org-chart export needs each person next to their direct manager.
+
+Table `employees(id, name, manager_id)`. `manager_id` refers to another row's `id`, or is NULL for people with no manager (the CEO).
+
+Return `employee` and `manager` for **every** employee. `manager` is the manager's name, or NULL when the employee has no manager.
+"""
+starter = "SELECT name AS employee\nFROM employees\n"
+solution = """
+SELECT e.name AS employee, m.name AS manager
+FROM employees e
+LEFT JOIN employees m ON m.id = e.manager_id
+"""
+hints = [
+  "The manager is just another row of the same table, so join the table to itself with two aliases.",
+  "An inner self-join silently drops the CEO.",
+  "FROM employees e LEFT JOIN employees m ON m.id = e.manager_id",
+]
+
+[[tests]]
+tables.employees = { columns = "id INT, name STRING, manager_id INT", rows = '[[1, "Mia", null], [2, "Raj", 1], [3, "Sue", 1], [4, "Tom", 2]]' }
+
+[[tests]]  # two people with no manager
+tables.employees = { columns = "id INT, name STRING, manager_id INT", rows = '[[1, "Ada", null], [2, "Bea", null], [3, "Cid", 2]]' }

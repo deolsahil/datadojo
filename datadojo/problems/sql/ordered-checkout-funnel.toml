@@ -1,0 +1,59 @@
+title = "Ordered checkout funnel"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-sessions-funnels"
+lists = ["sql-essentials"]
+statement = """
+Table `events(user_id, event, ts)`, where `event` is `'view'`, `'cart'` or `'purchase'`. A user can fire any
+event many times, in any order.
+
+Count how many users reach each step **in order**:
+
+- `viewed`: users with at least one `view`
+- `carted`: users with a `cart` strictly after their first `view`
+- `purchased`: users with a `purchase` strictly after their first such qualifying `cart`
+
+Return a single row `viewed, carted, purchased`. With no events, return one row of zeros.
+"""
+starter = "SELECT\n  COUNT(DISTINCT CASE WHEN event = 'view' THEN user_id END) AS viewed,\n  COUNT(DISTINCT CASE WHEN event = 'cart' THEN user_id END) AS carted,\n  COUNT(DISTINCT CASE WHEN event = 'purchase' THEN user_id END) AS purchased\nFROM events\n"
+solution = """
+WITH v AS (
+  SELECT user_id, MIN(ts) AS view_ts FROM events WHERE event = 'view' GROUP BY user_id
+), c AS (
+  SELECT e.user_id, MIN(e.ts) AS cart_ts
+  FROM events e JOIN v ON v.user_id = e.user_id
+  WHERE e.event = 'cart' AND e.ts > v.view_ts
+  GROUP BY e.user_id
+), p AS (
+  SELECT DISTINCT e.user_id
+  FROM events e JOIN c ON c.user_id = e.user_id
+  WHERE e.event = 'purchase' AND e.ts > c.cart_ts
+)
+SELECT (SELECT COUNT(*) FROM v) AS viewed,
+       (SELECT COUNT(*) FROM c) AS carted,
+       (SELECT COUNT(*) FROM p) AS purchased
+"""
+hints = [
+  "Counting distinct users per event type ignores the order of steps. Build each step from the previous one.",
+  "Step 1: each user's first view time. Step 2: join back to events and take the first cart after that time.",
+  "Step 3: users with a purchase after their step-2 cart time. Scalar subqueries over the three CTEs give one row even when empty.",
+]
+
+[[tests]]
+tables.events = { columns = "user_id INT, event STRING, ts TIMESTAMP", rows = [
+  [1, "view", "2024-01-01 10:00:00"], [1, "cart", "2024-01-01 10:05:00"], [1, "purchase", "2024-01-01 10:09:00"],
+  [2, "view", "2024-01-01 11:00:00"], [2, "cart", "2024-01-01 11:01:00"],
+  [3, "view", "2024-01-01 12:00:00"],
+] }
+
+[[tests]]  # out-of-order steps don't count; same-timestamp is not 'after'
+tables.events = { columns = "user_id INT, event STRING, ts TIMESTAMP", rows = [
+  [1, "cart", "2024-01-01 09:00:00"], [1, "purchase", "2024-01-01 09:01:00"], [1, "view", "2024-01-01 09:02:00"],
+  [2, "purchase", "2024-01-01 08:00:00"], [2, "view", "2024-01-01 09:00:00"], [2, "cart", "2024-01-01 09:00:00"],
+  [3, "view", "2024-01-02 10:00:00"], [3, "cart", "2024-01-02 09:00:00"], [3, "cart", "2024-01-02 11:00:00"],
+  [3, "purchase", "2024-01-02 10:30:00"], [3, "purchase", "2024-01-02 12:00:00"],
+  [4, "cart", "2024-01-03 10:00:00"],
+] }
+
+[[tests]]  # empty: one row of zeros
+tables.events = { columns = "user_id INT, event STRING, ts TIMESTAMP", rows = [] }

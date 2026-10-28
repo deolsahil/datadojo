@@ -1,0 +1,166 @@
+title = "Design a Daily Revenue Reporting Pipeline with Late Adjustments"
+section = "ds-cases-pipelines"
+order = 3
+kind = "case_study"
+difficulty = "medium"
+companies = ["Stripe", "Amazon", "DoorDash"]
+big_idea = "Model money as an append-only ledger of signed entries, recompute affected periods deterministically, and freeze reported numbers with explicit restatements instead of silently changing the past."
+summary = """Finance wants a daily revenue report: gross bookings, refunds, discounts, taxes and net revenue by day, region and product, in multiple currencies. The data is small compared with clickstream, but the bar for correctness is much higher: every number must reconcile to the payment processor and the general ledger, and must be explainable months later in an audit.
+
+The twist is **late-arriving adjustments**: refunds, chargebacks and corrections that arrive days or weeks after the original order. The design must decide which date they belong to, recompute affected days idempotently, and handle **closed periods** that cannot change except through recorded restatements."""
+diagram = """flowchart LR
+  oltp[("Orders DB")] --> cdc[CDC or daily extract]
+  psp[Payment processor reports] --> files[("S3 landing")]
+  fx[FX rates API] --> files
+  cdc --> stg[("Staging tables")]
+  files --> stg
+  stg --> dbt[dbt models in Snowflake]
+  dbt --> ledger[("Revenue ledger: signed entries")]
+  ledger --> agg[("Daily revenue facts")]
+  agg --> recon[Reconciliation checks]
+  recon --> rpt[Finance dashboards]
+  agg --> close[("Period close snapshots")]"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- What is the definition of revenue: gross, net of refunds, net of discounts and tax? Recognized when ordered, shipped, or delivered?
+- When a refund arrives 10 days later, does it reduce the original order's day or the refund's day? (Usually both views exist: by original date for cohort analysis, by posting date for accounting.)
+- Which currencies, and which FX rate applies: the transaction day's rate or the reporting day's?
+- When is a month closed, and what happens to adjustments after close?
+- Which systems are the source of truth: the orders DB, the payment processor, or the ERP general ledger?
+- Who consumes the output: dashboards, the ERP, auditors, investor reporting?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Daily revenue by date x region x product x currency, in local currency and USD.
+- Two date views: by transaction date and by posting (accounting) date.
+- Late refunds, chargebacks and manual adjustments applied correctly.
+- Monthly close: freeze a period; later changes appear as restatement entries in the next open period.
+
+**Non-functional**
+- Correctness above all: reconcile to processor settlement within a defined tolerance (e.g. 0.01%).
+- Deterministic and idempotent: rerunning any day produces identical results.
+- Report ready by 08:00 local time for the previous day.
+- Full lineage and audit trail; retention 7+ years.
+- Access restricted to finance roles."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- Orders: **10M/day**; adjustments (refunds, chargebacks, corrections) ~2% = **200K/day**, arriving up to 120 days late (chargeback window).
+- Ledger entries: ~3 per order (charge, tax, discount) = 30M + adjustments, call it **~30M entries/day**.
+- Entry size ~200 B: 30M x 200 B = **6 GB/day**, ~2.2 TB/year uncompressed, well under 1 TB/year compressed.
+- 7-year retention: ~15 TB uncompressed, a few TB compressed.
+- Daily aggregate table: 365 days x 50 regions x 1,000 products x ~3 currencies = ~55M rows/year at most, usually far fewer because the matrix is sparse.
+
+This fits comfortably in Snowflake or BigQuery. Scale is not the problem; correctness, idempotency and auditability are."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Ingest**: CDC (or a consistent daily extract) of orders, order lines, refunds; processor settlement files (Stripe/Adyen reports) landed in S3; daily FX rates from a rate provider. Everything lands raw with load timestamps and source file names.
+2. **Staging** (dbt): type, dedupe on natural keys (order_line_id, refund_id, processor txn id), and convert amounts to integer minor units (cents) with an explicit currency code.
+3. **Revenue ledger**: an append-only fact table of signed entries. A sale is +amount; a refund is a new negative entry referencing the original order; corrections are reversal + new entry. Nothing is ever updated in place.
+4. **Daily facts**: aggregate the ledger by both `transaction_date` and `posting_date`. Each run recomputes only the dates touched by new entries since the last run (found from `posting_date` and the referenced original dates) and overwrites those partitions.
+5. **Reconciliation**: compare ledger totals against processor settlements per day and currency, and against the orders DB counts; block publishing if a check fails beyond tolerance.
+6. **Close**: at month end, snapshot the facts for that period into an immutable `period_close` table with a version. Post-close adjustments are posted to the current open period and flagged as prior-period adjustments.
+7. **Orchestration**: Airflow with sensors on source arrival; dbt tests as gates; the dashboard reads only published, reconciled data."""
+
+[[blocks]]
+heading = "Data model"
+body = """**`ledger_entries`** (grain: one signed money movement): entry_id, order_id, order_line_id, entry_type (sale, tax, discount, refund, chargeback, adjustment, reversal), amount_minor (signed integer), currency, transaction_date (date of the original sale), posting_date (date the entry was booked), source_system, source_ref, loaded_at, run_id.
+
+**`fx_rates`** (grain: currency x date): rate_to_usd, source, loaded_at.
+
+**`fct_revenue_daily`** (grain: date_type x date x region x product x currency): gross_minor, refunds_minor, discounts_minor, tax_minor, net_minor, net_usd_minor, entry_count. Partitioned by date.
+
+**`period_close`** (grain: period x version x region x product x currency): frozen totals, closed_at, closed_by.
+
+**Dimensions**: `dim_product`, `dim_region` (SCD Type 2 so historical reports use the attributes valid at the time)."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Late adjustments without mutating history.** A refund on March 20 for a March 5 order becomes a new ledger row with transaction_date = March 5 and posting_date = March 20. The accounting view (by posting date) leaves March 5 unchanged; the cohort view (by transaction date) shows March 5 net revenue dropping. Both are correct for their purpose, and the ledger explains the difference. Each daily run finds affected dates with a query like `SELECT DISTINCT transaction_date FROM ledger_entries WHERE loaded_at > last_watermark` and recomputes only those partitions.
+
+**Idempotency and determinism.** Rerunning yesterday must not double count. Dedupe staging on source natural keys, derive entry_id deterministically (a hash of source system + source ref + entry type), and write facts with partition overwrite (or MERGE on the grain) rather than append. Pin FX rates by date so a rerun next month uses the same rate, not today's.
+
+**Money arithmetic.** Store integer minor units, never floats. Currencies differ in minor units (JPY has 0 decimals, BHD has 3), so keep an exponent per currency. Convert to USD at the defined rate and round once at the defined grain, then document the rounding rule; summing pre-rounded line items differs from rounding a sum.
+
+**Closed periods.** After close, the closed snapshot is the reported number. Late chargebacks for a closed month post to the current month as prior-period adjustments, and the close table can be re-versioned only through an approved restatement process."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **Ledger (append-only) vs. mutable order table with a status column**: mutating rows loses the history auditors need and makes reruns non-reproducible. The ledger costs a bit more storage and modeling effort.
+- **Recompute affected dates vs. full rebuild**: at 6 GB/day a full rebuild of all history is feasible occasionally and is the simplest correctness check; daily runs recompute only touched dates for speed.
+- **Orders DB vs. processor as source of truth**: the orders DB knows products and regions; the processor knows what money actually moved. Use the DB for attribution and the processor for reconciliation.
+- **Streaming vs. daily batch**: finance needs correct daily numbers, not second-level freshness. An intraday estimate can come from a separate, clearly labeled stream."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Missing source file** (processor report late): sensors wait, then alert; never publish a partial day silently.
+- **Reconciliation break** beyond tolerance: block publication and page the data owner with the breakdown by currency and entry type.
+- **Duplicate load** of a settlement file: natural-key dedupe plus a file-level manifest of processed files.
+- **FX rate missing** for a currency/day: fail loudly rather than defaulting to 1.0 or carrying forward silently.
+- **Schema change** in the orders DB: dbt contracts and tests on staging columns.
+- **Freshness and completeness**: monitor row counts versus the 4-week same-weekday average and total net revenue anomalies."""
+
+key_points = [
+  "Model money as an append-only ledger of signed entries; refunds and corrections are new rows, never updates.",
+  "Keep both transaction date and posting date; cohort and accounting views legitimately differ.",
+  "Recompute only the dates touched by newly loaded entries, and overwrite those partitions idempotently.",
+  "Use integer minor units, pinned FX rates by date, and one documented rounding rule.",
+  "Reconcile to the payment processor and block publishing on breaks.",
+  "Freeze closed periods; post-close changes become flagged prior-period adjustments.",
+]
+common_mistakes = [
+  "Storing amounts as floating point and accumulating rounding errors.",
+  "Updating the original order row when a refund arrives, losing the audit trail.",
+  "Appending on rerun, which double counts a day.",
+  "Using the current FX rate when recomputing history, so old reports change silently.",
+  "Only recomputing yesterday and missing refunds that land weeks later.",
+]
+interview_questions = [
+  "A chargeback arrives 90 days after the sale, after the quarter has closed. Walk through what each report shows.",
+  "Finance says yesterday's net revenue is off by $12K from the processor. How do you investigate?",
+  "How would you support restating a closed month after an auditor finds an error?",
+  "How do you handle a product moving from one category to another mid-year in historical reports?",
+  "What would you add to give executives an intraday revenue estimate?",
+]
+
+[[quiz]]
+q = "A refund on March 20 arrives for an order placed March 5. In an append-only ledger, what is written?"
+options = [
+  "The March 5 order row is updated to status = refunded",
+  "A new negative entry with transaction_date March 5 and posting_date March 20",
+  "The March 5 entry is deleted",
+  "Nothing until the month closes",
+]
+answer = 1
+why = "The ledger never mutates history. The new signed entry carries both dates, so cohort (transaction-date) and accounting (posting-date) views can each be computed correctly."
+
+[[quiz]]
+q = "Why store amounts as integer minor units with a currency code?"
+options = [
+  "Integers compress better",
+  "Floating point cannot represent many decimal amounts exactly, causing reconciliation drift",
+  "BI tools require integers",
+  "It avoids the need for FX conversion",
+]
+answer = 1
+why = "Binary floats cannot exactly represent values like 0.10, so sums drift by fractions of a cent and fail reconciliation. Integer cents are exact; the currency code tells you the exponent."
+
+[[quiz]]
+q = "Rerunning the March 5 job must not double count. Which approach guarantees that?"
+options = [
+  "Append results and dedupe in the dashboard",
+  "Overwrite the March 5 partition (or MERGE on the grain) computed from deduplicated source rows",
+  "Add a DISTINCT to the final SELECT",
+  "Run the job only once and never rerun",
+]
+answer = 1
+why = "Partition overwrite or a MERGE on the table grain makes the write idempotent, and deduplicated inputs make the computed values the same on every run."
+
+[[quiz]]
+q = "At 10M orders/day with ~3 ledger entries each at ~200 B, roughly how much ledger data per day?"
+options = ["~600 MB", "~6 GB", "~60 GB", "~600 GB"]
+answer = 1
+why = "10M x 3 = 30M entries; 30M x 200 B = 6 GB/day. Small enough that correctness, not scale, drives the design."

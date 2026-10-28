@@ -1,0 +1,37 @@
+title = "Current address per customer"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-dedup-scd"
+lists = ["sql-essentials"]
+statement = """
+Table `address_updates(update_id, customer_id, address, updated_at)` is an append-only log: every change to a
+customer's address adds a row.
+
+Return each customer's current address as `customer_id, address`: the row with the latest `updated_at`.
+Two updates can share the same `updated_at`; then the one with the **larger** `update_id` wins.
+Exactly one row per customer. Any row order.
+"""
+starter = "SELECT customer_id, MAX(address) AS address\nFROM address_updates\nGROUP BY customer_id\n"
+solution = """
+SELECT customer_id, address FROM (
+  SELECT customer_id, address,
+         ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY updated_at DESC, update_id DESC) AS rn
+  FROM address_updates
+) t WHERE rn = 1
+"""
+hints = [
+  "MAX(address) picks the alphabetically largest address, not the latest one.",
+  "Number each customer's rows newest first with ROW_NUMBER(), using update_id DESC as the tiebreaker, and keep rn = 1.",
+]
+
+[[tests]]
+tables.address_updates = { columns = "update_id INT, customer_id INT, address STRING, updated_at TIMESTAMP", rows = [
+  [1, 100, "9 Zebra St", "2024-01-01 10:00:00"], [2, 100, "1 Apple Rd", "2024-03-01 10:00:00"],
+  [3, 200, "5 Main St", "2024-02-01 10:00:00"],
+] }
+
+[[tests]]  # same timestamp: larger update_id wins
+tables.address_updates = { columns = "update_id INT, customer_id INT, address STRING, updated_at TIMESTAMP", rows = [
+  [10, 1, "B Street", "2024-05-01 12:00:00"], [11, 1, "A Street", "2024-05-01 12:00:00"],
+  [12, 1, "Z Street", "2024-04-30 12:00:00"], [13, 2, "Only St", "2024-01-01 00:00:00"],
+] }

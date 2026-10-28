@@ -1,0 +1,39 @@
+title = "Dedupe events by composite key"
+lang = "python"
+difficulty = "easy"
+pattern = "py-records"
+lists = ["python-de"]
+function = "dedupe"
+ordered = true
+statement = '''
+`dedupe(events, keys)` removes duplicate events. Two events are duplicates when they have equal values for **every** field named in `keys` (a list of field names). Keep the **first** occurrence and preserve input order.
+
+A missing field counts as `null`, so two events both missing the same key field can be duplicates. Other fields are ignored when comparing. Key values are always scalars.
+'''
+starter = "def dedupe(events, keys):\n    pass\n"
+solution = '''
+def dedupe(events, keys):
+    seen, out = set(), []
+    for e in events:
+        k = tuple(e.get(f) for f in keys)
+        if k not in seen:
+            seen.add(k)
+            out.append(e)
+    return out
+'''
+hints = [
+    "Build a tuple of the key fields for each event; tuples are hashable.",
+    "A set of seen tuples plus an output list keeps first-wins and order.",
+]
+
+[[tests]]
+args = '''[[{"source": "web", "event_id": 1, "v": "a"}, {"source": "app", "event_id": 1, "v": "b"},
+            {"source": "web", "event_id": 1, "v": "c"}, {"source": "web", "event_id": 2, "v": "d"}],
+           ["source", "event_id"]]'''
+[[tests]]
+args = '''[[{"event_id": 7, "v": 1}, {"source": null, "event_id": 7, "v": 2}, {"source": "web", "event_id": 7, "v": 3}],
+           ["source", "event_id"]]'''
+[[tests]]
+args = '''[[{"id": 1, "v": 1}, {"id": 1, "v": 2}], []]'''
+[[tests]]
+args = [[], ["id"]]

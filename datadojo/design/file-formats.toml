@@ -1,0 +1,113 @@
+title = "File Formats: CSV, JSON, Avro, Parquet, ORC"
+section = "ds-modeling"
+order = 3
+kind = "lesson"
+big_idea = "Use row formats like Avro for writing and moving records, and columnar formats like Parquet or ORC for analytics, because columnar files let engines read only the columns and row groups a query needs."
+summary = """**CSV and JSON** are human-readable and universal, but they carry no enforced schema (CSV) or repeat field names in every record (JSON), compress poorly relative to binary formats, and must be fully parsed to read any field. Good for interchange with outside parties, poor for a data lake at scale.
+
+**Avro** is a compact binary **row** format with an embedded schema and well-defined schema evolution rules. It is a natural fit for Kafka messages and landing data, where you write whole records and read them back whole.
+
+**Parquet and ORC** are **columnar**: values for each column are stored together, with statistics (min/max, null counts) per chunk. Engines skip columns a query does not use (**column pruning**) and skip chunks whose statistics rule out the filter (**predicate pushdown**). Columns of similar values compress very well. Parquet is the most widely supported across engines; ORC is strong in the Hive ecosystem."""
+diagram = """flowchart LR
+  prod[Producers] -- Avro rows --> kafka[("Kafka")]
+  kafka --> land["Landing (Avro or JSON)"]
+  land --> compact[Batch convert]
+  compact --> pq[("Parquet in lake")]
+  pq --> q["Query engine (pruning and pushdown)"]"""
+
+[[blocks]]
+heading = "How Parquet is laid out"
+body = """A Parquet file is split into **row groups** (commonly on the order of 128 MB, configurable). Inside each row group, each column is a **column chunk**, divided into **pages**. The footer stores the schema and per-chunk statistics.
+
+A query `SELECT sum(amount) FROM sales WHERE country = 'DE'`:
+1. Reads the footer.
+2. Skips row groups where the `country` min/max range excludes 'DE'.
+3. Reads only the `country` and `amount` chunks of remaining row groups.
+
+Encodings matter: **dictionary encoding** for low-cardinality strings, **run-length encoding** for repeated values, **delta encoding** for sorted numbers. Then a codec (Snappy for speed, Zstd for a better ratio, gzip legacy) compresses pages. Sorting data by a common filter column makes min/max stats far more selective."""
+
+[[blocks]]
+heading = "When to use what"
+body = """| Format | Layout | Schema | Best for |
+|---|---|---|---|
+| CSV | Row, text | None enforced | Small exports, partner exchange |
+| JSON / JSONL | Row, text | Self-describing per record | APIs, semi-structured logs, debugging |
+| Avro | Row, binary | Embedded, with evolution rules | Kafka, landing zones, write-heavy pipelines |
+| Parquet | Columnar, binary | In footer | Lake and lakehouse analytics, the default |
+| ORC | Columnar, binary | In footer | Hive-centric stacks, similar strengths to Parquet |
+
+Also worth knowing: Protobuf is common for Kafka messages with a schema registry, and Arrow is an **in-memory** columnar format for moving data between processes, not primarily a storage format."""
+
+[[blocks]]
+heading = "Schema evolution"
+body = """- **Avro** resolves a writer schema against a reader schema: adding a field with a default and removing a field that had a default are compatible. Schema registries enforce backward or forward compatibility per topic.
+- **Parquet** files are immutable, each with its own schema. Engines can merge schemas across files (adding nullable columns is safe), but renames and type changes are risky without a table format that tracks column IDs, which Iceberg does and Delta does with column mapping enabled.
+- **CSV** has no schema evolution: a new column inserted in the middle silently shifts every value after it."""
+
+[[blocks]]
+heading = "Trade-offs and failure modes"
+body = """- Columnar formats are bad for single-record lookups and for appending one row at a time; buffer and write in batches.
+- Very small Parquet files lose their benefits (footer overhead, tiny row groups); see the small-files lesson.
+- Gzip-compressed CSV is not splittable, so one 50 GB `.csv.gz` file is read by a single task.
+- JSON type ambiguity (is `"123"` a string or a number? are timestamps strings?) causes silent drift; validate on ingest."""
+
+key_points = [
+  "Row formats (Avro) suit writing and streaming whole records; columnar formats (Parquet, ORC) suit analytics.",
+  "Column pruning reads only needed columns; predicate pushdown skips row groups using min/max statistics.",
+  "Sorting or clustering on filter columns makes statistics much more selective.",
+  "Avro has explicit reader/writer schema resolution; Parquet schema evolution is safest under a table format.",
+  "Snappy favors speed, Zstd favors compression ratio; gzipped CSV is not splittable.",
+]
+common_mistakes = [
+  "Storing the analytical lake as JSON and paying to parse every field on every query.",
+  "Writing Parquet one row at a time from a stream, creating thousands of tiny files.",
+  "Relying on predicate pushdown on unsorted data where every row group spans the full value range.",
+  "Treating Arrow as a long-term storage format.",
+  "Renaming Parquet columns without a table format and breaking readers.",
+]
+interview_questions = [
+  "Why is Parquet faster than CSV for analytical queries?",
+  "What is predicate pushdown and when does it fail to help?",
+  "Which format would you use for Kafka messages, and why?",
+  "How does schema evolution work in Avro?",
+  "What would you change if Parquet queries on a filter column are not skipping any data?",
+]
+
+[[quiz]]
+q = "A query filters on event_date and reads 3 of 60 columns from Parquet. Which two mechanisms reduce I/O?"
+options = [
+  "Dictionary encoding and gzip",
+  "Column pruning and predicate pushdown using row-group statistics",
+  "Schema registry and compaction",
+  "Row-level indexes and B-trees",
+]
+answer = 1
+why = "Column pruning reads only 3 column chunks; min/max statistics let the engine skip row groups whose dates fall outside the filter."
+
+[[quiz]]
+q = "Predicate pushdown on customer_id is skipping almost no row groups. What is the most likely cause?"
+options = [
+  "The file uses Snappy compression",
+  "Data is not sorted or clustered by customer_id, so every row group's min/max spans most IDs",
+  "Parquet does not store statistics",
+  "The column is dictionary encoded",
+]
+answer = 1
+why = "Statistics only help when values are grouped. Sorting or Z-ordering by the filter column narrows each row group's range."
+
+[[quiz]]
+q = "Which format is the most natural choice for messages on a Kafka topic with a schema registry?"
+options = ["Parquet", "ORC", "Avro", "Gzipped CSV"]
+answer = 2
+why = "Avro is a compact row format with schema evolution rules and broad schema-registry support; Protobuf is also common. Columnar formats suit batched files, not individual messages."
+
+[[quiz]]
+q = "Why does a single 50 GB .csv.gz file load slowly in Spark?"
+options = [
+  "CSV cannot hold that many rows",
+  "Gzip is not splittable, so one task must decompress the whole file",
+  "Spark does not support gzip",
+  "CSV files cannot be partitioned",
+]
+answer = 1
+why = "Without split points, one task reads the entire stream sequentially, leaving the rest of the cluster idle."

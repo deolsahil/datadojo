@@ -1,0 +1,41 @@
+title = "Fill order line defaults"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-basics"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`order_lines(line_id, unit_price, qty, discount_pct)` arrives from several upstream systems that
+leave fields blank. Business rules:
+
+- a missing `qty` means 1
+- a missing `discount_pct` means no discount (0)
+- a missing `unit_price` cannot be fixed: `line_total` stays NULL
+
+Write `solve(spark, order_lines)` returning `line_id, qty, line_total` where `qty` is the filled
+quantity and `line_total = unit_price * qty * (1 - discount_pct / 100)` rounded to 2 decimals.
+"""
+hints = [
+  "`F.coalesce(F.col(\"qty\"), F.lit(1))` returns the first non-NULL value.",
+  "Arithmetic with a NULL operand is NULL, which is exactly the rule for a missing price.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, order_lines):
+    return order_lines.select("line_id", "qty", "unit_price")
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, order_lines):
+    qty = F.coalesce("qty", F.lit(1))
+    disc = F.coalesce("discount_pct", F.lit(0.0))
+    total = F.round(F.col("unit_price") * qty * (1 - disc / 100), 2)
+    return order_lines.select("line_id", qty.alias("qty"), total.alias("line_total"))
+"""
+
+[[tests]]
+tables.order_lines = { columns = "line_id INT, unit_price DOUBLE, qty INT, discount_pct DOUBLE", rows = '''[
+  [1, 10.0, 3, 10.0], [2, 4.99, null, null], [3, null, 2, 5.0], [4, 19.99, 2, null],
+  [5, 100.0, 0, 50.0], [6, 7.25, null, 20.0]]''' }

@@ -1,0 +1,34 @@
+title = "Unpivot store metrics"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-quality"
+function = "solve"
+statement = """
+A reporting export is wide: `daily(store, day, sales, returns, visits)`, one integer column per metric.
+The metrics store wants it long.
+
+Write `solve(spark, daily)` returning `store, day, metric, value` with one row per non-NULL metric
+value. `metric` is the column name (`sales`, `returns` or `visits`). Skip NULL values; keep zeros.
+"""
+hints = [
+  "`F.expr(\"stack(3, 'sales', sales, 'returns', returns, 'visits', visits) as (metric, value)\")` turns columns into rows.",
+  "Filter `value` is not NULL afterwards; a 0 is a real measurement.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, daily):
+    return daily
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, daily):
+    long = daily.select("store", "day", F.expr(
+        "stack(3, 'sales', sales, 'returns', returns, 'visits', visits) as (metric, value)"))
+    return long.filter(F.col("value").isNotNull())
+"""
+
+[[tests]]
+tables.daily = { columns = "store STRING, day DATE, sales INT, returns INT, visits INT", rows = '''[
+  ["s1", "2024-01-01", 100, 0, 40], ["s1", "2024-01-02", null, 2, 35], ["s2", "2024-01-01", 80, null, null]]''' }

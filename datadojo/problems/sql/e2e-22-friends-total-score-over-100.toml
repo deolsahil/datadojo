@@ -1,0 +1,43 @@
+title = "Persons with High-Scoring Friends"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-joins"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `person(p_id, name, score)` lists people and `friend(p_id, f_id)` says `f_id` is a friend of `p_id`
+(one direction per row).
+
+Return persons whose friends' scores add up to **more than 100**: `p_id, name, total_friends,
+total_friends_score` (number of friends and the sum of their scores). Any row order.
+"""
+starter = "SELECT p_id, name, 0 AS total_friends, score AS total_friends_score\nFROM person\nWHERE score > 100\n"
+solution = """
+SELECT p.p_id, p.name, COUNT(*) AS total_friends, SUM(fp.score) AS total_friends_score
+FROM person p
+JOIN friend f ON f.p_id = p.p_id
+JOIN person fp ON fp.p_id = f.f_id
+GROUP BY p.p_id, p.name
+HAVING SUM(fp.score) > 100
+"""
+hints = [
+  "Join person -> friend -> person again to get each friend's score.",
+  "Group by the person, sum the friend scores.",
+  "Filter the groups with HAVING SUM(...) > 100.",
+]
+
+[[tests]]
+tables.person = { columns = "p_id INT, name STRING, score INT", rows = [
+  [1, "Ahsan", 88], [2, "Juel", 11], [3, "Jubayer", 27], [4, "Shakel", 45], [5, "Sunny", 63],
+] }
+tables.friend = { columns = "p_id INT, f_id INT", rows = [
+  [1, 2], [1, 3], [2, 1], [2, 3], [3, 5], [4, 2], [4, 3], [4, 5],
+] }
+
+[[tests]]  # exactly 100 is not enough; own score must not be counted; two people with the same name
+tables.person = { columns = "p_id INT, name STRING, score INT", rows = [
+  [1, "Kim", 90], [2, "Lee", 60], [3, "Kim", 40], [4, "Max", 50],
+] }
+tables.friend = { columns = "p_id INT, f_id INT", rows = [
+  [1, 2], [1, 3], [2, 3], [3, 1], [3, 2], [4, 1], [4, 3],
+] }

@@ -1,0 +1,109 @@
+title = "Orchestration and Transformation: Airflow, Dagster, dbt"
+section = "ds-blocks"
+order = 5
+kind = "lesson"
+big_idea = "An orchestrator decides when and in what order idempotent tasks run and what happens when they fail; a transformation tool like dbt defines what those SQL models are, and the orchestrator should coordinate work, not perform it."
+summary = """Pipelines are graphs of dependent steps: ingest, then clean, then build facts, then refresh aggregates. An **orchestrator** such as **Apache Airflow**, **Dagster**, or Prefect runs that graph on a schedule or on events, retries failures, tracks history, and lets you backfill past intervals.
+
+Airflow models pipelines as **DAGs of tasks**, each run tied to a **data interval** (the logical date). Dagster centers on **software-defined assets** (the tables you produce) and their partitions, which makes lineage and backfills by asset natural. Both work best when tasks are idempotent and parameterized by the interval.
+
+**dbt** handles the transformation layer inside a warehouse or lakehouse: each model is a `SELECT`, dbt infers dependencies from `ref()`, builds them in order with the chosen materialization, and runs tests and docs. The orchestrator then triggers dbt (often per model or selection) alongside ingestion and other jobs."""
+diagram = """flowchart LR
+  sensor["Sensor - file or upstream ready"] --> ingest[Ingest task]
+  ingest --> dbt["dbt build - models and tests"]
+  dbt --> check[Quality gate]
+  check --> publish[Publish and notify]
+  sched["Schedule with data interval"] --> sensor"""
+
+[[blocks]]
+heading = "Core orchestrator concepts"
+body = """- **DAG / graph:** tasks and dependencies; no cycles.
+- **Schedule and data interval:** a daily DAG run for 2024-06-01 typically processes that day's data and runs after the interval ends. Use the interval variables, not `now()`.
+- **Retries with backoff:** for transient errors (network, throttling). Pair with idempotent tasks so retries are safe; set timeouts so hung tasks fail.
+- **Sensors / event triggers:** wait for a file, a partition, or an upstream DAG. Use deferrable or reschedule modes so waiting does not occupy a worker slot. Newer Airflow versions and Dagster support data-aware or asset-based triggering.
+- **Catchup and backfills:** run missed or historical intervals; cap concurrency with `max_active_runs` and pools.
+- **SLAs and alerts:** notify when a run is late or fails; route to an owner."""
+
+[[blocks]]
+heading = "Orchestrate, do not compute"
+body = """Keep heavy work in the engines (Spark, the warehouse, dbt) and keep the orchestrator as a coordinator. Pulling 10 GB into an Airflow worker with pandas couples scheduling to compute, causes memory failures, and makes scaling hard. Also avoid passing large data between tasks via XCom; pass references (table names, paths, partition keys).
+
+Other good practices: one DAG per logical pipeline rather than one giant DAG; keep top-level DAG code light (Airflow parses DAG files frequently); version-control and test DAGs; make each task's inputs and outputs explicit."""
+
+[[blocks]]
+heading = "dbt essentials"
+body = """- **Models:** `.sql` files with `SELECT`, referencing others via `{{ ref('stg_orders') }}`; sources via `{{ source('app', 'orders') }}`.
+- **Materializations:** `view`, `table`, `incremental` (only process new or changed rows using `is_incremental()` with a unique key and a MERGE or insert-overwrite strategy), `ephemeral`; snapshots implement SCD Type 2.
+- **Tests:** generic tests (`unique`, `not_null`, `accepted_values`, `relationships`) and custom SQL tests; `dbt build` runs models and tests in DAG order so a failing test stops downstream models.
+- **Selection:** `dbt build --select state:modified+` builds only changed models and their children, which is useful in CI.
+- Incremental models need a **lookback** for late data (reprocess the last N days) and an occasional full refresh."""
+
+[[blocks]]
+heading = "Airflow vs Dagster in an interview"
+body = """Both are fine answers. Airflow is the most widely deployed, with a huge operator ecosystem and task-centric DAGs. Dagster is asset-centric, with built-in lineage, partitions, and type-checked IO, which makes backfills by partition and freshness policies first-class. Pick one, justify it briefly, and spend your time on what matters: idempotent tasks keyed by interval, retries plus timeouts, sensors for upstream readiness, quality gates before publishing, and how you backfill."""
+
+key_points = [
+  "Orchestrators schedule, order, retry, and backfill tasks; they should not do the heavy compute.",
+  "Tie each run to a data interval and make tasks idempotent so retries and backfills are safe.",
+  "Use sensors or data-aware triggers in non-blocking modes for upstream readiness.",
+  "dbt builds SQL models in ref() dependency order with materializations and tests.",
+  "Incremental dbt models need a unique key, a late-data lookback, and occasional full refresh.",
+]
+common_mistakes = [
+  "Processing large data inside Airflow workers with pandas.",
+  "Passing big payloads through XCom.",
+  "Retries on non-idempotent tasks that duplicate data.",
+  "Sensors in blocking mode holding worker slots for hours.",
+  "Incremental models that only read rows newer than the max timestamp and miss late arrivals.",
+]
+interview_questions = [
+  "How would you orchestrate a daily pipeline that depends on a partner file landing in S3?",
+  "What makes an Airflow task safe to retry?",
+  "How does dbt know what order to build models in?",
+  "How would you design an incremental dbt model that handles late-arriving data?",
+  "Compare Airflow and Dagster.",
+]
+
+[[quiz]]
+q = "A daily Airflow DAG run for logical date 2024-06-01 should process which data, by convention?"
+options = [
+  "Whatever data exists at execution time",
+  "The data interval the run represents, using the interval variables",
+  "Only today's data",
+  "All data since the DAG was created",
+]
+answer = 1
+why = "Binding to the data interval makes runs deterministic and lets backfills compute the right historical slice."
+
+[[quiz]]
+q = "Why should heavy transformations not run inside Airflow worker processes?"
+options = [
+  "Airflow cannot run Python",
+  "It couples scheduling to compute, risks worker memory failures, and scales poorly; engines like Spark or the warehouse should do it",
+  "Airflow tasks cannot access the network",
+  "It is slower to write the code",
+]
+answer = 1
+why = "The orchestrator coordinates; delegating compute to purpose-built engines keeps it reliable and scalable."
+
+[[quiz]]
+q = "How does dbt determine build order?"
+options = [
+  "Alphabetical file order",
+  "From ref() and source() dependencies forming a DAG",
+  "From a manually maintained YAML list",
+  "Randomly, then retries",
+]
+answer = 1
+why = "ref() calls define edges between models, and dbt topologically sorts them."
+
+[[quiz]]
+q = "An incremental model selects rows where event_ts is greater than the max event_ts in the target. What is the problem?"
+options = [
+  "It is too slow",
+  "Late-arriving events with older timestamps are never picked up",
+  "It creates duplicates by default",
+  "It cannot run on warehouses",
+]
+answer = 1
+why = "Events arriving after a newer timestamp is loaded fall below the cutoff. Use a lookback window plus MERGE on a unique key."

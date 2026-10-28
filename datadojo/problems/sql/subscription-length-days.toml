@@ -1,0 +1,27 @@
+title = "Subscription length in days"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-strings-dates"
+statement = """
+Billing wants to know how long each subscription has run.
+
+Table `subscriptions(id, user_id, start_date, end_date)`, both DATEs. `end_date` is NULL while the subscription is still active.
+
+Return `id` and `days`, the number of days from `start_date` to `end_date` (end minus start, so Jan 1 to Jan 3 is 2). For active subscriptions, measure up to the report date **2024-12-31** instead. Sort is not required.
+"""
+starter = "SELECT id, end_date - start_date AS days\nFROM subscriptions\n"
+solution = """
+SELECT id, DATE_DIFF('day', start_date, COALESCE(end_date, DATE '2024-12-31')) AS days
+FROM subscriptions
+"""
+hints = [
+  "Active subscriptions have no end_date, so any arithmetic with it yields NULL.",
+  "Substitute the report date with COALESCE(end_date, DATE '2024-12-31').",
+  "In DuckDB, subtracting two DATEs gives an integer day count (or use DATE_DIFF('day', a, b); Spark uses DATEDIFF(end, start)).",
+]
+
+[[tests]]
+tables.subscriptions = { columns = "id INT, user_id INT, start_date DATE, end_date DATE", rows = '[[1, 10, "2024-01-01", "2024-01-03"], [2, 11, "2024-02-01", "2024-03-01"], [3, 12, "2024-12-01", null]]' }
+
+[[tests]]  # crosses a leap day and a year; same-day start/end is 0
+tables.subscriptions = { columns = "id INT, user_id INT, start_date DATE, end_date DATE", rows = '[[1, 1, "2023-12-30", "2024-03-01"], [2, 2, "2024-05-05", "2024-05-05"], [3, 3, "2023-12-31", null]]' }

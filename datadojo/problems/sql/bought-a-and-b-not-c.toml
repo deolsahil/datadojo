@@ -1,0 +1,32 @@
+title = "Bought A and B but never C"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-joins"
+source_url = "https://leetcode.com/problems/customers-who-bought-products-a-and-b-but-not-c/"
+statement = """
+A cross-sell campaign targets shoppers who own both a camera body and a lens, but still have no tripod.
+
+Tables `customers(id, name)` and `purchases(order_id, customer_id, product)`. `product` is a code such as `'A'` (camera), `'B'` (lens), `'C'` (tripod), and others.
+
+Return `id` and `name` of customers who bought product `A` **and** product `B` and have **never** bought product `C`. Each customer appears once, even if they bought A or B many times.
+"""
+starter = "SELECT c.id, c.name\nFROM customers c\n"
+solution = """
+SELECT c.id, c.name FROM customers c
+WHERE EXISTS (SELECT 1 FROM purchases p WHERE p.customer_id = c.id AND p.product = 'A')
+  AND EXISTS (SELECT 1 FROM purchases p WHERE p.customer_id = c.id AND p.product = 'B')
+  AND NOT EXISTS (SELECT 1 FROM purchases p WHERE p.customer_id = c.id AND p.product = 'C')
+"""
+hints = [
+  "One purchase row can't be both A and B, so `WHERE product = 'A' AND product = 'B'` never matches.",
+  "Think per customer: does an A row exist? a B row? a C row? EXISTS / NOT EXISTS answer exactly that (a semi-join and an anti-join).",
+  "Alternative: GROUP BY customer and use HAVING SUM(CASE WHEN product='A' THEN 1 ELSE 0 END) > 0 ... and the C sum = 0.",
+]
+
+[[tests]]
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Ann"], [2, "Bo"], [3, "Cy"], [4, "Di"]] }
+tables.purchases = { columns = "order_id INT, customer_id INT, product STRING", rows = [[1, 1, "A"], [2, 1, "B"], [3, 2, "A"], [4, 2, "B"], [5, 2, "C"], [6, 3, "A"], [7, 3, "D"], [8, 4, "B"]] }
+
+[[tests]]  # repeat purchases must not duplicate the customer
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Eve"], [2, "Fay"]] }
+tables.purchases = { columns = "order_id INT, customer_id INT, product STRING", rows = [[1, 1, "A"], [2, 1, "A"], [3, 1, "B"], [4, 1, "B"], [5, 2, "C"]] }

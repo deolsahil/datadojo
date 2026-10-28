@@ -1,0 +1,28 @@
+title = "Customers not referred by customer 2"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-nulls"
+lists = ["sql-essentials"]
+source_url = "https://leetcode.com/problems/find-customer-referee/"
+statement = """
+A referral audit found that customer 2 was gaming the program. Marketing wants everyone **else's** customers.
+
+Table `customers(id, name, referee_id)`. `referee_id` is the id of the customer who referred them, or NULL if nobody did.
+
+Return the `name` of every customer who was **not** referred by customer `2`. Customers with no referrer count as "not referred by 2".
+"""
+starter = "SELECT name\nFROM customers\nWHERE referee_id <> 2\n"
+solution = """
+SELECT name FROM customers WHERE referee_id IS NULL OR referee_id <> 2
+"""
+hints = [
+  "Run the starter. Who's missing?",
+  "`NULL <> 2` is not TRUE, it's UNKNOWN, and WHERE keeps only TRUE rows.",
+  "WHERE referee_id IS NULL OR referee_id <> 2 (or COALESCE(referee_id, 0) <> 2).",
+]
+
+[[tests]]
+tables.customers = { columns = "id INT, name STRING, referee_id INT", rows = '[[1, "Ana", null], [2, "Ben", null], [3, "Cat", 2], [4, "Dan", 1], [5, "Eli", 2]]' }
+
+[[tests]]
+tables.customers = { columns = "id INT, name STRING, referee_id INT", rows = '[[1, "Fay", 3], [2, "Gil", 2], [3, "Hal", null]]' }

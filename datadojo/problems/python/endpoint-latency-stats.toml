@@ -1,0 +1,74 @@
+title = "Latency stats per endpoint"
+lang = "python"
+difficulty = "hard"
+pattern = "py-parsing"
+lists = ["python-de"]
+function = "endpoint_stats"
+statement = '''
+`endpoint_stats(lines)` summarizes application request logs such as
+
+```
+2024-05-01T10:00:00Z INFO request method=GET path=/api/users/42?expand=1 status=200 dur=123ms
+```
+
+Every whitespace-separated token containing `=` is a `key=value` field (split at the first `=`); other tokens are ignored, and fields can appear in any order. A line is **usable** only if it has:
+
+- `path` (non-empty),
+- `status`, all digits,
+- `dur`, either `<number>ms` or `<number>s`, where number is digits with an optional `.digits` part. Convert to milliseconds (`1.5s` → 1500).
+
+Normalize the path: drop everything from the first `?`, then replace each `/`-separated segment that is all digits with `{id}` (`/api/users/42` → `/api/users/{id}`).
+
+Return a dict keyed by normalized path:
+`{"count": usable lines, "avg_ms": mean ms, "max_ms": max ms, "errors": lines with status >= 500}`.
+Skip unusable lines entirely.
+'''
+starter = "def endpoint_stats(lines):\n    pass\n"
+solution = '''
+import re
+
+DUR = re.compile(r"(\d+(?:\.\d+)?)(ms|s)")
+
+def endpoint_stats(lines):
+    acc = {}
+    for line in lines:
+        kv = dict(t.split("=", 1) for t in line.split() if "=" in t)
+        path, status = kv.get("path", ""), kv.get("status", "")
+        m = DUR.fullmatch(kv.get("dur", ""))
+        if not path or not status.isdigit() or not m:
+            continue
+        ms = float(m.group(1)) * (1 if m.group(2) == "ms" else 1000)
+        path = path.split("?", 1)[0]
+        path = "/".join("{id}" if seg.isdigit() else seg for seg in path.split("/"))
+        s = acc.setdefault(path, {"count": 0, "sum": 0.0, "max_ms": ms, "errors": 0})
+        s["count"] += 1
+        s["sum"] += ms
+        s["max_ms"] = max(s["max_ms"], ms)
+        s["errors"] += int(status) >= 500
+    return {p: {"count": s["count"], "avg_ms": s["sum"] / s["count"], "max_ms": s["max_ms"],
+                "errors": s["errors"]} for p, s in acc.items()}
+'''
+hints = [
+    "Turn each line into a dict with a comprehension over tokens containing `=`.",
+    "Validate all three fields before touching the accumulator; a regex with `fullmatch` handles `dur`.",
+    "Keep sum and count while scanning; divide once at the end.",
+]
+
+[[tests]]
+args = [[
+  "2024-05-01T10:00:00Z INFO request method=GET path=/api/users/42?expand=1 status=200 dur=120ms",
+  "2024-05-01T10:00:01Z INFO request method=GET path=/api/users/7 status=503 dur=1.5s",
+  "2024-05-01T10:00:02Z INFO request status=200 dur=30ms path=/health method=GET",
+  "2024-05-01T10:00:03Z WARN request method=GET path=/api/users/v2 status=404 dur=10ms",
+]]
+[[tests]]  # unusable lines
+args = [[
+  "2024-05-01T10:00:04Z INFO request path=/a status=200",
+  "2024-05-01T10:00:05Z INFO request path=/a status=ok dur=5ms",
+  "2024-05-01T10:00:06Z INFO request path= status=200 dur=5ms",
+  "2024-05-01T10:00:07Z INFO request path=/a status=200 dur=5min",
+  "2024-05-01T10:00:08Z INFO request path=/a status=500 dur=2ms",
+  "garbage",
+]]
+[[tests]]
+args = [[]]

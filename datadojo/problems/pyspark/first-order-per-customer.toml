@@ -1,0 +1,39 @@
+title = "First order per customer"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-windows"
+function = "solve"
+statement = """
+Growth wants the first-ever order of every customer to analyze acquisition.
+
+`orders(order_id, customer_id, order_ts, amount)`
+
+Write `solve(spark, orders)` returning `customer_id, order_id, amount` for each customer's earliest
+order by `order_ts`. If two orders share the earliest timestamp, take the smaller `order_id`.
+Exactly one row per customer.
+"""
+hints = [
+  "`Window.partitionBy(\"customer_id\").orderBy(\"order_ts\", \"order_id\")` orders each customer's history with the tie-breaker.",
+  "`F.row_number().over(w)` then keep `== 1`. `F.rank()` would keep both tied orders.",
+]
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, orders):
+    return orders.select("customer_id", "order_id", "amount")
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, orders):
+    w = Window.partitionBy("customer_id").orderBy("order_ts", "order_id")
+    return (orders.withColumn("rn", F.row_number().over(w)).filter("rn = 1")
+            .select("customer_id", "order_id", "amount"))
+"""
+
+[[tests]]
+tables.orders = { columns = "order_id INT, customer_id INT, order_ts TIMESTAMP, amount DOUBLE", rows = [
+  [7, 1, "2024-01-03 12:00:00", 30.0], [3, 1, "2024-01-01 09:00:00", 15.0],
+  [9, 1, "2024-01-01 09:00:00", 99.0], [5, 2, "2024-02-10 18:30:00", 42.0],
+  [2, 3, "2024-01-20 07:00:00", 8.0], [1, 3, "2024-01-21 07:00:00", 12.0],
+] }

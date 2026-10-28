@@ -1,0 +1,41 @@
+title = "Minimum meeting rooms"
+lang = "python"
+difficulty = "medium"
+pattern = "py-sorting"
+lists = ["python-de"]
+function = "min_rooms"
+source_url = "https://leetcode.com/problems/meeting-rooms-ii/"
+statement = """
+`min_rooms(meetings)` gets unsorted `[start, end]` pairs, half-open `[start, end)`, so a room
+freed at `10` can host a meeting starting at `10`. Return the minimum number of rooms needed to
+hold all meetings. (The same question as "peak number of concurrent jobs".)
+
+- `[[0, 30], [5, 10], [15, 20]]` → `2`
+"""
+hints = [
+    "The answer is the maximum number of meetings running at the same instant.",
+    "Sweep: sort all starts and all ends separately, walk them with two pointers.",
+    "On ties process the end before the start, since touching meetings can share a room.",
+]
+starter = "def min_rooms(meetings):\n    pass\n"
+solution = """
+def min_rooms(meetings):
+    events = sorted([(s, 1) for s, _ in meetings] + [(e, -1) for _, e in meetings],
+                    key=lambda x: (x[0], x[1]))
+    cur = best = 0
+    for _, d in events:
+        cur += d
+        best = max(best, cur)
+    return best
+"""
+
+[[tests]]
+args = [[[0, 30], [5, 10], [15, 20]]]
+[[tests]]
+args = [[[7, 10], [2, 4]]]
+[[tests]]  # back-to-back needs one room
+args = [[[1, 5], [5, 10], [10, 15]]]
+[[tests]]
+args = [[[1, 10], [2, 7], [3, 19], [8, 12], [10, 20], [11, 30]]]
+[[tests]]
+args = [[]]

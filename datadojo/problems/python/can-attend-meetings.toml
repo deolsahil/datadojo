@@ -1,0 +1,32 @@
+title = "Can one person attend every meeting?"
+lang = "python"
+difficulty = "easy"
+pattern = "py-sorting"
+function = "can_attend"
+source_url = "https://leetcode.com/problems/meeting-rooms/"
+statement = """
+`can_attend(meetings)` gets a list of `[start, end]` pairs in no particular order. Meetings are
+half-open `[start, end)`: one ending at `10` and another starting at `10` do **not** conflict.
+Return `True` if no two meetings overlap, else `False`. An empty list returns `True`.
+"""
+hints = [
+    "Sort by start time; then only neighbours can overlap.",
+    "After sorting, a conflict is `next.start < prev.end` (strict, because touching is fine).",
+]
+starter = "def can_attend(meetings):\n    pass\n"
+solution = """
+def can_attend(meetings):
+    m = sorted(meetings)
+    return all(m[i][0] >= m[i - 1][1] for i in range(1, len(m)))
+"""
+
+[[tests]]
+args = [[[0, 30], [5, 10], [15, 20]]]
+[[tests]]
+args = [[[7, 10], [2, 4]]]
+[[tests]]  # touching is fine
+args = [[[1, 5], [5, 8]]]
+[[tests]]  # overlap only visible after sorting
+args = [[[5, 6], [1, 3], [2, 4]]]
+[[tests]]
+args = [[]]

@@ -1,0 +1,51 @@
+title = "Count leaf values by type"
+lang = "python"
+difficulty = "easy"
+pattern = "py-recursion"
+function = "count_values"
+statement = '''
+`count_values(doc)` walks a JSON document (any nesting of dicts and lists) and counts its **leaf** values by type:
+
+- `"string"` for str, `"number"` for int and float, `"bool"` for true/false, `"null"` for null.
+
+Dicts and lists are containers, not leaves; empty containers contribute nothing. A top-level scalar is itself one leaf. Include only types that occur.
+
+`{"a": [1, 2.5, "x"], "b": {"c": null, "d": true}, "e": []}` → `{"number": 2, "string": 1, "null": 1, "bool": 1}`
+'''
+starter = "def count_values(doc):\n    pass\n"
+solution = '''
+def count_values(doc):
+    out = {}
+
+    def walk(v):
+        if isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+        else:
+            if v is None:
+                t = "null"
+            elif isinstance(v, bool):
+                t = "bool"
+            elif isinstance(v, (int, float)):
+                t = "number"
+            else:
+                t = "string"
+            out[t] = out.get(t, 0) + 1
+
+    walk(doc)
+    return out
+'''
+hints = [
+    "Recurse into dict values and list items; everything else is a leaf.",
+    "Check `bool` before `int`: `True` is an instance of `int`.",
+]
+
+[[tests]]
+args = '''[{"a": [1, 2.5, "x"], "b": {"c": null, "d": true}, "e": []}]'''
+[[tests]]
+args = '''[[[[]], {}, [false, [0, ["deep"]]]]]'''
+[[tests]]
+args = ['just a string']

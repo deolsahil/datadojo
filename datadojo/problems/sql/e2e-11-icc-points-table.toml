@@ -1,0 +1,42 @@
+title = "ICC Tournament Points Table"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-pivot"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `icc_world_cup(Team_1, Team_2, Winner)` has one row per match; `Winner` is one of the two teams.
+
+Build the points table: for every team that played, return `team_name, matches_played, wins, losses, points`.
+A win is worth 2 points, a loss 0. Any row order.
+"""
+starter = "SELECT Team_1 AS team_name, COUNT(*) AS matches_played, 0 AS wins, 0 AS losses, 0 AS points\nFROM icc_world_cup\nGROUP BY Team_1\n"
+solution = """
+WITH t AS (
+  SELECT Team_1 AS team_name, Winner FROM icc_world_cup
+  UNION ALL
+  SELECT Team_2, Winner FROM icc_world_cup
+)
+SELECT team_name,
+       COUNT(*) AS matches_played,
+       SUM(CASE WHEN team_name = Winner THEN 1 ELSE 0 END) AS wins,
+       SUM(CASE WHEN team_name <> Winner THEN 1 ELSE 0 END) AS losses,
+       2 * SUM(CASE WHEN team_name = Winner THEN 1 ELSE 0 END) AS points
+FROM t
+GROUP BY team_name
+"""
+hints = [
+  "A team can appear in Team_1 or Team_2. Stack both columns into one with UNION ALL.",
+  "Keep the Winner next to each team so you can flag wins.",
+  "Then GROUP BY team: COUNT(*) matches, SUM(CASE WHEN team = Winner ...) wins, the rest are losses.",
+]
+
+[[tests]]
+tables.icc_world_cup = { columns = "Team_1 STRING, Team_2 STRING, Winner STRING", rows = [
+  ["India", "SL", "India"], ["SL", "Aus", "Aus"], ["SA", "Eng", "Eng"], ["Eng", "NZ", "NZ"], ["Aus", "India", "India"],
+] }
+
+[[tests]]  # teams that only ever appear as Team_2; a rematch between the same teams
+tables.icc_world_cup = { columns = "Team_1 STRING, Team_2 STRING, Winner STRING", rows = [
+  ["WI", "Pak", "Pak"], ["WI", "Pak", "WI"], ["WI", "Afg", "Afg"], ["Ban", "Afg", "Afg"],
+] }

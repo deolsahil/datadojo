@@ -1,0 +1,40 @@
+title = "Most Commonly Purchased Product Pairs"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-joins"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `orders(order_id, customer_id, product_id)` has one row per product in an order (a product appears at most
+once per order). Table `products_new(id, name)` names the products.
+
+For every pair of different products bought in the same order, count how many orders contain both. Return
+`pair` and `freq`, where `pair` is the two product names joined by one space, the product with the **smaller id
+first** (e.g. `'A B'`). Pairs never bought together are not listed. Any row order.
+"""
+starter = "SELECT name AS pair, COUNT(*) AS freq\nFROM products_new\nGROUP BY name\n"
+solution = """
+SELECT p1.name || ' ' || p2.name AS pair, COUNT(*) AS freq
+FROM orders a
+JOIN orders b ON b.order_id = a.order_id AND a.product_id < b.product_id
+JOIN products_new p1 ON p1.id = a.product_id
+JOIN products_new p2 ON p2.id = b.product_id
+GROUP BY p1.id, p2.id, p1.name, p2.name
+"""
+hints = [
+  "Self-join orders on order_id to get every pair of products in the same order.",
+  "Use a.product_id < b.product_id so each pair appears once and a product isn't paired with itself.",
+  "Join the names, concatenate with ||, then GROUP BY the pair and COUNT(*).",
+]
+
+[[tests]]
+tables.orders = { columns = "order_id INT, customer_id INT, product_id INT", rows = [
+  [1, 1, 1], [1, 1, 2], [1, 1, 3], [2, 2, 1], [2, 2, 2], [2, 2, 4], [3, 1, 5],
+] }
+tables.products_new = { columns = "id INT, name STRING", rows = [ [1, "A"], [2, "B"], [3, "C"], [4, "D"], [5, "E"] ] }
+
+[[tests]]  # name order differs from id order; the same pair in three orders
+tables.orders = { columns = "order_id INT, customer_id INT, product_id INT", rows = [
+  [1, 1, 20], [1, 1, 10], [2, 1, 10], [2, 1, 20], [3, 2, 20], [3, 2, 10], [3, 2, 30], [4, 3, 30],
+] }
+tables.products_new = { columns = "id INT, name STRING", rows = [ [10, "Tea"], [20, "Milk"], [30, "Bun"] ] }

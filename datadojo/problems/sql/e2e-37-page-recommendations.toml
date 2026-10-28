@@ -1,0 +1,43 @@
+title = "Page Recommendations for Friends"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-joins"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Tables `friends(user_id, friend_id)` and `likes(user_id, page_id)`. Friendship is directional: a row means `friend_id`
+is a friend of `user_id`. `likes` may contain duplicate rows.
+
+Recommend to each user every page liked by at least one of their friends that the user does not already like. Return
+distinct `user_id, page_id` pairs. Users who like no pages still get recommendations. Any row order.
+"""
+starter = "SELECT f.user_id, l.page_id\nFROM friends f\nJOIN likes l ON l.user_id = f.friend_id\n"
+solution = """
+SELECT DISTINCT f.user_id, l.page_id
+FROM friends f
+JOIN likes l ON l.user_id = f.friend_id
+WHERE NOT EXISTS (
+  SELECT 1 FROM likes mine WHERE mine.user_id = f.user_id AND mine.page_id = l.page_id
+)
+"""
+hints = [
+  "Join friends to likes on friend_id to get every page your friends like.",
+  "Remove pages the user already likes with NOT EXISTS (or a LEFT JOIN on user_id and page_id keeping NULLs).",
+  "Several friends can like the same page: use DISTINCT.",
+]
+
+[[tests]]
+tables.friends = { columns = "user_id INT, friend_id INT", rows = [
+  [1, 2], [1, 3], [1, 4], [2, 1], [3, 1], [3, 4], [4, 1], [4, 3],
+] }
+tables.likes = { columns = "user_id INT, page_id STRING", rows = [
+  [1, "A"], [1, "B"], [1, "C"], [2, "A"], [3, "B"], [3, "C"], [4, "B"],
+] }
+
+[[tests]]  # user with no likes, duplicate likes, a one-way friendship, friends who like nothing
+tables.friends = { columns = "user_id INT, friend_id INT", rows = [
+  [5, 6], [5, 8], [6, 5], [7, 9],
+] }
+tables.likes = { columns = "user_id INT, page_id STRING", rows = [
+  [6, "X"], [6, "X"], [6, "Y"], [8, "Y"], [5, "Z"],
+] }

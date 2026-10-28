@@ -1,0 +1,52 @@
+title = "Diff two table snapshots"
+lang = "python"
+difficulty = "medium"
+pattern = "py-records"
+lists = ["python-de"]
+function = "diff"
+statement = '''
+`diff(old, new)` compares two snapshots of a table. Each is a list of dicts with a unique integer `"id"`.
+
+Return:
+
+```
+{"added":   [ids only in new, ascending],
+ "removed": [ids only in old, ascending],
+ "changed": [{"id": id, "fields": [field names, ascending]}, ...]}
+```
+
+`changed` lists ids present in both whose records differ, sorted by id. `fields` names every field whose value differs, including a field present in only one version. A field that is `null` in one version and **absent** in the other counts as changed. Identical records are not listed.
+'''
+starter = "def diff(old, new):\n    pass\n"
+solution = '''
+_MISSING = object()
+
+def diff(old, new):
+    o = {r["id"]: r for r in old}
+    n = {r["id"]: r for r in new}
+    changed = []
+    for i in sorted(o.keys() & n.keys()):
+        fields = sorted(f for f in o[i].keys() | n[i].keys()
+                        if o[i].get(f, _MISSING) != n[i].get(f, _MISSING))
+        if fields:
+            changed.append({"id": i, "fields": fields})
+    return {"added": sorted(n.keys() - o.keys()),
+            "removed": sorted(o.keys() - n.keys()),
+            "changed": changed}
+'''
+hints = [
+    "Index both snapshots by id; set operations on the key views give added and removed.",
+    "For shared ids, compare the union of field names.",
+    "`.get(f)` cannot tell absent from null. Use a sentinel default like `object()`.",
+]
+
+[[tests]]
+args = '''[[{"id": 1, "name": "a", "tier": 1}, {"id": 2, "name": "b"}, {"id": 3, "name": "c"}],
+           [{"id": 3, "name": "c"}, {"id": 1, "name": "A", "tier": 2}, {"id": 4, "name": "d"}]]'''
+[[tests]]  # null vs absent, new column
+args = '''[[{"id": 5, "email": null}, {"id": 6, "x": 1}],
+           [{"id": 5}, {"id": 6, "x": 1, "y": 2}]]'''
+[[tests]]
+args = '''[[{"id": 1, "v": 1}], [{"id": 1, "v": 1}]]'''
+[[tests]]
+args = [[], []]

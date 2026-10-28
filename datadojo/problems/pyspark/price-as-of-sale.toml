@@ -1,0 +1,49 @@
+title = "Price in effect at sale time"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-joins"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+Prices change over time and sales must be valued at the price that was in effect that day.
+
+- `sales(sale_id, sku, sale_date, qty)`
+- `price_history(sku, effective_date, price)`: a price applies from its `effective_date`
+  (inclusive) until the next one for that sku. At most one row per `(sku, effective_date)`.
+
+Write `solve(spark, sales, price_history)` returning `sale_id, price, revenue` for every sale, where
+`price` is the latest price with `effective_date <= sale_date` for the same sku and
+`revenue = round(qty * price, 2)`. If the sku had no price yet, both are NULL.
+"""
+hints = [
+  "Left join sales to price history on `sku` and `effective_date <= sale_date`: each sale gets every earlier price.",
+  "Keep the newest candidate per sale: `F.row_number()` over `Window.partitionBy(\"sale_id\").orderBy(F.col(\"effective_date\").desc())`.",
+  "Sales with no candidate have a single row with NULL price, so they survive `rn == 1`.",
+]
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, sales, price_history):
+    return sales.select("sale_id", "qty", "qty")
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, sales, price_history):
+    s, p = sales.alias("s"), price_history.alias("p")
+    on = (F.col("s.sku") == F.col("p.sku")) & (F.col("p.effective_date") <= F.col("s.sale_date"))
+    j = s.join(p, on, "left")
+    w = Window.partitionBy("s.sale_id").orderBy(F.col("p.effective_date").desc())
+    return (j.withColumn("rn", F.row_number().over(w)).filter("rn = 1")
+            .select("s.sale_id", "p.price", F.round(F.col("s.qty") * F.col("p.price"), 2).alias("revenue")))
+"""
+
+[[tests]]
+tables.sales = { columns = "sale_id INT, sku STRING, sale_date DATE, qty INT", rows = [
+  [1, "X", "2024-01-05", 2], [2, "X", "2024-02-01", 1], [3, "X", "2024-02-15", 3],
+  [4, "Y", "2024-01-10", 5], [5, "Z", "2024-03-01", 1], [6, "X", "2023-12-31", 4],
+] }
+tables.price_history = { columns = "sku STRING, effective_date DATE, price DOUBLE", rows = [
+  ["X", "2024-01-01", 10.0], ["X", "2024-02-01", 12.5], ["X", "2024-03-01", 11.0],
+  ["Y", "2024-01-11", 3.33], ["Y", "2023-06-01", 2.99],
+] }

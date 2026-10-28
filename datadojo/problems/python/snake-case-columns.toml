@@ -1,0 +1,47 @@
+title = "Normalize column headers to snake_case"
+lang = "python"
+difficulty = "easy"
+pattern = "py-strings"
+lists = ["python-de"]
+function = "to_snake"
+ordered = true
+statement = '''
+A CSV landed with messy headers. `to_snake(names)` takes a list of header strings and returns
+a list (same order) with each name normalized by these steps, in this order:
+
+1. Insert an underscore at every **camelCase boundary**: a position where an uppercase letter
+   `A-Z` directly follows a lowercase letter `a-z` or a digit. (`orderDate` → `order_Date`,
+   but `HTTPStatus` has no such boundary.)
+2. Replace every run of characters that are not ASCII letters or digits with a single `_`.
+3. Strip leading and trailing `_`, then lowercase.
+
+- `"Customer ID"` → `"customer_id"`
+- `"orderDate"` → `"order_date"`
+- `"  Total $ Amount "` → `"total_amount"`
+- `"HTTPStatus"` → `"httpstatus"`
+'''
+hints = [
+    "Do the camelCase step before lowercasing, otherwise the boundary information is gone.",
+    "`re.sub(r'(?<=[a-z0-9])(?=[A-Z])', '_', s)` inserts at the boundary without consuming characters.",
+    "`re.sub(r'[^A-Za-z0-9]+', '_', s)` collapses runs; finish with `.strip('_').lower()`.",
+]
+starter = "def to_snake(names):\n    pass\n"
+solution = '''
+import re
+
+def to_snake(names):
+    out = []
+    for n in names:
+        n = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", n)
+        out.append(re.sub(r"[^A-Za-z0-9]+", "_", n).strip("_").lower())
+    return out
+'''
+
+[[tests]]
+args = [["Customer ID", "orderDate", "  Total $ Amount ", "__id__"]]
+[[tests]]
+args = [["HTTPStatus", "user2Name", "a-b--c", "ship.to/zip"]]
+[[tests]]
+args = [["already_snake", "X"]]
+[[tests]]
+args = [[]]

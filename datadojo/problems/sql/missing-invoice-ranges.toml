@@ -1,0 +1,34 @@
+title = "Missing invoice number ranges"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-gaps-islands"
+ordered = true
+statement = """
+Table `invoices(invoice_no)`. Invoice numbers are unique integers and should form an unbroken sequence,
+but some are missing.
+
+Between the smallest and largest invoice number present, return every gap as `gap_start, gap_end`
+(both inclusive). A single missing number is a gap where `gap_start = gap_end`. Order by `gap_start`.
+"""
+starter = "SELECT invoice_no AS gap_start, invoice_no AS gap_end\nFROM invoices\nORDER BY 1\n"
+solution = """
+SELECT invoice_no + 1 AS gap_start, next_no - 1 AS gap_end FROM (
+  SELECT invoice_no, LEAD(invoice_no) OVER (ORDER BY invoice_no) AS next_no FROM invoices
+) t
+WHERE next_no - invoice_no > 1
+ORDER BY gap_start
+"""
+hints = [
+  "A gap sits between an invoice and the next larger one present.",
+  "LEAD(invoice_no) OVER (ORDER BY invoice_no) gives the next number; there is a gap when next - current > 1.",
+  "The gap runs from current + 1 to next - 1.",
+]
+
+[[tests]]
+tables.invoices = { columns = "invoice_no INT", rows = [[1], [2], [5], [6], [8], [12]] }
+
+[[tests]]  # no gaps at all
+tables.invoices = { columns = "invoice_no INT", rows = [[100], [101], [102]] }
+
+[[tests]]  # unsorted input, wide gap
+tables.invoices = { columns = "invoice_no INT", rows = [[50], [3], [4], [49]] }

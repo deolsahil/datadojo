@@ -1,0 +1,167 @@
+title = "Design a Clickstream Analytics Pipeline"
+section = "ds-cases-pipelines"
+order = 1
+kind = "case_study"
+difficulty = "medium"
+companies = ["Amplitude", "Netflix", "Airbnb"]
+big_idea = "Collect events once into a durable log, land them raw and immutable, then build cleaned, sessionized and aggregated layers on top so every dashboard can be recomputed from the source."
+summary = """Web and mobile apps emit page views, clicks and custom events. Product and marketing teams want dashboards (DAU, funnels, retention, top pages) that are minutes fresh for some metrics and exactly right for others.
+
+The strong answer separates **collection** (a thin, always-available edge that writes to Kafka), **storage** (raw immutable events in a lakehouse table, partitioned by event date), and **serving** (pre-aggregated tables in a warehouse or an OLAP store like Druid/Pinot/ClickHouse). Most of the interview is about the messy parts: duplicate events from client retries, late events from offline phones, bots, and schema drift from dozens of app versions."""
+diagram = """flowchart LR
+  web[Web SDK] --> col[Collector API]
+  app[Mobile SDK] --> col
+  col --> k[("Kafka: raw events")]
+  k --> sink[Kafka Connect or Flink sink]
+  sink --> bronze[("Bronze: raw Iceberg")]
+  bronze --> spark[Spark batch jobs]
+  spark --> silver[("Silver: clean and sessionized")]
+  silver --> gold[("Gold: daily aggregates")]
+  k --> rt[Flink real-time counts]
+  rt --> olap[("Pinot or Druid")]
+  gold --> bi[BI dashboards]
+  olap --> bi"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- Which metrics matter most, and how fresh must each be? (Real-time active users vs. daily retention.)
+- What event volume and how many apps/platforms? Do we own the client SDK?
+- Is there a defined event schema or tracking plan, or do teams send free-form JSON?
+- How do we identify users: logged-in user id, anonymous device id, or both (identity stitching)?
+- How long do we keep raw events? Any privacy constraints (consent, PII in URLs, deletion requests)?
+- Do numbers need to match finance or ad billing exactly, or is approximate OK?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Ingest events from web, iOS and Android with a common envelope (event_id, user/device ids, timestamp, name, properties).
+- Dashboards for DAU/MAU, funnels, retention and top content; ad-hoc SQL on raw and cleaned data.
+- A few real-time tiles (active users in the last 5 minutes, error spikes).
+
+**Non-functional**
+- Collection must never block the app: high availability, fire-and-forget with client-side buffering.
+- At-least-once delivery end to end, deduplicated to effectively-once in the cleaned layer.
+- Daily tables final by 06:00 UTC; real-time tiles under 1 minute lag.
+- Raw data retained 13 months for year-over-year comparison; reprocessable from raw."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """Assume 100M daily active users, about 50 events per user per day.
+
+- Events/day: 100M x 50 = **5B events/day**
+- Average rate: 5B / 86,400 s = **~58K events/s**; assume 3x peak = **~175K events/s**
+- Event size: ~1 KB of JSON including properties and context
+- Raw volume: 5B x 1 KB = **5 TB/day** uncompressed
+- Kafka throughput: 58K x 1 KB = ~58 MB/s average, ~175 MB/s peak. Retain 3 days: 15 TB x 3 replicas = **45 TB** of broker disk.
+- Lake storage: Parquet with zstd typically compresses JSON events ~5x, so ~1 TB/day, **~365 TB/year** for bronze, plus smaller silver/gold layers.
+
+This rules out writing directly to a warehouse row by row and makes partition pruning on event date essential."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **SDKs** batch events locally (e.g. every 10 s or 50 events), attach a client-generated `event_id` (UUID), and retry with backoff. Offline mobile clients flush when they reconnect.
+2. **Collector**: a stateless HTTP service behind a load balancer. It validates the envelope, stamps `received_at`, enriches cheap fields (geo from IP, then drops the IP), and produces to Kafka keyed by device id. It returns 200 only after the Kafka ack.
+3. **Bronze**: a Kafka Connect S3 sink or a Flink job writes Parquet into an Iceberg/Delta table partitioned by `received_date` (when we got it). Append-only, never edited.
+4. **Silver** (Spark, hourly or daily): parse and validate against the tracking plan, dedupe on `event_id`, filter bots, stitch device ids to user ids, sessionize (30-minute inactivity gap), and repartition by `event_date`.
+5. **Gold** (dbt or Spark): daily active users, funnel step counts, retention cohorts, page aggregates. Loaded to Snowflake/BigQuery or served from the lakehouse.
+6. **Real-time path**: Flink reads the same topic, computes windowed counts with approximate distinct (HyperLogLog) and writes to Pinot/Druid for sub-second dashboard queries.
+7. **Airflow** orchestrates batch layers and waits on data-completeness signals rather than wall-clock time alone."""
+
+[[blocks]]
+heading = "Data model"
+body = """**Topic `events.raw`**: key = device_id; value = JSON or Avro envelope `{event_id, event_name, client_ts, received_at, device_id, user_id, app_version, platform, properties}`.
+
+**`bronze.events`** (grain: one row per received event, duplicates included): all envelope fields plus `raw_payload`, partitioned by `received_date`, `received_hour`.
+
+**`silver.events`** (grain: one row per unique event_id): typed columns, `event_ts` (corrected client time), `event_date`, `user_key` (stitched), `session_id`, `is_bot`. Partitioned by `event_date`, clustered/sorted by `user_key`.
+
+**`silver.sessions`** (grain: one row per session): session_id, user_key, start_ts, end_ts, event_count, entry_page, exit_page.
+
+**`gold.daily_active_users`** (grain: date x platform x country): dau, new_users. **`gold.funnel_daily`** (grain: date x funnel x step): users_reached."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Duplicates.** Client retries and producer retries both create duplicates. Because the SDK generates `event_id`, silver can dedupe with `ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY received_at)` within a bounded lookback (for example, the current day plus the previous 2 days). Kafka idempotent producers help the server side but cannot fix client resends.
+
+**Late and out-of-order events.** Mobile devices can deliver events days late. Partition bronze by arrival time so ingestion is append-only, but report by event time. Daily silver/gold jobs reprocess a rolling window (say the last 3 event dates) so late events land in the right day; anything older than the cutoff is either dropped from daily metrics or routed to a correction job. Client clocks are wrong, so compute `event_ts` = `client_ts` adjusted by the difference between `sent_at` and `received_at`, and clamp absurd values.
+
+**Schema drift.** Dozens of app versions send different properties. Keep the envelope strict and properties flexible (a map or variant column in bronze), validate against a tracking plan in silver, and publish violations to a data-quality dashboard instead of failing the whole job.
+
+**Distinct counts.** Exact DAU across arbitrary slices is expensive; store HLL sketches per day/segment in gold so weekly/monthly uniques can be merged cheaply, and keep exact counts only for headline numbers."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **Lambda-style (batch + stream) vs. stream only.** Two paths mean two codebases that can disagree, but batch reprocessing of a rolling window is the simplest way to get late data right. Many teams accept a real-time tile that is approximate and a daily number that is authoritative.
+- **OLAP store vs. warehouse for dashboards.** Pinot/Druid give sub-second slice-and-dice at high concurrency; Snowflake/BigQuery are simpler and fine for tens of analysts with minute-level latency. Pick based on query concurrency and freshness needs.
+- **JSON vs. Avro/Protobuf on the wire.** JSON is easy for web SDKs; a schema registry with Avro gives compatibility checks and smaller payloads. A common compromise: JSON from clients, Avro after the collector.
+- **Third-party (Segment, Amplitude) vs. build.** Buying is faster; building wins on cost at very high volume and on owning the raw data."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Collector or Kafka outage**: SDKs buffer on device and retry; alert on collector 5xx rate and producer error rate.
+- **Silent volume drop** (a broken SDK release): monitor events per platform per app version per hour against a seasonal baseline; a drop of more than 20% pages the on-call.
+- **Consumer lag** on the sink or Flink job: alert when lag exceeds a few minutes; Kafka retention must cover the longest expected outage.
+- **Bot storm or tracking bug** inflating counts: anomaly detection on event rate per device; cap events per device per minute in silver.
+- **Late job**: SLA monitoring in Airflow on gold freshness; dashboards show a "data as of" timestamp."""
+
+key_points = [
+  "Keep the collector thin and always available; acknowledge only after Kafka has the event.",
+  "Land raw, immutable events partitioned by arrival time, and report by event time.",
+  "A client-generated event_id makes deduplication possible; server-side idempotence alone cannot fix client retries.",
+  "Reprocess a rolling window of recent days in batch so late mobile events land in the right day.",
+  "Use HLL sketches for mergeable distinct counts; reserve exact counts for headline metrics.",
+  "Monitor volume per platform and app version, because the scariest failure is a silent drop.",
+]
+common_mistakes = [
+  "Writing events directly from the app into the warehouse, coupling app availability to analytics.",
+  "Partitioning raw data only by client timestamp, so bad device clocks create partitions in 1970 or 2099.",
+  "Ignoring duplicates and bots, then wondering why DAU disagrees with the product database.",
+  "Designing only the streaming path with no way to backfill or recompute after a bug.",
+  "Keeping raw IP addresses and PII in URLs forever without a deletion plan.",
+]
+interview_questions = [
+  "How would you stitch anonymous device activity to a user after they log in, and backfill their earlier events?",
+  "A new app release stops sending checkout events. How do you detect it within an hour?",
+  "How do you compute 30-day rolling unique users cheaply for every country and platform?",
+  "What changes if product wants funnels to be real time rather than daily?",
+  "How would you handle a deletion request for one user across bronze, silver and gold?",
+]
+
+[[quiz]]
+q = "Why partition the bronze table by received time rather than client event time?"
+options = [
+  "Received time compresses better in Parquet",
+  "Ingestion stays append-only into recent partitions and bad device clocks cannot scatter writes",
+  "Event time is not available in raw events",
+  "Dashboards query by received time",
+]
+answer = 1
+why = "Arrival-time partitions only ever receive new data, so ingestion never rewrites old partitions, and skewed or absurd client clocks cannot create garbage partitions. Event time is still used for reporting in silver/gold."
+
+[[quiz]]
+q = "With 100M DAU at 50 events/user/day, roughly what is the average ingest rate?"
+options = ["~6K events/s", "~58K events/s", "~580K events/s", "~5.8M events/s"]
+answer = 1
+why = "100M x 50 = 5B events/day; 5B / 86,400 is about 58K events per second on average, before applying a peak factor."
+
+[[quiz]]
+q = "A mobile SDK retries a batch after a timeout, but the first attempt actually succeeded. What reliably removes the resulting duplicates?"
+options = [
+  "Enabling the Kafka idempotent producer on the collector",
+  "Using exactly-once Kafka transactions in Flink",
+  "Deduplicating on a client-generated event_id in the cleaned layer",
+  "Increasing the collector timeout",
+]
+answer = 2
+why = "The duplicate is created before the server ever sees the event twice as one request; producer idempotence and transactions only cover server-side retries. A stable client-generated id lets you dedupe downstream."
+
+[[quiz]]
+q = "Why store HyperLogLog sketches in the gold layer?"
+options = [
+  "They give exact distinct counts with less storage",
+  "They let you merge daily uniques into weekly or monthly uniques without rescanning raw events",
+  "They are required by BI tools",
+  "They remove duplicate events",
+]
+answer = 1
+why = "Distinct counts are not additive across days, but HLL sketches are mergeable, giving approximate uniques over any date range or segment combination cheaply."

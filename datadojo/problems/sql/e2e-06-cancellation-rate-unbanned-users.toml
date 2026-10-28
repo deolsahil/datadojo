@@ -1,0 +1,52 @@
+title = "Cancellation Rate of Unbanned Users"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-aggregation"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+A ride-hailing app stores trips in `Trips(id, client_id, driver_id, city_id, status, request_at)` and people in
+`Users(users_id, banned, role)`. `status` is `'completed'`, `'cancelled_by_driver'` or `'cancelled_by_client'`;
+`request_at` is a date string like `'2013-10-01'`; `banned` is `'Yes'` or `'No'`.
+
+Only count trips where **both the client and the driver are unbanned**. For each `request_at` day that has at
+least one such trip, return `request_at` and `failure_perc`: the percentage of those trips that were cancelled
+(by either side), rounded to 2 decimal places. Any row order.
+"""
+starter = "SELECT request_at, 0.0 AS failure_perc\nFROM Trips\nGROUP BY request_at\n"
+solution = """
+SELECT t.request_at,
+       ROUND(100.0 * SUM(CASE WHEN t.status LIKE 'cancelled%' THEN 1 ELSE 0 END) / COUNT(*), 2) AS failure_perc
+FROM Trips t
+JOIN Users c ON c.users_id = t.client_id AND c.banned = 'No'
+JOIN Users d ON d.users_id = t.driver_id AND d.banned = 'No'
+GROUP BY t.request_at
+"""
+hints = [
+  "Join Users twice: once for the client and once for the driver.",
+  "Filter out banned people in the joins, before aggregating, so they leave both numerator and denominator.",
+  "SUM(CASE WHEN status LIKE 'cancelled%' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), rounded to 2 decimals.",
+]
+
+[[tests]]
+tables.Trips = { columns = "id INT, client_id INT, driver_id INT, city_id INT, status STRING, request_at STRING", rows = [
+  [1, 1, 10, 1, "completed", "2013-10-01"], [2, 2, 11, 1, "cancelled_by_driver", "2013-10-01"],
+  [3, 3, 12, 6, "completed", "2013-10-01"], [4, 4, 13, 6, "cancelled_by_client", "2013-10-01"],
+  [5, 1, 10, 1, "completed", "2013-10-02"], [6, 2, 11, 6, "completed", "2013-10-02"],
+  [7, 3, 12, 6, "completed", "2013-10-02"], [8, 2, 12, 12, "completed", "2013-10-03"],
+  [9, 3, 10, 12, "completed", "2013-10-03"], [10, 4, 13, 12, "cancelled_by_driver", "2013-10-03"],
+] }
+tables.Users = { columns = "users_id INT, banned STRING, role STRING", rows = [
+  [1, "No", "client"], [2, "Yes", "client"], [3, "No", "client"], [4, "No", "client"],
+  [10, "No", "driver"], [11, "No", "driver"], [12, "No", "driver"], [13, "No", "driver"],
+] }
+
+[[tests]]  # a banned driver; a day with only banned trips disappears
+tables.Trips = { columns = "id INT, client_id INT, driver_id INT, city_id INT, status STRING, request_at STRING", rows = [
+  [1, 1, 10, 1, "cancelled_by_client", "2013-10-01"], [2, 1, 11, 1, "cancelled_by_driver", "2013-10-01"],
+  [3, 3, 10, 1, "completed", "2013-10-01"], [4, 2, 10, 1, "cancelled_by_client", "2013-10-02"],
+  [5, 3, 11, 1, "completed", "2013-10-03"],
+] }
+tables.Users = { columns = "users_id INT, banned STRING, role STRING", rows = [
+  [1, "No", "client"], [2, "Yes", "client"], [3, "No", "client"], [10, "No", "driver"], [11, "Yes", "driver"],
+] }

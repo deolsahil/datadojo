@@ -1,0 +1,41 @@
+title = "Per-store sales summary"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-aggregation"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`sales(store_id, order_id, amount)` has one row per order **line**, so an order with three lines
+appears three times. Some lines have a NULL `amount` (price lookup failed).
+
+Write `solve(spark, sales)` returning `store_id, orders, revenue, largest_line`:
+
+- `orders`: number of distinct orders (lines with NULL amount still count toward their order)
+- `revenue`: sum of non-NULL amounts, rounded to 2 decimals
+- `largest_line`: the largest single line amount
+"""
+hints = [
+  "One `groupBy(\"store_id\").agg(...)` can compute several aggregates at once.",
+  "`F.countDistinct(\"order_id\")`, `F.sum`, `F.max`: the sum and max already ignore NULLs.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, sales):
+    return sales.groupBy("store_id").count()
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, sales):
+    return sales.groupBy("store_id").agg(
+        F.countDistinct("order_id").alias("orders"),
+        F.round(F.sum("amount"), 2).alias("revenue"),
+        F.max("amount").alias("largest_line"))
+"""
+
+[[tests]]
+tables.sales = { columns = "store_id STRING, order_id INT, amount DOUBLE", rows = '''[
+  ["sfo", 1, 12.5], ["sfo", 1, 3.25], ["sfo", 2, 40.0], ["sfo", 3, null],
+  ["nyc", 4, 9.99], ["nyc", 4, 9.99], ["nyc", 5, 0.01],
+  ["aus", 6, 100.0]]''' }

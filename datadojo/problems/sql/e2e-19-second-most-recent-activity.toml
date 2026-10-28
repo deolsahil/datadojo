@@ -1,0 +1,42 @@
+title = "Second Most Recent Activity"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-ranking"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `UserActivity(username, activity, startDate, endDate)` lists each user's activities; a user's activities
+never overlap and no two share a `startDate`.
+
+For each user return `username, activity` for their **second most recent** activity (by `startDate`). If the
+user has only one activity, return that one. Any row order.
+"""
+starter = "SELECT username, MAX(activity) AS activity\nFROM UserActivity\nGROUP BY username\n"
+solution = """
+SELECT username, activity
+FROM (
+  SELECT username, activity,
+         ROW_NUMBER() OVER (PARTITION BY username ORDER BY startDate DESC) AS rn,
+         COUNT(*) OVER (PARTITION BY username) AS cnt
+  FROM UserActivity
+) t
+WHERE rn = 2 OR cnt = 1
+"""
+hints = [
+  "Number each user's activities from newest to oldest.",
+  "Also compute how many activities each user has with COUNT(*) OVER (PARTITION BY username).",
+  "Keep rn = 2, or rn = 1 when the count is 1.",
+]
+
+[[tests]]
+tables.UserActivity = { columns = "username STRING, activity STRING, startDate DATE, endDate DATE", rows = [
+  ["Alice", "Travel", "2020-02-12", "2020-02-20"], ["Alice", "Dancing", "2020-02-21", "2020-02-23"],
+  ["Alice", "Travel", "2020-02-24", "2020-02-28"], ["Bob", "Travel", "2020-02-11", "2020-02-18"],
+  ["Marie", "Travel", "2020-02-11", "2020-02-18"],
+] }
+
+[[tests]]  # exactly two activities (the older one wins); input out of order
+tables.UserActivity = { columns = "username STRING, activity STRING, startDate DATE, endDate DATE", rows = [
+  ["Cy", "Yoga", "2021-05-10", "2021-05-11"], ["Cy", "Chess", "2021-01-01", "2021-01-02"],
+  ["Di", "Swim", "2021-03-01", "2021-03-02"], ["Di", "Bake", "2021-04-01", "2021-04-02"], ["Di", "Ski", "2021-02-01", "2021-02-02"],
+] }

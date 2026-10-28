@@ -1,0 +1,44 @@
+title = "Count islands on a grid"
+lang = "python"
+difficulty = "easy"
+pattern = "py-graphs"
+function = "count_islands"
+source_url = "https://leetcode.com/problems/number-of-islands/"
+statement = '''
+`count_islands(grid)` gets a map as a list of equal-length strings of `"1"` (land) and `"0"` (water), such as a rack-occupancy heatmap.
+
+Return the number of islands: groups of land cells connected horizontally or vertically (diagonals do **not** connect). An empty grid has 0 islands.
+'''
+starter = "def count_islands(grid):\n    pass\n"
+solution = '''
+def count_islands(grid):
+    seen, count = set(), 0
+    rows, cols = len(grid), len(grid[0]) if grid else 0
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] != "1" or (r, c) in seen:
+                continue
+            count += 1
+            stack = [(r, c)]
+            seen.add((r, c))
+            while stack:
+                y, x = stack.pop()
+                for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                    if 0 <= ny < rows and 0 <= nx < cols and grid[ny][nx] == "1" and (ny, nx) not in seen:
+                        seen.add((ny, nx))
+                        stack.append((ny, nx))
+    return count
+'''
+hints = [
+    "Scan every cell; an unvisited land cell starts a new island.",
+    "Flood-fill from it (stack or queue) to mark the whole island visited.",
+]
+
+[[tests]]
+args = [["11000", "11000", "00100", "00011"]]
+[[tests]]  # diagonal does not connect
+args = [["101", "010", "101"]]
+[[tests]]
+args = [["111", "101", "111"]]
+[[tests]]
+args = [[]]

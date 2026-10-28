@@ -1,0 +1,35 @@
+title = "All upstream tables (lineage)"
+lang = "python"
+difficulty = "easy"
+pattern = "py-graphs"
+lists = ["python-de"]
+function = "upstream"
+ordered = true
+statement = '''
+`upstream(lineage, table)` gets a dict mapping each table to the list of tables it is built **from** (its direct sources), plus a table name.
+
+Return every table that `table` depends on, directly or transitively, sorted alphabetically, without duplicates. Never include `table` itself, even if bad lineage loops back to it. A table not present as a key has no sources. Cycles must not cause infinite loops.
+'''
+starter = "def upstream(lineage, table):\n    pass\n"
+solution = '''
+def upstream(lineage, table):
+    seen, stack = set(), [table]
+    while stack:
+        for src in lineage.get(stack.pop(), []):
+            if src not in seen:
+                seen.add(src)
+                stack.append(src)
+    seen.discard(table)
+    return sorted(seen)
+'''
+hints = [
+    "DFS or BFS from `table` following source edges.",
+    "A visited set stops both duplicates and cycles.",
+]
+
+[[tests]]
+args = [{ mart_sales = ["fct_orders", "dim_store"], fct_orders = ["stg_orders", "stg_payments"], stg_orders = ["raw_orders"], dim_store = ["raw_stores"] }, "mart_sales"]
+[[tests]]  # diamond and a cycle back to the start
+args = [{ a = ["b", "c"], b = ["d"], c = ["d"], d = ["a"] }, "a"]
+[[tests]]
+args = [{ a = ["b"] }, "raw_only"]

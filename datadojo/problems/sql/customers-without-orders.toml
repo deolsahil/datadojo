@@ -1,0 +1,23 @@
+title = "Customers who never ordered"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-joins"
+lists = ["sql-essentials"]
+statement = """
+Tables `customers(id, name)` and `orders(id, customer_id, amount)`.
+
+Return the `name` of every customer with no orders. Watch out: `orders.customer_id` can be NULL.
+"""
+starter = "SELECT name\nFROM customers\n"
+solution = """
+SELECT c.name FROM customers c
+WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
+"""
+
+[[tests]]
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Ann"], [2, "Bo"], [3, "Cy"]] }
+tables.orders = { columns = "id INT, customer_id INT, amount INT", rows = [[10, 1, 5], [11, 1, 7], [12, 3, 2]] }
+
+[[tests]]  # NULL customer_id breaks NOT IN
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Ann"], [2, "Bo"]] }
+tables.orders = { columns = "id INT, customer_id INT, amount INT", rows = '[[10, 1, 5], [11, null, 3]]' }

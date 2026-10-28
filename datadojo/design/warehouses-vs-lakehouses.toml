@@ -1,0 +1,124 @@
+title = "Warehouses vs Lakehouses"
+section = "ds-blocks"
+order = 4
+kind = "lesson"
+big_idea = "Both separate cheap durable storage from elastic compute; a warehouse manages the storage format for you, while a lakehouse keeps open files and an open table format in your own object storage so many engines can share them."
+summary = """A **cloud data warehouse** such as Snowflake, BigQuery, or Redshift stores data in its own managed columnar format and gives you SQL with excellent performance, concurrency features, security, and almost no tuning. You pay for convenience with less control over files and, often, engine lock-in.
+
+A **lakehouse** stores data as Parquet in object storage (S3, GCS, ADLS) with an open table format (Delta, Iceberg, Hudi) and a catalog, then lets several engines query the same tables: Spark for ETL and ML, Trino or Athena for SQL, Flink for streaming. It is flexible and avoids format lock-in, but you own more operations such as compaction and catalogs.
+
+The line is blurring: Snowflake, BigQuery, and Redshift can read or manage Iceberg tables, and Databricks offers warehouse-style SQL on Delta. Interviewers mostly want you to reason about the trade-offs, not pick a brand."""
+diagram = """flowchart TD
+  os[("Object storage - Parquet")] --> tf["Table format and catalog"]
+  tf --> spark["Spark - ETL and ML"]
+  tf --> trino["Trino or Athena - SQL"]
+  tf --> flink["Flink - streaming writes"]
+  wh[("Warehouse managed storage")] --> wsql["Warehouse SQL compute"]
+  tf -- external or Iceberg tables --> wsql"""
+
+[[blocks]]
+heading = "Separation of storage and compute"
+body = """Older warehouses and Hadoop clusters coupled storage and compute: to store more you bought more nodes, and all workloads fought over the same cluster. Modern systems keep data in durable object or managed storage and spin up **independent compute** on demand:
+- Snowflake virtual warehouses: separate compute clusters per team or workload, resized or suspended independently.
+- BigQuery: serverless slots, on-demand (pay per bytes scanned) or capacity-based pricing.
+- Redshift RA3 and Serverless: managed storage with separately scaled compute.
+- Lakehouse: any number of Spark or Trino clusters over the same files.
+
+Benefits: isolate ETL from BI, scale to zero, store petabytes cheaply. Cost: remote reads are slower than local disk, which engines offset with caching and file statistics."""
+
+[[blocks]]
+heading = "When to use what"
+body = """**Lean warehouse when:**
+- The workload is mostly SQL analytics and BI.
+- The team is small and wants minimal operations.
+- High concurrency for many analysts with strong governance out of the box.
+
+**Lean lakehouse when:**
+- Large-scale ETL in Spark, ML training on the same data, or streaming writes.
+- Multiple engines must share one copy of data.
+- Petabyte scale where storage cost and open formats matter.
+- You want to avoid lock-in to one vendor's storage.
+
+**Common hybrid:** lakehouse for bronze and silver (raw, large, multi-engine), warehouse or lakehouse SQL for gold marts serving BI."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """| | Warehouse | Lakehouse |
+|---|---|---|
+| Storage format | Proprietary managed (often with Iceberg options now) | Open Parquet plus table format |
+| Operations | Minimal | Compaction, vacuum, catalog, cluster management |
+| Engine choice | Mainly the vendor's | Many engines |
+| SQL performance and concurrency | Excellent by default | Good to excellent; depends on engine and layout |
+| Unstructured and ML data | Limited | Native, files sit in object storage |
+| Cost model | Credits, slots, or bytes scanned | Object storage plus whatever compute you run |
+
+Cost traps: pay-per-scan queries without partition pruning; warehouses left running without auto-suspend; lakehouse tables never compacted."""
+
+[[blocks]]
+heading = "In an interview"
+body = """Anchor on the workload: "Most consumers are analysts in BI tools, so gold tables live in the warehouse; the raw clickstream is 2 TB/day and feeds ML, so it lands in Iceberg on S3 where Spark and the warehouse can both read it." Mention separation of storage and compute when discussing workload isolation, and name a governance layer (catalog with access control, column masking for PII)."""
+
+key_points = [
+  "Warehouses manage storage and tuning for you; lakehouses keep open files and table formats you control.",
+  "Both separate storage from compute, enabling workload isolation and elastic scaling.",
+  "Lakehouses shine for multi-engine access, ML, streaming writes, and huge raw volumes.",
+  "Warehouses shine for SQL-heavy BI, concurrency, and low operational burden.",
+  "Vendors are converging, especially around Iceberg; argue from workload, not brand.",
+]
+common_mistakes = [
+  "Framing warehouse vs lakehouse as a religious choice instead of a workload decision.",
+  "Forgetting lakehouse maintenance: compaction, snapshot expiry, catalog management.",
+  "Ignoring cost models, such as full table scans on pay-per-byte pricing.",
+  "Running all workloads on one shared compute cluster and letting ETL starve dashboards.",
+  "Claiming vendor features as fixed facts when they change frequently.",
+]
+interview_questions = [
+  "What does separation of storage and compute buy you?",
+  "When would you choose a lakehouse over Snowflake or BigQuery?",
+  "How would you let Spark, Trino, and a warehouse all read the same tables?",
+  "What are the main cost drivers in a cloud warehouse?",
+]
+
+[[quiz]]
+q = "What is the main benefit of separating storage from compute?"
+options = [
+  "Data no longer needs backups",
+  "Compute can scale and be isolated per workload independently of how much data is stored",
+  "Queries never touch the network",
+  "It removes the need for a table format",
+]
+answer = 1
+why = "Independent compute clusters over shared storage let ETL and BI scale separately, and compute can suspend when idle."
+
+[[quiz]]
+q = "Data scientists train models in Spark on 3 PB of events, and analysts need SQL on the same data. What fits best?"
+options = [
+  "Copy all data into a warehouse nightly",
+  "A lakehouse with an open table format readable by Spark and SQL engines",
+  "Keep data in Kafka only",
+  "An OLTP database",
+]
+answer = 1
+why = "One copy of open data serves both workloads without duplicating petabytes, and each engine reads it directly."
+
+[[quiz]]
+q = "A small team with mostly BI dashboards and little platform engineering capacity. What is the pragmatic default?"
+options = [
+  "Self-managed Spark on Kubernetes with Hudi",
+  "A managed cloud warehouse",
+  "Hadoop on premises",
+  "Flink",
+]
+answer = 1
+why = "Managed warehouses minimize operational work and handle SQL concurrency well, which fits a BI-focused small team."
+
+[[quiz]]
+q = "On a pay-per-bytes-scanned warehouse, what most directly reduces query cost?"
+options = [
+  "Adding more users",
+  "Partitioning or clustering plus selecting only needed columns",
+  "Using SELECT * for simplicity",
+  "Running queries more often",
+]
+answer = 1
+why = "Pruning partitions and reading fewer columns reduces bytes scanned, which is what you pay for."

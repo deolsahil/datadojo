@@ -1,0 +1,109 @@
+title = "Stream Processors: State, Checkpoints, and Windows"
+section = "ds-blocks"
+order = 3
+kind = "lesson"
+big_idea = "A stream processor is a long-running job that keeps state per key, snapshots that state together with its input offsets, and restores both after a failure so results stay correct."
+summary = """Stateless stream processing (filter, transform, route) is easy. The hard and valuable part is **state**: counts per user, open sessions, dedup sets, join buffers. Engines like **Apache Flink**, **Spark Structured Streaming**, and **Kafka Streams** manage that state for you, partitioned by key across workers.
+
+To survive failures they take **checkpoints**: consistent snapshots of all operator state plus the source offsets at the same logical point. After a crash, the job restores the last checkpoint and replays input from those offsets, so state reflects each input exactly once.
+
+On top of state, **windows** group an unbounded stream into finite chunks of event time: tumbling, sliding (hopping), and session windows. Watermarks decide when a window is complete."""
+diagram = """flowchart LR
+  k[("Kafka source")] --> op["Keyed operator - windows and state"]
+  op --> st[("Local state - RocksDB or memory")]
+  st -- periodic checkpoint --> ck[("Durable checkpoint storage")]
+  op --> sink[("Sink")]
+  ck -- restore on failure --> op"""
+
+[[blocks]]
+heading = "How state and checkpoints work"
+body = """- **Flink:** keyed state lives in a state backend (heap memory or RocksDB on local disk for large state). Checkpoints use barriers flowing through the dataflow (based on the Chandy-Lamport snapshot idea): when an operator sees the barrier on all inputs, it snapshots its state. Checkpoints go to durable storage (S3, HDFS). **Savepoints** are user-triggered snapshots for upgrades and rescaling.
+- **Spark Structured Streaming:** each micro-batch records offsets in a write-ahead log and stores state in a state store (RocksDB available) under the checkpoint directory. Changing the query in incompatible ways can make an existing checkpoint unusable.
+- **Kafka Streams:** state in local RocksDB, backed up to compacted Kafka changelog topics; recovery replays the changelog.
+
+Large state means slower checkpoints and recovery. Use incremental checkpoints (RocksDB), state TTL, and keep state bounded with watermarks."""
+
+[[blocks]]
+heading = "Windows"
+body = """- **Tumbling:** fixed, non-overlapping. Clicks per 1-minute window. Each event belongs to exactly one window.
+- **Sliding (hopping):** fixed size, overlapping. 10-minute window every 1 minute; each event lands in 10 windows, so state and output cost multiply.
+- **Session:** per key, closed after a gap of inactivity (say 30 minutes). Window lengths vary; sessions can merge when a late event bridges a gap.
+- **Global with custom triggers:** for count-based or custom logic.
+
+Pair windows with a watermark and a lateness policy. Output modes matter in Spark: append emits only finalized windows; update emits changed rows each batch."""
+
+[[blocks]]
+heading = "Flink vs Spark Structured Streaming vs Kafka Streams"
+body = """| | Flink | Spark Structured Streaming | Kafka Streams |
+|---|---|---|---|
+| Model | Event-at-a-time | Micro-batch by default | Event-at-a-time library |
+| Typical latency | Milliseconds | Hundreds of ms to seconds | Milliseconds |
+| State | Very large keyed state, rich timers | Good, improving each release | Local RocksDB plus changelog |
+| Deployment | Cluster (Kubernetes, YARN, managed) | Spark cluster | Inside your app; Kafka in and out only |
+| Best when | Low latency, complex event-time logic, huge state | Already on Spark, unify batch and stream | Kafka-native microservices |
+
+These are generalizations; each engine evolves quickly (Spark has added lower-latency modes, Flink has strong batch support), so hedge in interviews."""
+
+[[blocks]]
+heading = "Failure modes"
+body = """- **Backpressure:** a slow sink makes upstream operators buffer and slow down; lag grows. Find the bottleneck operator and scale or fix the sink.
+- **Checkpoint timeouts:** huge state or backpressure prevents checkpoints from completing; recovery then replays a lot.
+- **State growth:** no TTL or watermark on dedup or joins, eventually out of disk or memory.
+- **Hot keys:** one key's state and processing overwhelm one task.
+- **Non-replayable sinks:** side effects (HTTP calls) happen again on replay unless idempotent."""
+
+key_points = [
+  "State per key is what makes stream processing powerful and hard.",
+  "Checkpoints snapshot state and source offsets together; recovery restores both and replays.",
+  "Tumbling, sliding, and session windows group events by event time; watermarks close them.",
+  "Bound state with watermarks and TTLs; prefer RocksDB and incremental checkpoints for large state.",
+  "Flink favors low latency and complex state; Spark favors stack reuse; Kafka Streams suits Kafka-native apps.",
+]
+common_mistakes = [
+  "Unbounded state from joins or dedup without TTL or watermarks.",
+  "Using a 24-hour sliding window with a 1-second slide and multiplying state 86,400 times.",
+  "Changing a Spark streaming query and reusing an incompatible checkpoint.",
+  "Assuming exactly-once state means exactly-once external side effects.",
+  "Ignoring backpressure until lag is hours.",
+]
+interview_questions = [
+  "How does Flink recover from a failure without losing or double counting state?",
+  "Explain tumbling, sliding, and session windows with use cases.",
+  "When would you choose Flink over Spark Structured Streaming?",
+  "How do you keep streaming state from growing unbounded?",
+  "What is backpressure and how do you diagnose it?",
+]
+
+[[quiz]]
+q = "What does a stream processing checkpoint contain to enable correct recovery?"
+options = [
+  "Only the output data",
+  "Operator state and the source offsets at a consistent point",
+  "Only the source offsets",
+  "The job's code",
+]
+answer = 1
+why = "Restoring state and offsets from the same logical point lets the job replay exactly the inputs not reflected in the state."
+
+[[quiz]]
+q = "Which window type fits 'group a user's clicks into visits that end after 30 minutes of inactivity'?"
+options = ["Tumbling", "Sliding", "Session", "Global"]
+answer = 2
+why = "Session windows are per key and close after a gap of inactivity, so their length varies with user behavior."
+
+[[quiz]]
+q = "A 1-hour sliding window advancing every 5 minutes. How many windows does each event belong to?"
+options = ["1", "5", "12", "60"]
+answer = 2
+why = "Window size divided by slide is 60 / 5 = 12 overlapping windows per event."
+
+[[quiz]]
+q = "A team already runs Spark batch jobs and needs a dashboard updated within a minute. What is the pragmatic choice?"
+options = [
+  "Rewrite everything in Flink",
+  "Spark Structured Streaming micro-batches",
+  "Kafka Streams in every microservice",
+  "Hourly batch",
+]
+answer = 1
+why = "Minute-level latency is well within micro-batch capabilities, and reusing the existing Spark stack lowers operational cost."

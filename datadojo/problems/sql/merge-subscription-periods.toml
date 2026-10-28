@@ -1,0 +1,51 @@
+title = "Merge overlapping subscription periods"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-gaps-islands"
+statement = """
+Table `subscriptions(user_id, start_date, end_date)`. Each row is a paid period, both dates inclusive.
+A user's periods can overlap, nest inside each other, or follow one another directly.
+
+For each user, merge periods into continuous coverage: two periods belong together when they overlap or when
+one starts the day right after the other ends (no unpaid day in between). Return `user_id, start_date, end_date`
+for each merged period. Any row order.
+"""
+starter = "SELECT user_id, MIN(start_date) AS start_date, MAX(end_date) AS end_date\nFROM subscriptions\nGROUP BY user_id\n"
+solution = """
+WITH o AS (
+  SELECT *, MAX(end_date) OVER (PARTITION BY user_id ORDER BY start_date, end_date
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS covered_to
+  FROM subscriptions
+), f AS (
+  SELECT *, CASE WHEN covered_to IS NULL OR start_date > covered_to + 1 THEN 1 ELSE 0 END AS is_new
+  FROM o
+), g AS (
+  SELECT *, SUM(is_new) OVER (PARTITION BY user_id ORDER BY start_date, end_date ROWS UNBOUNDED PRECEDING) AS grp
+  FROM f
+)
+SELECT user_id, MIN(start_date) AS start_date, MAX(end_date) AS end_date
+FROM g
+GROUP BY user_id, grp
+"""
+hints = [
+  "Sort each user's periods by start_date. A period starts a new group when it begins after everything before it has ended (plus one day).",
+  "Comparing only to the previous row's end_date breaks when an earlier long period contains a shorter one. Use the running MAX(end_date) of all earlier rows.",
+  "Flag new groups with CASE, turn flags into group ids with a running SUM, then GROUP BY user_id, grp.",
+]
+
+[[tests]]
+tables.subscriptions = { columns = "user_id INT, start_date DATE, end_date DATE", rows = [
+  [1, "2024-01-01", "2024-01-31"], [1, "2024-01-15", "2024-02-15"], [1, "2024-04-01", "2024-04-30"],
+  [2, "2024-03-01", "2024-03-10"],
+] }
+
+[[tests]]  # nested periods: a long period swallows later short ones
+tables.subscriptions = { columns = "user_id INT, start_date DATE, end_date DATE", rows = [
+  [1, "2024-01-01", "2024-12-31"], [1, "2024-02-01", "2024-02-10"], [1, "2024-06-01", "2024-06-05"],
+  [1, "2025-03-01", "2025-03-31"],
+] }
+
+[[tests]]  # back-to-back periods merge; a one-day gap does not
+tables.subscriptions = { columns = "user_id INT, start_date DATE, end_date DATE", rows = [
+  [3, "2024-05-01", "2024-05-31"], [3, "2024-06-01", "2024-06-30"], [3, "2024-07-02", "2024-07-31"],
+] }

@@ -1,0 +1,36 @@
+title = "Apply a change log to get current state"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-dedup-scd"
+statement = """
+Table `changes(seq, id, op, value)` is a change-data-capture feed. `seq` is a unique, increasing sequence number.
+`op` is `'I'` (insert), `'U'` (update) or `'D'` (delete); delete rows carry a NULL `value`. A deleted id can be
+inserted again later.
+
+Replay the log and return the current table: `id, value` for every id that exists after the last change.
+An id whose most recent change is a delete does not appear. Any row order.
+"""
+starter = "SELECT id, MAX(value) AS value\nFROM changes\nWHERE op <> 'D'\nGROUP BY id\n"
+solution = """
+SELECT id, value FROM (
+  SELECT id, op, value, ROW_NUMBER() OVER (PARTITION BY id ORDER BY seq DESC) AS rn
+  FROM changes
+) t
+WHERE rn = 1 AND op <> 'D'
+"""
+hints = [
+  "Only the most recent change per id matters.",
+  "Filtering out deletes before picking the latest row brings deleted ids back to life. Pick the latest first, then filter.",
+  "ROW_NUMBER() OVER (PARTITION BY id ORDER BY seq DESC) = 1, then keep op <> 'D'.",
+]
+
+[[tests]]
+tables.changes = { columns = "seq INT, id INT, op STRING, value STRING", rows = '''[
+  [1, 1, "I", "apple"], [2, 2, "I", "pear"], [3, 1, "U", "apricot"], [4, 2, "D", null]
+]''' }
+
+[[tests]]  # delete then re-insert; insert, update, delete; out-of-order rows
+tables.changes = { columns = "seq INT, id INT, op STRING, value STRING", rows = '''[
+  [9, 5, "I", "again"], [3, 5, "I", "first"], [6, 5, "D", null],
+  [4, 6, "I", "zzz"], [7, 6, "U", "aaa"], [8, 6, "D", null], [10, 7, "I", "x"]
+]''' }

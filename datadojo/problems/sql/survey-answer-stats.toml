@@ -1,0 +1,32 @@
+title = "Survey response vs answer counts"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-nulls"
+statement = """
+In a satisfaction survey, people can skip a question; a skipped answer is stored as NULL.
+
+Table `responses(id, question_id, score)` where `score` is an INT from 1 to 5, or NULL if skipped.
+
+Return one row per `question_id` with:
+
+- `responses`: number of rows for that question (skips included)
+- `answered`: number of non-NULL scores
+- `avg_score`: average of the non-NULL scores rounded to 2 decimals, or NULL if nobody answered
+"""
+starter = "SELECT question_id, COUNT(*) AS responses\nFROM responses\nGROUP BY question_id\n"
+solution = """
+SELECT question_id, COUNT(*) AS responses, COUNT(score) AS answered, ROUND(AVG(score), 2) AS avg_score
+FROM responses
+GROUP BY question_id
+"""
+hints = [
+  "COUNT(*) counts rows; COUNT(column) counts non-NULL values of that column.",
+  "AVG already ignores NULLs, and returns NULL when every value is NULL.",
+  "COUNT(*), COUNT(score), ROUND(AVG(score), 2)",
+]
+
+[[tests]]
+tables.responses = { columns = "id INT, question_id INT, score INT", rows = '[[1, 1, 5], [2, 1, 4], [3, 1, null], [4, 2, 3], [5, 2, 2], [6, 2, 2]]' }
+
+[[tests]]  # a question nobody answered
+tables.responses = { columns = "id INT, question_id INT, score INT", rows = '[[1, 7, null], [2, 7, null], [3, 8, 1]]' }

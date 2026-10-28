@@ -1,0 +1,42 @@
+title = "Collapse daily status into periods"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-gaps-islands"
+lists = ["sql-essentials"]
+ordered = true
+statement = """
+Table `daily_status(day, state)`, at most one row per day; `state` is `'up'` or `'down'`.
+Some days were not recorded.
+
+Collapse the log into periods: a period is a maximal run of **consecutive calendar days** that all have the same
+state. A missing day ends a period. Return `state, start_day, end_day`, ordered by `start_day`.
+"""
+starter = "SELECT state, MIN(day) AS start_day, MAX(day) AS end_day\nFROM daily_status\nGROUP BY state\nORDER BY start_day\n"
+solution = """
+WITH g AS (
+  SELECT day, state,
+         day - CAST(ROW_NUMBER() OVER (PARTITION BY state ORDER BY day) AS INT) AS grp
+  FROM daily_status
+)
+SELECT state, MIN(day) AS start_day, MAX(day) AS end_day
+FROM g
+GROUP BY state, grp
+ORDER BY start_day
+"""
+hints = [
+  "Classic islands trick: within a run of consecutive days, day minus a row number stays constant.",
+  "Number the rows per state (PARTITION BY state ORDER BY day). day - row_number is the same for every day of one run.",
+  "GROUP BY state, that difference, and take MIN(day) and MAX(day).",
+]
+source_url = "https://leetcode.com/problems/report-contiguous-dates/"
+
+[[tests]]
+tables.daily_status = { columns = "day DATE, state STRING", rows = [
+  ["2024-01-01", "up"], ["2024-01-02", "up"], ["2024-01-03", "down"], ["2024-01-04", "up"], ["2024-01-05", "up"],
+] }
+
+[[tests]]  # a missing day (Jan 13) splits an 'up' run; single-day periods
+tables.daily_status = { columns = "day DATE, state STRING", rows = [
+  ["2024-01-11", "up"], ["2024-01-12", "up"], ["2024-01-14", "up"], ["2024-01-15", "down"],
+  ["2024-01-31", "down"], ["2024-02-01", "down"],
+] }

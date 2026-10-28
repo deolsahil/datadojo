@@ -1,0 +1,35 @@
+title = "Game leaderboard positions"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-window-ranking"
+lists = ["sql-essentials"]
+ordered = true
+statement = """
+Table `scores(player, points)`, one row per player.
+
+Return `player, points, position`, where `position` is a **dense** rank by points, highest first:
+equal points share a position and the next distinct score gets the next number (100, 100, 90 are 1, 1, 2).
+
+Order by `position`, then `player` alphabetically.
+"""
+starter = "SELECT player, points, 1 AS position\nFROM scores\nORDER BY points DESC\n"
+solution = """
+SELECT player, points, DENSE_RANK() OVER (ORDER BY points DESC) AS position
+FROM scores
+ORDER BY position, player
+"""
+hints = [
+  "This is a window function with no PARTITION BY: the whole table is one ranking.",
+  "Compare ROW_NUMBER, RANK and DENSE_RANK on 100, 100, 90. Only one gives 1, 1, 2.",
+]
+source_url = "https://leetcode.com/problems/rank-scores/"
+
+[[tests]]
+tables.scores = { columns = "player STRING, points INT", rows = [
+  ["zed", 40], ["amy", 95], ["bob", 70],
+] }
+
+[[tests]]  # ties: dense rank must not skip, ties sorted by name
+tables.scores = { columns = "player STRING, points INT", rows = [
+  ["mia", 100], ["ari", 100], ["lee", 90], ["kai", 80], ["bea", 80], ["tom", 10],
+] }

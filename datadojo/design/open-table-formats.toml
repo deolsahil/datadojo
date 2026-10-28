@@ -1,0 +1,112 @@
+title = "Open Table Formats: Delta Lake, Iceberg, Hudi"
+section = "ds-modeling"
+order = 5
+kind = "lesson"
+big_idea = "A table format adds a transactional metadata layer over immutable Parquet files in object storage, giving a data lake ACID commits, time travel, schema evolution, and safe updates and deletes."
+summary = """A plain data lake is just files in folders. Readers list directories to find data, writers can collide, a failed job leaves half-written files visible, and updating one row means rewriting partitions by hand. **Open table formats** fix this by keeping a metadata log that says exactly which data files make up each **version** (snapshot) of the table.
+
+A write creates new data files, then atomically commits a new metadata version that references them. Readers always see a consistent snapshot. Because old snapshots are kept for a while, you get **time travel** ("query the table as of yesterday") and easy rollback.
+
+The three main formats are **Delta Lake** (originated at Databricks), **Apache Iceberg** (originated at Netflix), and **Apache Hudi** (originated at Uber). They converge on core features, and interoperability layers exist, but their designs and ecosystem strengths still differ."""
+diagram = """flowchart TD
+  eng["Engines (Spark, Trino, Flink, warehouses)"] --> cat["Catalog (current pointer)"]
+  cat --> meta["Metadata log and snapshots"]
+  meta --> man["Manifests or file lists with stats"]
+  man --> data[("Parquet data files in object storage")]"""
+
+[[blocks]]
+heading = "How it works"
+body = """- **Delta Lake:** a `_delta_log/` directory of ordered JSON commit files plus periodic Parquet checkpoints. Each commit lists files added and removed. The commit is atomic because only one writer can create commit N.
+- **Iceberg:** a tree: catalog pointer → table metadata file → manifest list (one per snapshot) → manifests listing data files with column stats → data files. The catalog (Hive Metastore, Glue, a REST catalog, Nessie, and others) does an atomic swap of the current metadata pointer.
+- **Hudi:** a timeline of actions in `.hoodie/`, with record keys and indexes designed for fast upserts. Offers **copy-on-write** (rewrite files on update) and **merge-on-read** (write deltas, merge at read or compaction time) table types.
+
+All use **optimistic concurrency**: writers proceed in parallel, and at commit time a conflict check fails one writer if both touched the same files, which it must retry."""
+
+[[blocks]]
+heading = "Key features"
+body = """- **ACID commits:** no partial results visible, no corrupted reads during writes.
+- **Upserts and deletes:** `MERGE INTO`, `UPDATE`, `DELETE`. Essential for CDC and GDPR deletions.
+- **Time travel:** `SELECT ... VERSION AS OF` or `TIMESTAMP AS OF` (syntax varies by engine). Useful for audits, debugging, reproducible ML training.
+- **Schema evolution:** add, drop, rename columns safely. Iceberg tracks columns by ID, so renames do not break old files; Delta needs column mapping enabled for renames and drops.
+- **Partition evolution and hidden partitioning:** an Iceberg strength.
+- **File-level statistics:** for data skipping without listing directories.
+- **Change feeds:** Delta Change Data Feed, Iceberg incremental reads, and Hudi incremental queries let downstream jobs read only what changed."""
+
+[[blocks]]
+heading = "Maintenance you must plan for"
+body = """- **Compaction:** streaming and MERGE create many small files; rewrite them regularly.
+- **Snapshot expiration / vacuum:** old snapshots keep old files alive. Delta `VACUUM` and Iceberg `expire_snapshots` delete unreferenced files. This **limits time travel** to the retention window, and deleted GDPR data is only physically gone after it runs.
+- **Orphan file cleanup:** files from failed writes that were never committed.
+- **Merge-on-read compaction:** in Hudi MOR, Iceberg v2 delete files, or Delta deletion vectors, reads get slower until deltas are merged into base files.
+
+Many managed platforms automate some of this, but you should still know what runs and how often."""
+
+[[blocks]]
+heading = "When to use what"
+body = """Hedge in interviews: feature gaps shift with each release.
+- **Delta Lake:** strongest if you are on Databricks or Spark-centric; mature MERGE and streaming integration; UniForm can expose Iceberg-compatible metadata.
+- **Iceberg:** broadest multi-engine story (Spark, Trino, Flink, Snowflake, BigQuery, Athena, and others), hidden partitioning, partition evolution, REST catalog standard.
+- **Hudi:** designed around high-frequency upserts and incremental processing, with built-in indexing and table services.
+
+A good answer: "I would pick Iceberg for multi-engine access or Delta if the platform is Databricks; either supports MERGE for CDC and time travel for audits. The decision matters less than planning compaction and retention.\""""
+
+key_points = [
+  "Table formats track which immutable files form each table snapshot and commit changes atomically.",
+  "They enable ACID writes, MERGE/UPDATE/DELETE, time travel, and safe schema evolution on object storage.",
+  "Concurrency is optimistic: conflicting commits fail and retry.",
+  "Copy-on-write favors read speed; merge-on-read favors write speed and needs compaction.",
+  "Vacuum and snapshot expiration bound time travel and are required to physically remove deleted data.",
+]
+common_mistakes = [
+  "Assuming DELETE removes data physically right away; files remain until vacuum or snapshot expiration.",
+  "Never compacting streaming-written tables and wondering why queries slow down.",
+  "Setting very short vacuum retention and breaking long-running readers or time travel.",
+  "Claiming one format is strictly better; capabilities change across versions and engines.",
+  "Letting two writers MERGE into overlapping partitions without handling commit conflicts.",
+]
+interview_questions = [
+  "What problem do table formats solve over a plain Parquet data lake?",
+  "How does a table format provide atomic commits on object storage?",
+  "Compare copy-on-write and merge-on-read.",
+  "How would you handle a GDPR delete request in an Iceberg or Delta table?",
+  "How would you choose between Delta Lake and Iceberg?",
+]
+
+[[quiz]]
+q = "How does a table format make a multi-file write appear atomically to readers?"
+options = [
+  "It locks the object storage bucket",
+  "It writes data files first, then atomically commits a metadata version that references them",
+  "It writes all files in a single object",
+  "Readers wait for a lock file to disappear",
+]
+answer = 1
+why = "Uncommitted data files are invisible because no snapshot references them. The commit is a single atomic metadata change."
+
+[[quiz]]
+q = "You ran DELETE for a user's data in a Delta table. When is the data physically removed from storage?"
+options = [
+  "Immediately",
+  "After VACUUM removes files no longer referenced and older than the retention period",
+  "Never",
+  "At the next schema change",
+]
+answer = 1
+why = "DELETE writes new files without the rows and marks old files removed in the log; old files stay for time travel until vacuumed."
+
+[[quiz]]
+q = "A CDC pipeline upserts thousands of rows per minute and reads happen less often. Which table type is typically favored?"
+options = ["Copy-on-write", "Merge-on-read", "Append-only Hive table", "CSV with overwrite"]
+answer = 1
+why = "Merge-on-read writes small delta or delete files cheaply and defers the merge to reads or compaction, suiting write-heavy upserts."
+
+[[quiz]]
+q = "Why can Iceberg rename a column without breaking old data files?"
+options = [
+  "It rewrites all files on rename",
+  "It tracks columns by unique IDs rather than by name",
+  "Parquet files have no column names",
+  "Renames are not supported",
+]
+answer = 1
+why = "Column IDs in metadata map to file columns, so the display name can change while old files are still read correctly."

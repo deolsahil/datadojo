@@ -1,0 +1,61 @@
+title = "Infer a schema from records"
+lang = "python"
+difficulty = "hard"
+pattern = "py-records"
+lists = ["python-de"]
+function = "infer_schema"
+statement = '''
+`infer_schema(records)` looks at a list of JSON-like dicts and returns, for every field seen in any record, `{"type": t, "nullable": b}`.
+
+Value types: `bool` → `"bool"`, `int` → `"int"`, `float` → `"float"`, `str` → `"string"`, `dict` → `"object"`, `list` → `"array"`. `null` has no type.
+
+A field's `type`:
+
+- the single type of its non-null values, if there is exactly one;
+- `"float"` if the non-null values are a mix of exactly `int` and `float`;
+- `"null"` if every value is null;
+- otherwise `"mixed"` (note: `bool` and `int` together are **mixed**).
+
+`nullable` is true if the field is null in some record **or missing** from some record. An empty list returns `{}`.
+'''
+starter = "def infer_schema(records):\n    pass\n"
+solution = '''
+NAMES = {bool: "bool", int: "int", float: "float", str: "string", dict: "object", list: "array"}
+
+def infer_schema(records):
+    types, nulls = {}, set()
+    for r in records:
+        for k, v in r.items():
+            ts = types.setdefault(k, set())
+            if v is None:
+                nulls.add(k)
+            else:
+                ts.add(NAMES[type(v)])
+    out = {}
+    for k, ts in types.items():
+        if not ts:
+            t = "null"
+        elif ts == {"int", "float"}:
+            t = "float"
+        elif len(ts) == 1:
+            t = next(iter(ts))
+        else:
+            t = "mixed"
+        out[k] = {"type": t, "nullable": k in nulls or any(k not in r for r in records)}
+    return out
+'''
+hints = [
+    "Collect a set of type names per field, and separately note which fields ever saw null.",
+    "`isinstance(True, int)` is True. Use `type(v)` (or check bool first).",
+    "Missing-from-some-record also means nullable: compare against every record.",
+]
+
+[[tests]]
+args = '''[[{"id": 1, "price": 9.5, "name": "a", "tags": ["x"]},
+            {"id": 2, "price": 10, "name": null, "meta": {"k": 1}}]]'''
+[[tests]]  # bool + int is mixed, all-null field
+args = '''[[{"flag": true, "note": null}, {"flag": 1, "note": null}, {"flag": "yes"}]]'''
+[[tests]]
+args = '''[[{"a": 1}, {"a": 2}, {"a": 3}]]'''
+[[tests]]
+args = [[]]

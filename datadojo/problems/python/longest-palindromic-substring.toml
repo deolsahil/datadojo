@@ -1,0 +1,42 @@
+title = "Longest palindromic substring"
+lang = "python"
+difficulty = "medium"
+pattern = "py-strings"
+function = "longest_pal"
+source_url = "https://leetcode.com/problems/longest-palindromic-substring/"
+statement = """
+`longest_pal(s)` returns the longest contiguous substring of `s` that is a palindrome
+(exact characters, case-sensitive). If several have the same maximum length, return the one
+that **starts earliest**. Empty input returns `""`.
+
+- `"babad"` → `"bab"` (`"aba"` is equally long but starts later)
+- `"cbbd"` → `"bb"`
+"""
+hints = [
+    "Every palindrome has a center: a single character (odd length) or a gap between two (even length).",
+    "Expand outward from each of the 2n-1 centers while the characters match.",
+    "Visit centers left to right and only replace the best on a strictly longer match to keep the earliest one.",
+]
+starter = "def longest_pal(s):\n    pass\n"
+solution = """
+def longest_pal(s):
+    best = ""
+    for i in range(len(s)):
+        for l, r in ((i, i), (i, i + 1)):
+            while l >= 0 and r < len(s) and s[l] == s[r]:
+                l, r = l - 1, r + 1
+            if r - l - 1 > len(best):
+                best = s[l + 1:r]
+    return best
+"""
+
+[[tests]]
+args = ["babad"]
+[[tests]]
+args = ["cbbd"]
+[[tests]]
+args = ["forgeeksskeegfor"]
+[[tests]]
+args = ["a"]
+[[tests]]
+args = [""]

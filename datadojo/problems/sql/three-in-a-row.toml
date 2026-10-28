@@ -1,0 +1,36 @@
+title = "Numbers that appear three times in a row"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-gaps-islands"
+statement = """
+Table `readings(id, num)`. `id` is unique and gives the order of readings (ids may skip values).
+
+Return `num` for every value that appears in **at least three consecutive readings** (consecutive in `id`
+order). Each qualifying value appears once in the output. Any row order.
+"""
+starter = "SELECT num\nFROM readings\nGROUP BY num\nHAVING COUNT(*) >= 3\n"
+solution = """
+SELECT DISTINCT num FROM (
+  SELECT num,
+         LAG(num, 1) OVER (ORDER BY id) AS p1,
+         LAG(num, 2) OVER (ORDER BY id) AS p2
+  FROM readings
+) t
+WHERE num = p1 AND num = p2
+"""
+hints = [
+  "COUNT(*) >= 3 does not check that the repeats are adjacent.",
+  "LAG(num, 1) and LAG(num, 2) over ORDER BY id give the two previous readings; all three must match.",
+  "Use DISTINCT: a run of four produces two matching rows.",
+]
+source_url = "https://leetcode.com/problems/consecutive-numbers/"
+
+[[tests]]
+tables.readings = { columns = "id INT, num INT", rows = [
+  [1, 1], [2, 1], [3, 1], [4, 2], [5, 1], [6, 2], [7, 2],
+] }
+
+[[tests]]  # non-adjacent repeats do not count; run of four; gaps in id
+tables.readings = { columns = "id INT, num INT", rows = [
+  [10, 5], [11, 7], [12, 5], [13, 7], [14, 5], [20, 9], [25, 9], [30, 9], [31, 9],
+] }

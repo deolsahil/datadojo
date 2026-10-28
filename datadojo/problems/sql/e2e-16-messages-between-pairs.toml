@@ -1,0 +1,37 @@
+title = "Total Messages Exchanged Between Pairs"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-aggregation"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `subscriber(sms_date, sender, receiver, sms_no)` records how many SMS `sender` sent to `receiver` on a day.
+
+For each day and each unordered pair of people, return the total messages exchanged in both directions:
+`sms_date, p1, p2, total_exchanged_msgs`, where `p1` is the alphabetically smaller name and `p2` the larger.
+Any row order.
+"""
+starter = "SELECT sms_date, sender AS p1, receiver AS p2, SUM(sms_no) AS total_exchanged_msgs\nFROM subscriber\nGROUP BY sms_date, sender, receiver\n"
+solution = """
+SELECT sms_date, LEAST(sender, receiver) AS p1, GREATEST(sender, receiver) AS p2, SUM(sms_no) AS total_exchanged_msgs
+FROM subscriber
+GROUP BY sms_date, LEAST(sender, receiver), GREATEST(sender, receiver)
+"""
+hints = [
+  "A->B and B->A belong to the same pair. Put each pair in a canonical order.",
+  "LEAST(sender, receiver) and GREATEST(sender, receiver) (or a CASE) give that order.",
+  "Group by date and the canonical pair, then SUM.",
+]
+
+[[tests]]
+tables.subscriber = { columns = "sms_date DATE, sender STRING, receiver STRING, sms_no INT", rows = [
+  ["2020-04-01", "Avinash", "Vibhor", 10], ["2020-04-01", "Vibhor", "Avinash", 20],
+  ["2020-04-01", "Avinash", "Pawan", 30], ["2020-04-01", "Pawan", "Avinash", 20],
+  ["2020-04-01", "Vibhor", "Pawan", 5], ["2020-04-01", "Pawan", "Vibhor", 8], ["2020-04-01", "Vibhor", "Deepak", 50],
+] }
+
+[[tests]]  # same pair on two days stays separate; repeated rows in one direction
+tables.subscriber = { columns = "sms_date DATE, sender STRING, receiver STRING, sms_no INT", rows = [
+  ["2020-04-01", "Zed", "Amy", 1], ["2020-04-01", "Zed", "Amy", 2], ["2020-04-01", "Amy", "Zed", 3],
+  ["2020-04-02", "Amy", "Zed", 4],
+] }

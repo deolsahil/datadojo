@@ -1,0 +1,44 @@
+title = "Median order value per store"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-window-ranking"
+statement = """
+Table `orders(order_id, store_id, amount)`.
+
+Return `store_id, median_amount` with the **median** order amount per store, rounded to 2 decimals.
+With an odd number of orders the median is the middle value; with an even number it is the average
+of the two middle values. Duplicate amounts are separate orders.
+
+Try it with `ROW_NUMBER()` and `COUNT(*)` windows rather than a built-in median function. Any row order.
+"""
+starter = "SELECT store_id, ROUND(AVG(amount), 2) AS median_amount\nFROM orders\nGROUP BY store_id\n"
+solution = """
+WITH r AS (
+  SELECT store_id, amount,
+         ROW_NUMBER() OVER (PARTITION BY store_id ORDER BY amount, order_id) AS rn,
+         COUNT(*) OVER (PARTITION BY store_id) AS n
+  FROM orders
+)
+SELECT store_id, ROUND(AVG(amount), 2) AS median_amount
+FROM r
+WHERE rn BETWEEN n / 2.0 AND n / 2.0 + 1
+GROUP BY store_id
+"""
+hints = [
+  "Number each store's orders by amount and also attach the store's order count to every row.",
+  "For n rows the middle positions are n/2 and n/2 + 1 when n is even, and (n + 1)/2 when n is odd.",
+  "A position rn is in the middle when rn BETWEEN n / 2.0 AND n / 2.0 + 1; average amount over those rows.",
+]
+
+[[tests]]
+tables.orders = { columns = "order_id INT, store_id INT, amount DOUBLE", rows = [
+  [1, 1, 10.0], [2, 1, 30.0], [3, 1, 20.0],
+  [4, 2, 5.0], [5, 2, 15.0], [6, 2, 100.0], [7, 2, 25.0],
+] }
+
+[[tests]]  # single order, duplicate middle values, skewed data
+tables.orders = { columns = "order_id INT, store_id INT, amount DOUBLE", rows = [
+  [1, 7, 42.5],
+  [2, 8, 3.0], [3, 8, 3.0], [4, 8, 3.0], [5, 8, 1000.0], [6, 8, 1.0],
+  [7, 9, 1.0], [8, 9, 2.0],
+] }

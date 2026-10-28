@@ -1,0 +1,42 @@
+title = "Device status changes"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-windows"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+IoT devices send a heartbeat every minute: `heartbeats(device_id, ts, status)` where `status` is
+`online`, `degraded` or `offline` (never NULL). Alerting only cares about transitions.
+
+Write `solve(spark, heartbeats)` returning `device_id, ts, prev_status, status` for every heartbeat
+whose status differs from the device's previous heartbeat (by `ts`). Each device's first heartbeat
+counts as a change with `prev_status` NULL. Repeated identical statuses are suppressed.
+"""
+hints = [
+  "`F.lag(\"status\").over(Window.partitionBy(\"device_id\").orderBy(\"ts\"))` gives the previous status.",
+  "Keep rows where `prev_status` is NULL or differs from `status`; `prev_status != status` alone drops the first row.",
+]
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, heartbeats):
+    return heartbeats.select("device_id", "ts", "status", "status")
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, heartbeats):
+    w = Window.partitionBy("device_id").orderBy("ts")
+    h = heartbeats.withColumn("prev_status", F.lag("status").over(w))
+    return (h.filter(~F.col("prev_status").eqNullSafe(F.col("status")))
+            .select("device_id", "ts", "prev_status", "status"))
+"""
+
+[[tests]]
+tables.heartbeats = { columns = "device_id STRING, ts TIMESTAMP, status STRING", rows = [
+  ["pump-1", "2024-07-01 10:00:00", "online"], ["pump-1", "2024-07-01 10:01:00", "online"],
+  ["pump-1", "2024-07-01 10:03:00", "degraded"], ["pump-1", "2024-07-01 10:02:00", "online"],
+  ["pump-1", "2024-07-01 10:04:00", "offline"], ["pump-1", "2024-07-01 10:05:00", "online"],
+  ["fan-9", "2024-07-01 10:00:00", "offline"], ["fan-9", "2024-07-01 10:01:00", "offline"],
+  ["gate-2", "2024-07-01 09:59:00", "degraded"],
+] }

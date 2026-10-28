@@ -1,0 +1,42 @@
+title = "Detect config drift"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-basics"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+A nightly job compares two snapshots of a feature-flag store and produces
+`config(key, old_value, new_value)`. NULL means the key did not exist in that snapshot.
+
+Write `solve(spark, config)` returning `key, change` for the keys that actually changed:
+
+- `"added"`: `old_value` is NULL and `new_value` is not
+- `"removed"`: `old_value` is not NULL and `new_value` is
+- `"modified"`: both present and different (case-sensitive)
+
+Keys whose value is unchanged, including keys that are NULL in both snapshots, are excluded.
+"""
+hints = [
+  "`old != new` is NULL (not true) when either side is NULL, so a plain filter loses adds and removes.",
+  "`F.col(\"old_value\").eqNullSafe(F.col(\"new_value\"))` treats NULL = NULL as true.",
+  "Filter with `~eqNullSafe(...)`, then label with `F.when(...isNull(), ...)`.",
+]
+starter = """
+from pyspark.sql import functions as F
+
+def solve(spark, config):
+    return config.select("key", "new_value")
+"""
+solution = """
+from pyspark.sql import functions as F
+
+def solve(spark, config):
+    o, n = F.col("old_value"), F.col("new_value")
+    change = F.when(o.isNull(), "added").when(n.isNull(), "removed").otherwise("modified")
+    return config.filter(~o.eqNullSafe(n)).select("key", change.alias("change"))
+"""
+
+[[tests]]
+tables.config = { columns = "key STRING, old_value STRING, new_value STRING", rows = '''[
+  ["checkout.v2", "off", "on"], ["search.beta", null, "on"], ["legacy.ui", "on", null],
+  ["dark.mode", "on", "on"], ["ghost.flag", null, null], ["region", "us", "US"]]''' }

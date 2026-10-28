@@ -1,0 +1,38 @@
+title = "Departments with Below-Average Salary"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-subqueries"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `emp(emp_id, emp_name, department_id, salary, manager_id, emp_age)` lists employees.
+
+Return the departments whose average salary is **lower than the average salary of all employees in every other
+department combined** (all employees not in that department). Output `department_id, average_salary`. Any row order.
+"""
+starter = "SELECT department_id, AVG(salary) AS average_salary\nFROM emp\nGROUP BY department_id\n"
+solution = """
+SELECT department_id, AVG(salary) AS average_salary
+FROM emp e1
+GROUP BY department_id
+HAVING AVG(salary) < (SELECT AVG(salary) FROM emp e2 WHERE e2.department_id <> e1.department_id)
+"""
+hints = [
+  "Compare each department's average with the average of the employees outside it, not with the company average.",
+  "A correlated subquery in HAVING can compute the 'other departments' average.",
+  "Note the average of other departments is employee-weighted, not the average of their department averages.",
+]
+
+[[tests]]
+tables.emp = { columns = "emp_id INT, emp_name STRING, department_id INT, salary INT, manager_id INT, emp_age INT", rows = [
+  [1, "Ankit", 100, 10000, 4, 39], [2, "Mohit", 100, 15000, 5, 48], [3, "Vikas", 100, 10000, 4, 37],
+  [4, "Rohit", 100, 5000, 2, 16], [5, "Mudit", 200, 12000, 6, 55], [6, "Agam", 200, 12000, 2, 14],
+  [7, "Sanjay", 200, 9000, 2, 13], [8, "Ashish", 200, 5000, 2, 12], [9, "Mukesh", 300, 6000, 6, 51],
+  [10, "Rakesh", 300, 7000, 6, 50],
+] }
+
+[[tests]]  # weighted vs unweighted: dept 2 is below the mean of other dept averages but not below the other employees
+tables.emp = { columns = "emp_id INT, emp_name STRING, department_id INT, salary INT, manager_id INT, emp_age INT", rows = [
+  [1, "a", 1, 100, 0, 30], [2, "b", 2, 50, 0, 30], [3, "c", 3, 30, 0, 30], [4, "d", 3, 30, 0, 30],
+  [5, "e", 3, 30, 0, 30], [6, "f", 3, 30, 0, 30],
+] }

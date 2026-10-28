@@ -1,0 +1,59 @@
+title = "Highest Average Rated Movie by Genre"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-ranking"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+A movie site stores `movies(id, genre, title)` and `reviews(movie_id, rating)` (`rating` is `DECIMAL(3,1)`).
+
+For each genre find the movie with the highest average rating. If two movies in a genre tie on average rating,
+pick the one whose `title` comes first alphabetically. Movies with no reviews are ignored.
+
+Return `genre, title, average_rating, rating`, where `average_rating` is the average rounded to the nearest whole
+number (halves round up) and `rating` is that many `*` characters (e.g. 4 becomes `****`). Any row order.
+"""
+starter = "SELECT m.genre, m.title, 0 AS average_rating, '' AS rating\nFROM movies m\n"
+solution = """
+WITH a AS (
+  SELECT m.genre, m.title, AVG(r.rating) AS avg_rating,
+         ROW_NUMBER() OVER (PARTITION BY m.genre ORDER BY AVG(r.rating) DESC, m.title) AS rn
+  FROM movies m
+  JOIN reviews r ON r.movie_id = m.id
+  GROUP BY m.id, m.genre, m.title
+)
+SELECT genre, title,
+       CAST(ROUND(avg_rating, 0) AS INT) AS average_rating,
+       repeat('*', CAST(ROUND(avg_rating, 0) AS INT)) AS rating
+FROM a
+WHERE rn = 1
+"""
+hints = [
+  "First compute AVG(rating) per movie, then pick the best one per genre.",
+  "ROW_NUMBER() OVER (PARTITION BY genre ORDER BY AVG(rating) DESC, title) handles the tie-break.",
+  "repeat('*', n) builds the star string; round the average and cast it to an integer first.",
+]
+
+[[tests]]
+tables.movies = { columns = "id INT, genre STRING, title STRING", rows = [
+  [1, "Action", "The Dark Knight"], [2, "Action", "Avengers: Infinity War"], [3, "Action", "Gladiator"],
+  [4, "Action", "Die Hard"], [5, "Action", "Mad Max: Fury Road"], [6, "Drama", "The Shawshank Redemption"],
+  [7, "Drama", "Forrest Gump"], [8, "Drama", "The Godfather"], [9, "Drama", "Schindler's List"],
+  [10, "Drama", "Fight Club"], [11, "Comedy", "The Hangover"], [12, "Comedy", "Superbad"],
+  [13, "Comedy", "Dumb and Dumber"], [14, "Comedy", "Bridesmaids"], [15, "Comedy", "Anchorman: The Legend of Ron Burgundy"],
+] }
+tables.reviews = { columns = "movie_id INT, rating DECIMAL(3,1)", rows = [
+  [1, 4.5], [1, 4.0], [1, 5.0], [2, 4.2], [2, 4.8], [2, 3.9], [3, 4.6], [3, 3.8], [3, 4.3],
+  [4, 4.1], [4, 3.7], [4, 4.4], [5, 3.9], [5, 4.5], [5, 4.2], [6, 4.8], [6, 4.7], [6, 4.9],
+  [7, 4.6], [7, 4.9], [7, 4.3], [8, 4.9], [8, 5.0], [8, 4.8], [9, 4.7], [9, 4.9], [9, 4.5],
+  [10, 4.6], [10, 4.3], [10, 4.7], [11, 3.9], [11, 4.0], [11, 3.5], [12, 3.7], [12, 3.8], [12, 4.2],
+  [13, 3.2], [13, 3.5], [13, 3.8], [14, 3.8], [14, 4.0], [14, 4.2], [15, 3.9], [15, 4.0], [15, 4.1],
+] }
+
+[[tests]]  # two movies with the same title in different genres, a tie, an unreviewed movie, 2.5 rounds to 3
+tables.movies = { columns = "id INT, genre STRING, title STRING", rows = [
+  [1, "Horror", "Twins"], [2, "Comedy", "Twins"], [3, "Horror", "Alien"], [4, "Horror", "Zombie"], [5, "Comedy", "Unseen"],
+] }
+tables.reviews = { columns = "movie_id INT, rating DECIMAL(3,1)", rows = [
+  [1, 2.0], [1, 3.0], [2, 1.0], [3, 2.5], [4, 2.5],
+] }

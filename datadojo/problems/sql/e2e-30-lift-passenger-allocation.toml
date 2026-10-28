@@ -1,0 +1,46 @@
+title = "Lift Passenger Allocation"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-running"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Tables `LIFT(ID, Capacity)` (capacity in kg) and `LIFT_PASSENGER(Name, Weight, Lift_id)`.
+
+Passengers board their lift lightest first (ties by `Name`). A passenger gets on only if the running total weight,
+including them, is at most the lift's `Capacity`; once someone does not fit, nobody after them boards.
+
+Return `ID, Passengers`, where `Passengers` lists the boarded names in boarding order joined by `', '`. Lifts where
+nobody boards are omitted. Any row order.
+"""
+starter = "SELECT ID, '' AS Passengers\nFROM LIFT\n"
+solution = """
+WITH c AS (
+  SELECT l.ID, l.Capacity, p.Name, p.Weight,
+         SUM(p.Weight) OVER (PARTITION BY l.ID ORDER BY p.Weight, p.Name ROWS UNBOUNDED PRECEDING) AS running
+  FROM LIFT l
+  JOIN LIFT_PASSENGER p ON p.Lift_id = l.ID
+)
+SELECT ID, STRING_AGG(Name, ', ' ORDER BY Weight, Name) AS Passengers
+FROM c
+WHERE running <= Capacity
+GROUP BY ID
+"""
+hints = [
+  "A running SUM(Weight) per lift, ordered by Weight, tells you the load after each passenger boards.",
+  "Use ROWS UNBOUNDED PRECEDING and Name as a tiebreak: the default RANGE frame gives tied weights the same running total.",
+  "Keep rows with running <= Capacity and STRING_AGG(Name, ', ' ORDER BY Weight, Name).",
+]
+
+[[tests]]
+tables.LIFT = { columns = "ID INT, Capacity INT", rows = [[1, 300], [2, 350]] }
+tables.LIFT_PASSENGER = { columns = "Name STRING, Weight INT, Lift_id INT", rows = [
+  ["Rahul", 85, 1], ["Adarsh", 73, 1], ["Riti", 95, 1], ["Dheeraj", 80, 1],
+  ["Vimal", 83, 2], ["Neha", 77, 2], ["Priti", 73, 2], ["Himanshi", 85, 2],
+] }
+
+[[tests]]  # tied weights filling the lift exactly; a lift nobody fits in; an empty lift
+tables.LIFT = { columns = "ID INT, Capacity INT", rows = [[1, 200], [2, 50], [3, 500]] }
+tables.LIFT_PASSENGER = { columns = "Name STRING, Weight INT, Lift_id INT", rows = [
+  ["Chen", 100, 1], ["Bina", 100, 1], ["Amit", 100, 1], ["Dev", 60, 2],
+] }

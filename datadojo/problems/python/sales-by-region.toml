@@ -1,0 +1,46 @@
+title = "Sales totals by region"
+lang = "python"
+difficulty = "easy"
+pattern = "py-records"
+lists = ["python-de"]
+function = "summarize"
+statement = '''
+`summarize(rows)` gets a list of order dicts with keys `region` and `amount`.
+
+Return one dict per region: `{"region": ..., "orders": ..., "total": ...}`.
+
+- `orders` counts every row for that region.
+- `total` sums the non-null amounts. A missing or `null` amount still counts as an order but adds nothing.
+- Rows whose `region` is missing or `null` are skipped entirely.
+- A region whose amounts are all null has `total` 0.
+
+Any order of output dicts.
+'''
+starter = "def summarize(rows):\n    pass\n"
+solution = '''
+def summarize(rows):
+    out = {}
+    for r in rows:
+        region = r.get("region")
+        if region is None:
+            continue
+        s = out.setdefault(region, {"region": region, "orders": 0, "total": 0})
+        s["orders"] += 1
+        if r.get("amount") is not None:
+            s["total"] += r["amount"]
+    return list(out.values())
+'''
+hints = [
+    "One pass, a dict keyed by region holding the running summary.",
+    "`dict.setdefault(key, initial)` creates the summary the first time a region appears.",
+    "Use `r.get(...)` so missing keys behave like null.",
+]
+
+[[tests]]
+args = '''[[{"region": "west", "amount": 10.5}, {"region": "east", "amount": 4},
+            {"region": "west", "amount": 0.25}, {"region": "east", "amount": 6}]]'''
+[[tests]]
+args = '''[[{"region": "west", "amount": null}, {"region": null, "amount": 99},
+            {"amount": 5}, {"region": "north"}, {"region": "west", "amount": 3}]]'''
+[[tests]]
+args = [[]]

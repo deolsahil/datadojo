@@ -1,0 +1,35 @@
+title = "K closest stores"
+lang = "python"
+difficulty = "medium"
+pattern = "py-heaps"
+function = "closest"
+ordered = true
+source_url = "https://leetcode.com/problems/k-closest-points-to-origin/"
+statement = '''
+`closest(stores, origin, k)` gets store records `{"id": str, "x": number, "y": number}`, a point `[x, y]` and `k`.
+
+Return the ids of the `k` stores nearest to `origin` by straight-line (Euclidean) distance, nearest first. Ties go to the smaller id. Stores whose `x` or `y` is missing or `null` are skipped. Fewer than `k` usable stores → return them all.
+'''
+starter = "def closest(stores, origin, k):\n    pass\n"
+solution = '''
+import heapq
+
+def closest(stores, origin, k):
+    ox, oy = origin
+    pts = [((s["x"] - ox) ** 2 + (s["y"] - oy) ** 2, s["id"])
+           for s in stores if s.get("x") is not None and s.get("y") is not None]
+    return [i for _, i in heapq.nsmallest(k, pts)]
+'''
+hints = [
+    "Squared distance orders the same as distance and avoids floating `sqrt`.",
+    "`heapq.nsmallest(k, ...)` on `(dist2, id)` tuples handles ties for free.",
+]
+
+[[tests]]
+args = '''[[{"id": "s1", "x": 3, "y": 4}, {"id": "s2", "x": 1, "y": 1}, {"id": "s3", "x": -2, "y": 0}, {"id": "s4", "x": 10, "y": 0}],
+           [0, 0], 2]'''
+[[tests]]  # ties and nulls
+args = '''[[{"id": "b", "x": 1, "y": 0}, {"id": "a", "x": 0, "y": 1}, {"id": "c", "x": null, "y": 0}, {"id": "d", "y": 0}, {"id": "e", "x": 5, "y": 5}],
+           [0, 0], 2]'''
+[[tests]]
+args = '''[[{"id": "a", "x": 2.5, "y": 2.5}], [2, 2], 3]'''

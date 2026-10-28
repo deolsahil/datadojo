@@ -1,0 +1,46 @@
+title = "Minimum throughput to finish on time"
+lang = "python"
+difficulty = "medium"
+pattern = "py-binary-search"
+lists = ["python-de"]
+function = "min_rate"
+source_url = "https://leetcode.com/problems/koko-eating-bananas/"
+statement = """
+A worker must process a backlog of partitions; `partitions[i]` is the number of rows in
+partition `i` (positive ints). Each hour the worker picks one partition and processes up to `k`
+rows of it; if fewer than `k` rows remain, the rest of that hour is idle (it never moves on to
+another partition mid-hour).
+
+`min_rate(partitions, hours)` returns the smallest integer `k >= 1` that finishes everything
+within `hours` hours. You can assume `hours >= len(partitions)`.
+
+- `min_rate([3, 6, 7, 11], 8)` → `4` (hours used: 1 + 2 + 2 + 3 = 8)
+"""
+hints = [
+    "At speed `k` the time needed is `sum(ceil(p / k))`, and it only decreases as `k` grows.",
+    "So binary search over the answer `k` in `[1, max(partitions)]`, not over the list.",
+    "Find the smallest `k` whose time is `<= hours`. `-(-p // k)` is integer ceiling division.",
+]
+starter = "def min_rate(partitions, hours):\n    pass\n"
+solution = """
+def min_rate(partitions, hours):
+    lo, hi = 1, max(partitions)
+    while lo < hi:
+        k = (lo + hi) // 2
+        if sum(-(-p // k) for p in partitions) <= hours:
+            hi = k
+        else:
+            lo = k + 1
+    return lo
+"""
+
+[[tests]]
+args = [[3, 6, 7, 11], 8]
+[[tests]]
+args = [[30, 11, 23, 4, 20], 5]
+[[tests]]
+args = [[30, 11, 23, 4, 20], 6]
+[[tests]]
+args = [[5, 5, 5], 10]
+[[tests]]  # a linear scan over k is far too slow here
+args = [[1000000000], 2]

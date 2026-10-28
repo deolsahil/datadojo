@@ -1,0 +1,24 @@
+[project]
+name = "datadojo"
+version = "0.1.0"
+description = "Local SQL, Python and PySpark practice with friendly AI coaches."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+dependencies = [
+    "duckdb>=1.1",
+    "pyspark>=3.5,<3.6",
+    "sqlglot>=25",
+    "psycopg[binary]>=3.2",
+    "anthropic>=0.70",
+]
+
+[project.scripts]
+datadojo = "datadojo.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["datadojo"]

@@ -1,0 +1,159 @@
+title = "Design a Migration from On-Prem Hadoop to a Cloud Lakehouse"
+section = "ds-cases-pipelines"
+order = 6
+kind = "case_study"
+difficulty = "hard"
+companies = ["Netflix", "Walmart", "LinkedIn"]
+big_idea = "Migrate by lineage-ordered waves with both systems running in parallel, prove equality with automated data diffs, and cut consumers over only when the numbers match, keeping a rollback path until the old system is retired."
+summary = """A company runs a large on-prem Hadoop stack: HDFS, Hive tables, Spark and MapReduce jobs scheduled by Oozie, and BI tools connected to Hive or Impala. It wants to move to a cloud lakehouse (S3 or GCS with Iceberg/Delta, Spark/Databricks or EMR, a warehouse like Snowflake/BigQuery, Airflow, dbt).
+
+This is less about one pipeline and more about **program design**: inventory and lineage, moving petabytes, running both systems in **parallel**, **validating** that outputs match, and a **cutover** plan per consumer with rollback. Interviewers listen for how you de-risk it: waves ordered by dependencies, automated diffing, a dual-run period, and a clear decommission milestone so you do not pay for two platforms forever."""
+diagram = """flowchart LR
+  hdfs[("HDFS and Hive")] --> copy["Bulk copy: DistCp or transfer appliance"]
+  copy --> s3[("S3 landing")]
+  s3 --> conv[Convert to Iceberg tables]
+  conv --> lake[("Cloud lakehouse")]
+  src[Upstream sources] --> old[Legacy Oozie jobs]
+  src --> new[Rewritten Airflow and dbt jobs]
+  old --> hdfs
+  new --> lake
+  hdfs --> diff[Data diff and validation]
+  lake --> diff
+  diff --> cut[Consumer cutover]
+  cut --> bi[BI and ML consumers]"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- How much data (logical vs. replicated on HDFS), how many tables and jobs, and how much of it is actually used?
+- What is the deadline driver: hardware end-of-life, data center lease, licensing renewal?
+- Network bandwidth from the data center to the cloud? Is a physical transfer appliance an option?
+- Which jobs are SQL (Hive) vs. Spark vs. MapReduce/Pig, and how much custom code is there?
+- Who are the consumers (dashboards, ML training, external feeds) and what are their SLAs?
+- Security: Kerberos/Ranger policies today; what is the target IAM and catalog model?
+- Lift-and-shift first, or modernize (re-model, dbt) during the move?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Move required historical data and all active pipelines to the cloud platform.
+- Recreate access policies, schedules, and SLAs.
+- Every migrated table validated against the legacy output before consumers switch.
+- Consumers cut over in waves with rollback possible.
+
+**Non-functional**
+- No missed SLAs for tier-1 reports during the migration.
+- Total timeline ~12 months; legacy cluster decommissioned at the end.
+- Data correctness: row counts equal and aggregate/column-level diffs within agreed tolerance (exact for financial tables).
+- Cost visibility: a budget for running both platforms during dual-run, with a cap on its duration."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- HDFS: **6 PB raw** disk at replication factor 3 = **2 PB logical** data.
+- Inventory: 3,000 Hive tables, 1,500 daily jobs; access logs typically show a large fraction untouched for a year. Suppose 40% is cold or dead: move ~1.2 PB, archive or drop the rest after sign-off.
+- Network: a dedicated 10 Gbps link = 1.25 GB/s. 1.2 PB / 1.25 GB/s = 1.2 x 10^15 / 1.25 x 10^9 = **960,000 s, about 11 days** at full saturation. Real links sustain maybe 50-70% and are shared, so plan **3-4 weeks** of bulk copy, or use a transfer appliance (Snowball-type) for the first bulk.
+- Daily increment: ~5 TB/day of new data: 5 x 10^12 / 1.25 x 10^9 = **4,000 s, about 1.1 hours/day** of link time during dual-run.
+- Dual-run compute: running both platforms for 3 months roughly doubles compute spend for that period, which is why waves should be short."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Inventory and lineage**: parse Hive metastore, Oozie workflows, job code and HDFS audit logs to build a dependency graph of tables and jobs, with usage (last read, readers). Tag each asset: migrate, archive, or retire.
+2. **Target platform**: S3 + Iceberg tables in a Glue/Unity/Polaris catalog; Spark on EMR/Databricks for heavy jobs; Snowflake or Trino for BI SQL; Airflow for orchestration; IAM/Lake Formation or Unity Catalog policies translated from Ranger.
+3. **Waves by lineage**: migrate from sources down: raw ingestion first, then the tables that depend only on migrated tables, and so on. Each wave is a connected subgraph small enough to finish in weeks.
+4. **Historical data**: bulk copy with DistCp (or an appliance), then convert. Iceberg can often adopt existing Parquet/ORC files in place via migrate or add-files procedures without rewriting data; text/sequence files need a rewrite.
+5. **Pipelines**: port jobs (HiveQL to Spark SQL/dbt with mostly mechanical translation; MapReduce/Pig rewritten). New jobs read the same upstream sources and run in parallel with legacy jobs.
+6. **Validation**: automated data diff per table and partition each day of the dual run.
+7. **Cutover**: consumers switch per wave (BI connection, ML reading paths) behind a config flag or view layer; legacy keeps running read-only for a rollback window; then legacy jobs stop and data is archived."""
+
+[[blocks]]
+heading = "Data model"
+body = """**`migration_inventory`** (grain: one row per legacy asset): asset_id, asset_type (table, job, dashboard), owner, last_read_at, size_bytes, wave, status (planned, copied, dual-run, validated, cut-over, retired), decision (migrate, archive, drop).
+
+**`lineage_edges`** (grain: one row per dependency): upstream_asset, downstream_asset, via_job.
+
+**`validation_results`** (grain: table x partition x check x run_date): legacy_value, new_value, diff, tolerance, passed. Checks include row count, per-column null counts, min/max, sums of numeric columns, distinct counts, and hash-of-row aggregates.
+
+**Target tables** keep their logical names and grain; physical layout changes (Iceberg hidden partitioning on dt, sort order) are documented per table."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Validation at petabyte scale.** Comparing row by row across systems is too expensive for every table. Use a ladder: (1) row counts per partition, (2) column profiles (null counts, min/max, sums, approximate distinct), (3) for important tables, an order-independent fingerprint such as the sum of a hash of each normalized row, computed on both sides. Only on a mismatch drill into row-level diffs (anti-joins on keys) for the failing partition. Normalize before hashing: Hive and Spark differ on timestamp time zones, decimal scale, string trimming, NULL vs. empty string, and float formatting, which cause most false diffs.
+
+**Semantic drift between engines.** Ported SQL can run without error but give different answers: integer division, implicit casts, case sensitivity, `NULL` ordering, timestamp parsing, and Hive-specific UDFs. Dual-run validation is what catches these; mechanical translation without diffing does not.
+
+**Cutover and rollback.** Put a view or catalog alias between consumers and physical tables so switching a dashboard is a pointer change, not a rewrite. Cut over lowest-risk consumers first, keep legacy jobs running for one or two full business cycles (including a month-end), and define rollback criteria in advance. Upstream writes are the hardest part: anything that writes back into Hive must be moved in the same wave as its readers.
+
+**Keeping history in sync.** After the bulk copy, ongoing changes (late partitions, backfills on legacy) must be replicated incrementally; use HDFS snapshots/diffs or partition-level manifests with checksums to copy only what changed."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **Lift-and-shift vs. modernize**: lift-and-shift (same jobs on EMR) is fastest and lowest risk but carries old debt into the cloud; full re-modeling during the move multiplies risk. A common middle path: lift-and-shift with mechanical translation, modernize tier-1 domains afterwards.
+- **Big bang vs. waves**: big bang avoids long dual-run costs but makes rollback nearly impossible; waves cost more temporarily but limit blast radius.
+- **Network vs. appliance transfer**: under ~1 PB with a fast link, network copy is simpler; above that, or with slow links, appliances save weeks.
+- **Convert in place vs. rewrite data**: adopting existing Parquet/ORC into Iceberg is quick; rewriting lets you fix partitioning and small files but costs compute.
+- **Keep everything vs. prune**: migrating dead tables is wasted effort; pruning requires owner sign-off and an archive."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Validation failures** from engine semantics: track mismatch rate per wave; a rising rate signals a translation pattern bug to fix globally.
+- **Missed dependencies** (a hidden script reading HDFS directly): HDFS audit logs during dual-run reveal readers not in the inventory.
+- **SLA misses** on the new platform: run new jobs on production schedules during dual-run and compare finish times before cutover.
+- **Permission gaps**: users losing or gaining access after policy translation; automated tests per role and an access review.
+- **Cost overrun** from extended dual-run: weekly dashboard of both platforms' cost; wave deadlines enforced.
+- **Copy integrity**: checksum comparisons (DistCp supports CRC checks) and file-count manifests per partition."""
+
+key_points = [
+  "Start with an inventory and lineage graph from metastore, job code and audit logs; prune unused data before moving it.",
+  "Do the bandwidth math early: 1 PB over 10 Gbps is roughly 9-10 days at full saturation, in practice weeks.",
+  "Migrate in lineage-ordered waves and run legacy and new pipelines in parallel.",
+  "Validate with a ladder: counts, column profiles, order-independent row fingerprints, then row diffs only on mismatch.",
+  "Normalize types, time zones and NULL handling before comparing, or false diffs swamp the signal.",
+  "Cut consumers over via a view or catalog alias with predefined rollback criteria, then actually decommission legacy.",
+]
+common_mistakes = [
+  "Migrating everything, including tables nobody has read in years.",
+  "Trusting translated SQL because it runs, without diffing outputs.",
+  "Cutting over before a full business cycle such as month-end has been validated.",
+  "Forgetting jobs that write back into legacy tables, which breaks lineage-ordered waves.",
+  "Letting dual-run continue indefinitely, paying for two platforms.",
+]
+interview_questions = [
+  "How do you compare a 50 TB table between Hive and Iceberg without moving it back and forth?",
+  "A dashboard shows a 0.3% difference after migration. How do you find the cause?",
+  "How would you translate Ranger policies into the cloud permission model and verify them?",
+  "What is your rollback plan if the new platform misses a tier-1 SLA a week after cutover?",
+  "How would you migrate a table that is still receiving late partitions and backfills on the legacy side?",
+]
+
+[[quiz]]
+q = "HDFS reports 6 PB of disk used with replication factor 3. How much logical data is there to migrate (before pruning)?"
+options = ["18 PB", "6 PB", "2 PB", "0.67 PB"]
+answer = 2
+why = "Replication factor 3 stores each block three times, so 6 PB raw is 2 PB of logical data. Object storage handles durability itself, so only the logical copy moves."
+
+[[quiz]]
+q = "Roughly how long does copying 1.2 PB over a fully saturated 10 Gbps link take?"
+options = ["~1 day", "~11 days", "~4 months", "~1 year"]
+answer = 1
+why = "10 Gbps = 1.25 GB/s; 1.2 x 10^15 / 1.25 x 10^9 = 960,000 s, about 11 days. Real-world efficiency makes it weeks."
+
+[[quiz]]
+q = "Which is the most efficient first-pass check that two copies of a large table are identical regardless of row order?"
+options = [
+  "Download both and compare files byte by byte",
+  "Compare row counts and an order-independent aggregate of normalized row hashes per partition",
+  "Compare the file sizes",
+  "Sort both tables and diff them",
+]
+answer = 1
+why = "Counts plus a sum (or XOR) of row hashes per partition are computed in one scan on each side, need no data movement between systems, and are insensitive to file layout and order. Byte or file-size comparisons fail across formats."
+
+[[quiz]]
+q = "Why put a view or catalog alias between consumers and physical tables before cutover?"
+options = [
+  "Views are faster than tables",
+  "Switching a consumer, and rolling back, becomes a pointer change instead of rewriting queries",
+  "Iceberg requires views",
+  "It removes the need for validation",
+]
+answer = 1
+why = "An indirection layer lets you flip consumers between legacy and new tables quickly and reversibly, which is the core of a safe wave-based cutover."

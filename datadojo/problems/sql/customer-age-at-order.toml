@@ -1,0 +1,34 @@
+title = "Customer age at time of order"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-strings-dates"
+statement = """
+Compliance needs each customer's age, in **completed years**, on the day they placed each order (for age-restricted products).
+
+Tables `customers(id, birth_date)` and `orders(id, customer_id, order_date)`, all dates are DATEs.
+
+Return `order_id` and `age_at_order`. A customer turns a year older **on** their birthday: born 2000-06-15, they are 23 on 2024-06-14 and 24 on 2024-06-15. Nobody in the data is born on Feb 29. Every order has a matching customer.
+"""
+starter = "SELECT o.id AS order_id, EXTRACT(YEAR FROM o.order_date) - EXTRACT(YEAR FROM c.birth_date) AS age_at_order\nFROM orders o\nJOIN customers c ON c.id = o.customer_id\n"
+solution = """
+SELECT o.id AS order_id,
+       EXTRACT(YEAR FROM o.order_date) - EXTRACT(YEAR FROM c.birth_date)
+         - CASE WHEN EXTRACT(MONTH FROM o.order_date) * 100 + EXTRACT(DAY FROM o.order_date)
+                   < EXTRACT(MONTH FROM c.birth_date) * 100 + EXTRACT(DAY FROM c.birth_date)
+                THEN 1 ELSE 0 END AS age_at_order
+FROM orders o
+JOIN customers c ON c.id = o.customer_id
+"""
+hints = [
+  "Subtracting years is a good start, but it's one too many if the birthday hasn't happened yet that year.",
+  "Compare (month, day) of the order with (month, day) of the birth date. A trick: month * 100 + day makes it one comparable number.",
+  "Dividing a day difference by 365 or 365.25 is off by one near birthdays; avoid it.",
+]
+
+[[tests]]
+tables.customers = { columns = "id INT, birth_date DATE", rows = [[1, "2000-06-15"], [2, "1990-01-01"]] }
+tables.orders = { columns = "id INT, customer_id INT, order_date DATE", rows = [[10, 1, "2024-06-14"], [11, 1, "2024-06-15"], [12, 1, "2024-12-31"], [13, 2, "2024-01-01"], [14, 2, "2023-12-31"]] }
+
+[[tests]]  # day-of-month matters within the birth month; leap-year arithmetic traps
+tables.customers = { columns = "id INT, birth_date DATE", rows = [[1, "2006-03-20"], [2, "1980-12-31"]] }
+tables.orders = { columns = "id INT, customer_id INT, order_date DATE", rows = [[1, 1, "2024-03-19"], [2, 1, "2024-03-21"], [3, 1, "2024-02-28"], [4, 2, "2024-12-30"], [5, 2, "2024-12-31"]] }

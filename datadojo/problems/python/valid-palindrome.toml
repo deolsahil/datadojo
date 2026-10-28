@@ -1,0 +1,36 @@
+title = "Valid palindrome (letters and digits only)"
+lang = "python"
+difficulty = "easy"
+pattern = "py-strings"
+function = "is_palindrome"
+source_url = "https://leetcode.com/problems/valid-palindrome/"
+statement = """
+`is_palindrome(s)` returns `True` if `s` reads the same forwards and backwards once you keep
+**only letters and digits** and ignore case. Everything else (spaces, punctuation) is dropped
+before comparing. An empty string, or one with nothing left after filtering, is a palindrome.
+
+- `"A man, a plan, a canal: Panama"` → `True`
+- `"race a car"` → `False`
+"""
+hints = [
+    "Build the filtered, lowercased sequence first, then compare it with its reverse.",
+    "`str.isalnum()` keeps digits too; dropping digits gives the wrong answer for `\"0P\"`.",
+    "For O(1) extra space, walk two pointers inward and skip non-alphanumeric characters.",
+]
+starter = "def is_palindrome(s):\n    pass\n"
+solution = """
+def is_palindrome(s):
+    t = [c.lower() for c in s if c.isalnum()]
+    return t == t[::-1]
+"""
+
+[[tests]]
+args = ["A man, a plan, a canal: Panama"]
+[[tests]]
+args = ["race a car"]
+[[tests]]
+args = [""]
+[[tests]]
+args = [".,  !"]
+[[tests]]  # digits count: filtering to letters only would wrongly say True
+args = ["0P"]

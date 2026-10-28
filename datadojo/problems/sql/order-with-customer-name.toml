@@ -1,0 +1,31 @@
+title = "Orders with customer names"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-joins"
+lists = ["sql-essentials"]
+statement = """
+Customer service wants order lines labelled with the buyer's name.
+
+Tables `customers(id, name)` and `orders(id, customer_id, amount)`.
+
+Return `order_id`, `customer_name`, `amount` for every order whose `customer_id` matches a customer. Orders pointing at a customer that does not exist (deleted accounts) are left out. Customers without orders do not appear.
+"""
+starter = "SELECT o.id AS order_id, o.amount\nFROM orders o\n"
+solution = """
+SELECT o.id AS order_id, c.name AS customer_name, o.amount
+FROM orders o
+JOIN customers c ON c.id = o.customer_id
+"""
+hints = [
+  "You need columns from two tables, matched on a key.",
+  "Only rows that match on both sides are wanted: that's an INNER JOIN.",
+  "JOIN customers c ON c.id = o.customer_id",
+]
+
+[[tests]]
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Ann"], [2, "Bo"], [3, "Cy"]] }
+tables.orders = { columns = "id INT, customer_id INT, amount INT", rows = [[10, 1, 50], [11, 1, 20], [12, 2, 75], [13, 9, 30]] }
+
+[[tests]]  # no orders at all
+tables.customers = { columns = "id INT, name STRING", rows = [[1, "Ann"]] }
+tables.orders = { columns = "id INT, customer_id INT, amount INT", rows = [] }

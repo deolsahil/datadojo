@@ -1,0 +1,33 @@
+title = "Sort tickets by business priority"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-basics"
+ordered = true
+statement = """
+The support queue must be worked in priority order, but priorities are stored as text, so alphabetical sorting is wrong.
+
+Table `tickets(id, priority, created_at)` where `priority` is one of `urgent`, `high`, `normal`, `low` and `created_at` is a TIMESTAMP.
+
+Return `id` and `priority` for every ticket, ordered by:
+
+1. priority in the order `urgent`, `high`, `normal`, `low`
+2. then oldest `created_at` first
+3. then `id` ascending
+"""
+starter = "SELECT id, priority\nFROM tickets\nORDER BY priority\n"
+solution = """
+SELECT id, priority FROM tickets
+ORDER BY CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
+         created_at, id
+"""
+hints = [
+  "Alphabetically, `high` < `low` < `normal` < `urgent`, which is not what the business wants.",
+  "You can ORDER BY an expression, not just a column.",
+  "Map each priority to a number with CASE inside ORDER BY, then add created_at and id.",
+]
+
+[[tests]]
+tables.tickets = { columns = "id INT, priority STRING, created_at TIMESTAMP", rows = [[1, "low", "2024-05-01 09:00:00"], [2, "urgent", "2024-05-02 10:00:00"], [3, "normal", "2024-05-01 08:00:00"], [4, "high", "2024-05-03 12:00:00"], [5, "urgent", "2024-05-01 07:30:00"]] }
+
+[[tests]]  # same priority and same timestamp -> id decides
+tables.tickets = { columns = "id INT, priority STRING, created_at TIMESTAMP", rows = [[8, "high", "2024-01-01 00:00:00"], [3, "high", "2024-01-01 00:00:00"], [5, "low", "2023-12-31 23:00:00"], [6, "normal", "2024-01-02 00:00:00"]] }

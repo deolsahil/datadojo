@@ -1,0 +1,43 @@
+title = "Compare version strings"
+lang = "python"
+difficulty = "medium"
+pattern = "py-strings"
+lists = ["python-de"]
+function = "compare"
+source_url = "https://leetcode.com/problems/compare-version-numbers/"
+statement = """
+`compare(v1, v2)` compares two dot-separated version strings such as `"1.10.2"`.
+Each part is a non-negative integer and may have leading zeros (`"01"` equals `"1"`).
+A missing part counts as `0`, so `"1.0"` equals `"1.0.0"`.
+
+Compare part by part from the left and return `-1` if `v1 < v2`, `1` if `v1 > v2`, else `0`.
+
+- `compare("1.10", "1.9")` → `1` (10 > 9, even though the string `"1.10" < "1.9"`)
+"""
+hints = [
+    "Split on `.` and convert each part with `int()`, which also handles leading zeros.",
+    "Pad the shorter list with zeros (or use `itertools.zip_longest(..., fillvalue=0)`).",
+]
+starter = "def compare(v1, v2):\n    pass\n"
+solution = """
+from itertools import zip_longest
+
+def compare(v1, v2):
+    a = [int(x) for x in v1.split(".")]
+    b = [int(x) for x in v2.split(".")]
+    for x, y in zip_longest(a, b, fillvalue=0):
+        if x != y:
+            return -1 if x < y else 1
+    return 0
+"""
+
+[[tests]]
+args = ["1.01", "1.001"]
+[[tests]]
+args = ["1.0", "1.0.0"]
+[[tests]]
+args = ["0.1", "1.1"]
+[[tests]]  # string comparison gets this wrong
+args = ["1.10", "1.9"]
+[[tests]]
+args = ["2", "1.99.0"]

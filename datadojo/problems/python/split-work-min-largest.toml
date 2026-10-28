@@ -1,0 +1,53 @@
+title = "Split ordered jobs across k workers"
+lang = "python"
+difficulty = "hard"
+pattern = "py-binary-search"
+function = "split_min_largest"
+source_url = "https://leetcode.com/problems/split-array-largest-sum/"
+statement = """
+`split_min_largest(jobs, k)` gets job durations (non-negative ints) that must stay in order and
+`k` workers, `1 <= k <= len(jobs)`. Cut `jobs` into exactly `k` non-empty contiguous chunks,
+one per worker. Return the smallest possible value of the **largest chunk sum**.
+
+- `split_min_largest([7, 2, 5, 10, 8], 2)` → `18` (`[7, 2, 5]` and `[10, 8]`)
+"""
+hints = [
+    "Flip the question: given a cap `c`, can the jobs be cut into at most `k` chunks with every sum `<= c`?",
+    "That check is greedy: keep adding jobs to the current chunk until the next would exceed `c`.",
+    "Feasibility is monotonic in `c`, so binary search `c` between `max(jobs)` and `sum(jobs)`. Using fewer than `k` chunks is fine because chunks can always be split further.",
+]
+starter = "def split_min_largest(jobs, k):\n    pass\n"
+solution = """
+def split_min_largest(jobs, k):
+    def chunks(cap):
+        n, cur = 1, 0
+        for j in jobs:
+            if cur + j > cap:
+                n, cur = n + 1, 0
+            cur += j
+        return n
+
+    lo, hi = max(jobs), sum(jobs)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if chunks(mid) <= k:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+"""
+
+[[tests]]
+args = [[7, 2, 5, 10, 8], 2]
+[[tests]]
+args = [[1, 2, 3, 4, 5], 2]
+[[tests]]
+args = [[1, 4, 4], 3]
+[[tests]]
+args = [[2, 3, 1, 2, 4, 3], 5]
+[[tests]]
+args = [[5], 1]
+[[tests]]  # cutting near the average chunk size is not optimal
+args = [[7, 7, 6, 3, 1], 4]
+[[tests]]
+args = [[0, 0, 4, 0], 2]

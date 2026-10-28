@@ -1,0 +1,37 @@
+title = "Each customer's first purchase"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-window-ranking"
+lists = ["sql-essentials"]
+statement = """
+Table `orders(order_id, customer_id, ordered_at, product)`.
+
+Return `customer_id, product` for each customer's **first** order: the one with the earliest `ordered_at`.
+If a customer placed several orders at the same earliest timestamp, take the one with the **smallest**
+`order_id`. Exactly one row per customer. Any row order.
+"""
+starter = "SELECT customer_id, MIN(product) AS product\nFROM orders\nGROUP BY customer_id\n"
+solution = """
+SELECT customer_id, product FROM (
+  SELECT customer_id, product,
+         ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY ordered_at, order_id) AS rn
+  FROM orders
+) t WHERE rn = 1
+"""
+hints = [
+  "You want exactly one row per customer, even with ties, so pick the ranking function that never ties.",
+  "ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY ordered_at, order_id), then keep rn = 1.",
+]
+
+[[tests]]
+tables.orders = { columns = "order_id INT, customer_id INT, ordered_at TIMESTAMP, product STRING", rows = [
+  [1, 10, "2024-03-02 09:00:00", "mug"], [2, 10, "2024-03-01 12:00:00", "tea"],
+  [3, 11, "2024-03-05 08:00:00", "pen"],
+] }
+
+[[tests]]  # same timestamp: smallest order_id wins (not alphabetical product)
+tables.orders = { columns = "order_id INT, customer_id INT, ordered_at TIMESTAMP, product STRING", rows = [
+  [9, 20, "2024-05-01 10:00:00", "apple"], [4, 20, "2024-05-01 10:00:00", "zucchini"],
+  [12, 20, "2024-04-30 23:59:59", "kiwi"], [13, 21, "2024-05-02 10:00:00", "banana"],
+  [5, 21, "2024-05-02 10:00:00", "cherry"],
+] }

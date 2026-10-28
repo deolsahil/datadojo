@@ -1,0 +1,39 @@
+title = "Team Qualification Based on Criteria"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-aggregation"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `Ameriprise_LLC(teamID, memberID, Criteria1, Criteria2)`; the criteria columns hold `'Y'` or `'N'`.
+
+A member qualifies when they meet both criteria **and** their team has at least two members who meet both criteria.
+Return every row as `teamID, memberID, Criteria1, Criteria2, qualify`, where `qualify` is `'Y'` or `'N'`. Any row order.
+"""
+starter = "SELECT *, 'N' AS qualify\nFROM Ameriprise_LLC\n"
+solution = """
+SELECT teamID, memberID, Criteria1, Criteria2,
+       CASE WHEN Criteria1 = 'Y' AND Criteria2 = 'Y'
+             AND COUNT(*) FILTER (WHERE Criteria1 = 'Y' AND Criteria2 = 'Y') OVER (PARTITION BY teamID) >= 2
+            THEN 'Y' ELSE 'N' END AS qualify
+FROM Ameriprise_LLC
+"""
+hints = [
+  "You need a team-level count on every member row without collapsing rows: a window aggregate.",
+  "COUNT(CASE WHEN Criteria1 = 'Y' AND Criteria2 = 'Y' THEN 1 END) OVER (PARTITION BY teamID).",
+  "A member is 'Y' only if they meet both criteria themselves and that team count is >= 2.",
+]
+
+[[tests]]
+tables.Ameriprise_LLC = { columns = "teamID STRING, memberID STRING, Criteria1 STRING, Criteria2 STRING", rows = [
+  ["T1", "T1_mbr1", "Y", "Y"], ["T1", "T1_mbr2", "Y", "Y"], ["T1", "T1_mbr3", "Y", "Y"], ["T1", "T1_mbr4", "Y", "Y"],
+  ["T1", "T1_mbr5", "Y", "N"], ["T2", "T2_mbr1", "Y", "Y"], ["T2", "T2_mbr2", "Y", "N"], ["T2", "T2_mbr3", "N", "Y"],
+  ["T2", "T2_mbr4", "N", "N"], ["T2", "T2_mbr5", "N", "N"], ["T3", "T3_mbr1", "Y", "Y"], ["T3", "T3_mbr2", "Y", "Y"],
+  ["T3", "T3_mbr3", "N", "Y"], ["T3", "T3_mbr4", "N", "Y"], ["T3", "T3_mbr5", "Y", "N"],
+] }
+
+[[tests]]  # exactly two qualifiers; a team with one qualifier and others meeting one criterion each
+tables.Ameriprise_LLC = { columns = "teamID STRING, memberID STRING, Criteria1 STRING, Criteria2 STRING", rows = [
+  ["A", "A1", "Y", "Y"], ["A", "A2", "Y", "Y"], ["A", "A3", "N", "N"],
+  ["B", "B1", "Y", "Y"], ["B", "B2", "Y", "N"], ["B", "B3", "N", "Y"],
+] }

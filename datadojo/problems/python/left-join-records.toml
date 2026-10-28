@@ -1,0 +1,56 @@
+title = "Left join two record lists"
+lang = "python"
+difficulty = "medium"
+pattern = "py-records"
+lists = ["python-de"]
+function = "left_join"
+ordered = true
+statement = '''
+`left_join(left, right, key)` joins two lists of dicts on the field named `key`, like SQL `LEFT JOIN`.
+
+- Each left row is combined with **every** right row whose `key` value is equal. A right key can repeat, producing several output rows.
+- Every output row contains all fields of the left row plus every field that appears in **any** right row. Right fields absent from a matched right row (or all right fields, for an unmatched left row) are `null`. The `key` field itself is never added from the right side, so a left row missing `key` stays without it.
+- On a name collision the left row's value wins.
+- A `null` or missing key never matches anything (also like SQL), but the left row is still kept.
+
+Output order: left rows in input order; matches for one left row in right-input order.
+'''
+starter = "def left_join(left, right, key):\n    pass\n"
+solution = '''
+def left_join(left, right, key):
+    cols, index = [], {}
+    for r in right:
+        for c in r:
+            if c != key and c not in cols:
+                cols.append(c)
+        if r.get(key) is not None:
+            index.setdefault(r[key], []).append(r)
+    out = []
+    for l in left:
+        k = l.get(key)
+        matches = index.get(k, []) if k is not None else []
+        for r in matches or [None]:
+            row = {c: None for c in cols}
+            if r:
+                row.update(r)
+            row.update(l)
+            out.append(row)
+    return out
+'''
+hints = [
+    "Index the right side first: a dict from key value to a **list** of right rows.",
+    "Collect the full set of right column names so unmatched rows get nulls for each.",
+    "Build each output row as nulls, then the right row, then the left row, so left wins collisions.",
+]
+
+[[tests]]
+args = '''[[{"order_id": 1, "cust": "a"}, {"order_id": 2, "cust": "b"}, {"order_id": 3, "cust": "z"}],
+           [{"cust": "a", "name": "Ann"}, {"cust": "b", "name": "Bob"}], "cust"]'''
+[[tests]]  # duplicate right keys fan out
+args = '''[[{"order_id": 1, "cust": "a"}],
+           [{"cust": "a", "addr": "home"}, {"cust": "a", "addr": "work", "zip": "94110"}], "cust"]'''
+[[tests]]  # null keys never match; collision keeps left value
+args = '''[[{"order_id": 1, "cust": null, "name": "left"}, {"order_id": 2}, {"order_id": 3, "cust": "a", "name": "left"}],
+           [{"cust": null, "name": "nullcust"}, {"cust": "a", "name": "right", "tier": "gold"}], "cust"]'''
+[[tests]]
+args = '''[[{"id": 1}], [], "id"]'''

@@ -1,0 +1,35 @@
+title = "Leaderboard top K"
+lang = "python"
+difficulty = "easy"
+pattern = "py-heaps"
+function = "top_k"
+ordered = true
+statement = '''
+`top_k(scores, k)` gets a list of `[player, score]` pairs. A player can appear many times; only their **best** score counts.
+
+Return the names of the `k` players with the highest best score, highest first. Ties go to the alphabetically smaller name. If there are fewer than `k` players, return them all.
+'''
+starter = "def top_k(scores, k):\n    pass\n"
+solution = '''
+import heapq
+
+def top_k(scores, k):
+    best = {}
+    for name, s in scores:
+        if name not in best or s > best[name]:
+            best[name] = s
+    return [n for n, _ in heapq.nsmallest(k, best.items(), key=lambda x: (-x[1], x[0]))]
+'''
+hints = [
+    "Reduce to one best score per player with a dict first.",
+    "`heapq.nsmallest(k, items, key=...)` with key `(-score, name)` gives the order you want.",
+]
+
+[[tests]]
+args = [[["ana", 50], ["bo", 70], ["ana", 90], ["cy", 70], ["di", 10]], 3]
+[[tests]]
+args = [[["zed", 5], ["amy", 5], ["max", 5]], 2]
+[[tests]]
+args = [[["solo", 1]], 5]
+[[tests]]
+args = [[], 3]

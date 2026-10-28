@@ -1,0 +1,32 @@
+title = "Sessionize click events"
+lang = "sql"
+difficulty = "hard"
+pattern = "sql-sessions-funnels"
+lists = ["sql-essentials"]
+statement = """
+Table `clicks(user_id, ts)`.
+
+A new session starts on a user's first click, and whenever more than **30 minutes** passed since
+that user's previous click. Return `user_id, sessions` (number of sessions per user).
+"""
+starter = "SELECT user_id, ts\nFROM clicks\n"
+solution = """
+SELECT user_id, SUM(new_session) AS sessions FROM (
+  SELECT user_id,
+    CASE WHEN LAG(ts) OVER (PARTITION BY user_id ORDER BY ts) IS NULL
+           OR ts - LAG(ts) OVER (PARTITION BY user_id ORDER BY ts) > INTERVAL 30 MINUTE
+         THEN 1 ELSE 0 END AS new_session
+  FROM clicks
+) GROUP BY user_id
+"""
+
+[[tests]]
+tables.clicks = { columns = "user_id INT, ts TIMESTAMP", rows = [
+  [1, "2024-01-01 10:00:00"], [1, "2024-01-01 10:20:00"], [1, "2024-01-01 11:00:00"],
+  [2, "2024-01-01 09:00:00"],
+] }
+
+[[tests]]  # exactly 30 minutes is the same session
+tables.clicks = { columns = "user_id INT, ts TIMESTAMP", rows = [
+  [1, "2024-01-01 10:00:00"], [1, "2024-01-01 10:30:00"], [1, "2024-01-01 11:00:01"],
+] }

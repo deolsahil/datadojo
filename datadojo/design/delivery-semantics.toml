@@ -1,0 +1,109 @@
+title = "Delivery Semantics: At-most, At-least, Exactly-once"
+section = "ds-reliability"
+order = 2
+kind = "lesson"
+big_idea = "Networks and processes fail, so real systems deliver at least once and achieve exactly-once effects by combining replayable inputs, checkpointed progress, and idempotent or transactional outputs."
+summary = """**At-most-once:** commit progress before processing; a crash loses messages but never duplicates them. **At-least-once:** process, then commit progress; a crash causes reprocessing, so duplicates are possible but nothing is lost. **Exactly-once:** each input affects the output exactly one time, even across failures.
+
+The key insight for interviews: exactly-once **delivery** over an unreliable network is not achievable in general, but exactly-once **processing effects** are. You get them by making progress tracking and output writes atomic together, or by making outputs idempotent so duplicates collapse.
+
+Be precise about scope. Kafka's transactions give exactly-once from Kafka topic to Kafka topic. Flink and Spark Structured Streaming give exactly-once state updates, and end-to-end exactly-once only with a replayable source plus a transactional or idempotent sink."""
+diagram = """flowchart LR
+  src[("Replayable source - Kafka offsets")] --> proc[Processor]
+  proc --> ckpt[("Checkpoint - offsets and state")]
+  proc --> sink[("Transactional or idempotent sink")]
+  ckpt -- on failure restore --> proc"""
+
+[[blocks]]
+heading = "How each guarantee arises"
+body = """Consider a consumer reading Kafka and writing to a database.
+
+- **At-most-once:** commit offset → write. Crash after commit, before write: message lost.
+- **At-least-once:** write → commit offset. Crash after write, before commit: message reprocessed, written twice.
+- **Exactly-once effect, option 1 (atomic):** store the offset **in the same transaction** as the output (for example, a `consumer_offsets` table in the target database, or Kafka transactions for Kafka sinks). Either both commit or neither.
+- **Exactly-once effect, option 2 (idempotent):** keep at-least-once, but write with `MERGE`/upsert on a unique event ID so replays overwrite rather than duplicate.
+
+At-least-once with idempotent sinks is the most common real-world design because it is simple and works across many systems."""
+
+[[blocks]]
+heading = "Dedup keys"
+body = """Producers can retry too, so duplicates may already be in the stream. Ways to dedup:
+- **Producer-side:** Kafka's idempotent producer (on by default in recent client versions) prevents duplicates caused by its own retries within a partition, but not an application re-sending the same business event.
+- **Event IDs:** attach a unique ID at the source (order ID plus event type, or a UUID created **once** when the event is born, never on retry). Downstream, dedup by ID.
+- **Streaming dedup:** keep seen IDs in state with a TTL or watermark bound (`dropDuplicatesWithinWatermark` in recent Spark, keyed state with TTL in Flink). The window must cover the realistic duplicate delay.
+- **Batch dedup:** `ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY ingest_ts)` and keep row 1, or MERGE on event ID.
+
+Without a stable ID, you can only dedup on a hash of the payload, which collapses genuinely identical but distinct events."""
+
+[[blocks]]
+heading = "Transactional sinks in practice"
+body = """- **Kafka to Kafka:** transactional producer with `read_committed` consumers; Kafka Streams `processing.guarantee=exactly_once_v2`.
+- **Flink:** two-phase commit sinks (pre-commit on checkpoint, commit when the checkpoint completes); Kafka and file sinks support this.
+- **Spark Structured Streaming:** checkpointed offsets plus idempotent file sinks; Delta/Iceberg sinks record batch IDs so a replayed micro-batch is not committed twice. `foreachBatch` is at-least-once unless you make the write idempotent using the batch ID.
+- **Warehouses:** load files then MERGE on keys; Snowpipe, BigQuery and others have their own dedup behavior with documented limits."""
+
+[[blocks]]
+heading = "When to use what"
+body = """- **At-most-once:** metrics or logs where losing a few points is acceptable and duplicates would mislead more.
+- **At-least-once + dedup:** the default for most pipelines.
+- **Strict exactly-once (transactional):** billing, ledgers, inventory counts, where both loss and duplicates cost money. Expect added latency (commits tied to checkpoint intervals) and operational complexity."""
+
+key_points = [
+  "At-most-once commits before processing; at-least-once commits after; exactly-once makes effects atomic or idempotent.",
+  "Exactly-once is about effects, built from replayable sources, checkpoints, and transactional or idempotent sinks.",
+  "Kafka transactions cover Kafka-to-Kafka; external sinks need their own transaction or idempotency.",
+  "Attach a stable event ID at the source; it is the foundation of every dedup strategy.",
+  "Streaming dedup state must be bounded by a TTL or watermark that covers realistic duplicate delays.",
+]
+common_mistakes = [
+  "Claiming 'Kafka gives exactly-once' for a pipeline that writes to an external database.",
+  "Generating a new UUID on every retry, which defeats dedup.",
+  "Keeping unbounded dedup state in a stream until memory runs out.",
+  "Assuming Spark foreachBatch writes are exactly-once without idempotent writes.",
+  "Committing consumer offsets before the write and silently losing data on crash.",
+]
+interview_questions = [
+  "Explain at-most-once, at-least-once, and exactly-once with a Kafka consumer example.",
+  "How would you guarantee a payment event is counted exactly once in a warehouse table?",
+  "What does Kafka's idempotent producer protect against, and what does it not?",
+  "How do you dedup a stream without keeping state forever?",
+]
+
+[[quiz]]
+q = "A consumer writes to a database, then commits its Kafka offset. It crashes between the two. Which outcome is possible?"
+options = ["Message lost", "Message processed again, causing a duplicate write", "Both", "Neither"]
+answer = 1
+why = "The write happened but the offset did not advance, so on restart the message is reprocessed. That is at-least-once."
+
+[[quiz]]
+q = "What is the most common practical way to get exactly-once effects in a sink database?"
+options = [
+  "Use at-most-once delivery",
+  "At-least-once delivery plus idempotent upserts keyed by event ID",
+  "Disable retries everywhere",
+  "Increase Kafka replication factor",
+]
+answer = 1
+why = "Replays then overwrite the same rows instead of adding new ones, so duplicates have no effect."
+
+[[quiz]]
+q = "Kafka's idempotent producer prevents which duplicates?"
+options = [
+  "Duplicates caused by the producer's internal retries to a partition",
+  "Duplicates when the application sends the same business event twice",
+  "Duplicates written by consumers to external sinks",
+  "All duplicates anywhere in the pipeline",
+]
+answer = 0
+why = "It uses producer IDs and sequence numbers to drop retried batches within a partition; application-level resends look like new messages."
+
+[[quiz]]
+q = "Why must streaming dedup state be bounded?"
+options = [
+  "Dedup only works within one partition",
+  "Unbounded seen-ID state grows forever and eventually exhausts memory or storage",
+  "Watermarks require it",
+  "Duplicates never arrive late",
+]
+answer = 1
+why = "Bound state with a TTL or watermark sized to how late duplicates realistically arrive, accepting that duplicates beyond that are not caught."

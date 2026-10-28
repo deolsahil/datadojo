@@ -1,0 +1,41 @@
+title = "Student Performance: Above-Average Marks"
+lang = "sql"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+difficulty = "easy"
+pattern = "sql-window-running"
+statement = """
+Table `students(studentid, studentname, subject, marks, testid, testdate)` has one row per student per subject
+test (the same student appears once per subject).
+
+Return the rows of students who scored **above the average mark of their subject**: `studentid, studentname,
+subject, marks, testid, testdate`. The average is the exact (fractional) mean of all marks in that subject.
+Any row order.
+"""
+starter = "SELECT studentid, studentname, subject, marks, testid, testdate\nFROM students\n"
+solution = """
+SELECT studentid, studentname, subject, marks, testid, testdate
+FROM (SELECT *, AVG(marks) OVER (PARTITION BY subject) AS avg_marks FROM students) t
+WHERE marks > avg_marks
+"""
+hints = [
+  "You need each row next to its subject's average.",
+  "AVG(marks) OVER (PARTITION BY subject) keeps every row, unlike GROUP BY.",
+  "Filter on it in an outer query; window functions can't go in WHERE directly.",
+]
+
+[[tests]]
+tables.students = { columns = "studentid INT, studentname STRING, subject STRING, marks INT, testid INT, testdate DATE", rows = [
+  [2, "Max Ruin", "Subject1", 63, 1, "2022-01-02"], [3, "Arnold", "Subject1", 95, 1, "2022-01-02"],
+  [4, "Krish Star", "Subject1", 61, 1, "2022-01-02"], [5, "John Mike", "Subject1", 91, 1, "2022-01-02"],
+  [4, "Krish Star", "Subject2", 71, 1, "2022-01-02"], [3, "Arnold", "Subject2", 32, 1, "2022-01-02"],
+  [5, "John Mike", "Subject2", 61, 2, "2022-11-02"], [1, "John Deo", "Subject2", 60, 1, "2022-01-02"],
+  [2, "Max Ruin", "Subject2", 84, 1, "2022-01-02"], [2, "Max Ruin", "Subject3", 29, 3, "2022-01-03"],
+  [5, "John Mike", "Subject3", 98, 2, "2022-11-02"],
+] }
+
+[[tests]]  # equal to the average does not count; a single-row subject never qualifies
+tables.students = { columns = "studentid INT, studentname STRING, subject STRING, marks INT, testid INT, testdate DATE", rows = [
+  [1, "A", "Math", 50, 1, "2022-01-01"], [2, "B", "Math", 60, 1, "2022-01-01"], [3, "C", "Math", 70, 1, "2022-01-01"],
+  [1, "A", "Art", 99, 2, "2022-01-05"], [2, "B", "Bio", 61, 1, "2022-01-01"], [3, "C", "Bio", 60, 1, "2022-01-01"],
+] }

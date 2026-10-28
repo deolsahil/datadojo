@@ -1,0 +1,54 @@
+title = "Count access-log status classes"
+lang = "python"
+difficulty = "easy"
+pattern = "py-parsing"
+lists = ["python-de"]
+function = "status_counts"
+statement = '''
+`status_counts(lines)` gets web-server access log lines in this format:
+
+```
+127.0.0.1 - frank [10/Oct/2024:13:55:36 +0000] "GET /index.html HTTP/1.1" 200 2326
+```
+
+That is: three non-space tokens, a `[...]` timestamp, a double-quoted request, a 3-digit status, and a bytes token (any non-space text, often `-`), separated by single spaces. Leading/trailing whitespace on the line is ignored.
+
+Return a dict counting lines per status class: `"2xx"`, `"3xx"`, `"4xx"`, `"5xx"`, ... (first digit + `"xx"`). Include only classes that occur. Skip any line that does not match the format.
+'''
+starter = "def status_counts(lines):\n    pass\n"
+solution = '''
+import re
+
+PAT = re.compile(r'\S+ \S+ \S+ \[[^\]]*\] "[^"]*" (\d{3}) \S+')
+
+def status_counts(lines):
+    out = {}
+    for line in lines:
+        m = PAT.fullmatch(line.strip())
+        if m:
+            k = m.group(1)[0] + "xx"
+            out[k] = out.get(k, 0) + 1
+    return out
+'''
+hints = [
+    "One regex for the whole line, applied with `re.fullmatch` so garbage lines fail.",
+    "The request may contain spaces, so match it as `\"[^\"]*\"`, not `\\S+`.",
+]
+
+[[tests]]
+args = [[
+  '127.0.0.1 - frank [10/Oct/2024:13:55:36 +0000] "GET /index.html HTTP/1.1" 200 2326',
+  '10.0.0.2 - - [10/Oct/2024:13:55:37 +0000] "POST /api/login HTTP/1.1" 401 -',
+  '10.0.0.3 - - [10/Oct/2024:13:55:38 +0000] "GET /missing HTTP/1.1" 404 512',
+  '10.0.0.4 - - [10/Oct/2024:13:55:39 +0000] "GET / HTTP/1.1" 204 0',
+]]
+[[tests]]  # malformed lines skipped
+args = [[
+  '',
+  'not a log line',
+  '10.0.0.5 - - [10/Oct/2024:13:56:00 +0000] "GET /x HTTP/1.1" 5000 1',
+  '10.0.0.6 - - [10/Oct/2024:13:56:01 +0000] GET /x HTTP/1.1 500 1',
+  '  10.0.0.7 - - [10/Oct/2024:13:56:02 +0000] "GET /boom HTTP/1.1" 503 17  ',
+]]
+[[tests]]
+args = [[]]

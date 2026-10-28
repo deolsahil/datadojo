@@ -1,0 +1,113 @@
+title = "Partitioning, Bucketing, and the Small-Files Problem"
+section = "ds-modeling"
+order = 4
+kind = "lesson"
+big_idea = "Partition by the columns queries filter on most, at a granularity that keeps files in the hundreds of megabytes, because too few partitions means full scans and too many means millions of tiny files."
+summary = """**Partitioning** splits a table's files into directories (or metadata groups) by a column value, such as `event_date=2024-06-01/`. A query filtering on that column reads only matching partitions: **partition pruning**. Date is the most common partition key because almost every analytical query has a time filter and data arrives in time order.
+
+**Bucketing** (or clustering) hashes a column such as `user_id` into a fixed number of buckets, so rows with the same key land in the same file group. It helps joins and aggregations on that key avoid shuffles, and helps point filters on high-cardinality columns that would be terrible partition keys.
+
+The **small-files problem** comes from over-partitioning or frequent tiny writes: millions of files of a few KB each. Every file costs a metadata lookup, an open, and a footer read, so planning and scanning slow down dramatically. Aim for files of roughly 128 MB to 1 GB, and compact when you cannot write that way directly."""
+diagram = """flowchart TD
+  T[("events table")] --> P1["event_date=2024-06-01"]
+  T --> P2["event_date=2024-06-02"]
+  P1 --> B1["bucket 0 of 16 by user_id"]
+  P1 --> B2["bucket 1 of 16 by user_id"]
+  P2 --> B3["bucket 0 of 16 by user_id"]"""
+
+[[blocks]]
+heading = "Choosing a partition key"
+body = """Good partition keys are:
+- **Frequently filtered:** most queries include it in `WHERE`.
+- **Low to moderate cardinality:** hundreds to low thousands of distinct values over the table's life, not millions.
+- **Evenly distributed:** each partition holds a meaningful amount of data.
+
+Check the math: 400 GB/day partitioned by date gives 400 GB partitions, written as ~400 files of 1 GB. Partitioned by date **and** hour gives ~17 GB per partition, still fine. Partitioned by date and `user_id` with 10M users gives ~40 KB per partition: a disaster.
+
+Low daily volume (say 50 MB/day)? Partition by month, or not at all, and rely on sorting and file statistics."""
+
+[[blocks]]
+heading = "Bucketing and clustering"
+body = """Bucketing hashes a key into N buckets. If two tables are bucketed identically on the join key, some engines (Hive, Spark with matching bucket specs) can join bucket-to-bucket without shuffling. Bucketing works poorly when the number of buckets must change, and engine support differs.
+
+Modern alternatives that achieve similar goals:
+- **Sorting / Z-ordering** within partitions (Delta `OPTIMIZE ZORDER BY`, Iceberg sort orders) so min/max statistics prune well on multiple columns.
+- **Liquid clustering** (Databricks Delta) and **clustering keys** (Snowflake), which let the system manage layout incrementally.
+- **Iceberg bucket transforms** as part of hidden partitioning, such as `bucket(16, user_id)`."""
+
+[[blocks]]
+heading = "Where small files come from and how to fix them"
+body = """**Causes:**
+- Streaming or micro-batch writes every few seconds, each producing a file per task per partition.
+- Over-partitioning, such as by date and hour and country and device.
+- A Spark write with 2,000 shuffle partitions into 50 table partitions, producing up to 100,000 files.
+
+**Fixes:**
+- Repartition by the table's partition column before writing so each task writes to few partitions (`df.repartition('event_date')`), or use adaptive execution coalescing.
+- Increase trigger interval for streams when latency allows.
+- Run **compaction**: rewrite small files into large ones. Table formats provide it: Delta `OPTIMIZE`, Iceberg `rewrite_data_files`, Hudi clustering and compaction. Many platforms offer auto-compaction or optimized writes.
+- Coarsen the partition scheme."""
+
+[[blocks]]
+heading = "Hidden partitioning and evolution"
+body = """In Hive-style tables, users must filter on the physical partition column exactly (`event_date`), and filtering on `event_ts` may not prune. **Iceberg hidden partitioning** stores a transform like `days(event_ts)` in metadata, so queries filtering on `event_ts` prune automatically, and the partition spec can **evolve** (say, from daily to hourly) without rewriting old data. Delta supports generated columns for a similar effect. This is a strong interview point when discussing table formats."""
+
+key_points = [
+  "Partition on columns most queries filter by, with low to moderate cardinality; date is the usual default.",
+  "Target files of roughly 128 MB to 1 GB; check partition size math before committing to a scheme.",
+  "Bucketing or clustering handles high-cardinality keys used in joins and point filters.",
+  "Small files come from frequent writes and over-partitioning; fix with repartition before write and compaction.",
+  "Iceberg hidden partitioning lets queries prune on the source column and supports partition evolution.",
+]
+common_mistakes = [
+  "Partitioning by a high-cardinality column like user_id or order_id.",
+  "Stacking many partition columns so each partition holds a few KB.",
+  "Streaming into a table with no compaction plan.",
+  "Filtering on a raw timestamp in a Hive-style table partitioned by a derived date column, so no pruning happens.",
+  "Partitioning tiny tables at all.",
+]
+interview_questions = [
+  "How would you partition a 500 GB/day events table, and why?",
+  "What causes the small-files problem and how do you fix it?",
+  "When would you use bucketing or Z-ordering instead of partitioning?",
+  "What is Iceberg hidden partitioning and why does it matter?",
+]
+
+[[quiz]]
+q = "A table receives 20 MB of data per day. Which partitioning is most reasonable?"
+options = ["By date and hour", "By date and user_id", "By month, or no partitioning with sorted files", "By event_id"]
+answer = 2
+why = "Daily partitions would hold 20 MB each, already small; hourly would be under 1 MB. Coarser partitioning keeps files healthy."
+
+[[quiz]]
+q = "Queries frequently filter on user_id (50M distinct values). What is the best layout choice?"
+options = [
+  "Partition by user_id",
+  "Bucket, cluster, or Z-order by user_id within date partitions",
+  "Store each user in a separate table",
+  "Do nothing; partition pruning will handle it",
+]
+answer = 1
+why = "Partitioning by 50M values creates tiny files. Clustering makes file statistics selective without exploding file count."
+
+[[quiz]]
+q = "A Spark job writes with 2,000 shuffle partitions into a table partitioned by date across 30 dates. What is the risk?"
+options = [
+  "Data loss",
+  "Up to 60,000 small files because each task may write a file per date",
+  "The job cannot write to partitioned tables",
+  "Duplicate rows",
+]
+answer = 1
+why = "Each of 2,000 tasks can hold rows for all 30 dates, writing up to 2,000 × 30 files. Repartitioning by the date column first avoids it."
+
+[[quiz]]
+q = "What does compaction do?"
+options = [
+  "Deletes old partitions",
+  "Rewrites many small files into fewer large files without changing the table's data",
+  "Compresses files with gzip",
+  "Converts Parquet to Avro",
+]
+answer = 1
+why = "Compaction is a layout rewrite: same rows, fewer and larger files, which speeds planning and scanning."

@@ -1,0 +1,249 @@
+# Patterns and curated lists. Every problem's `pattern` must be one of these ids;
+# `lists` entries must be list ids. Order here is display order.
+
+[[lists]]
+id = "sql-essentials"
+title = "SQL Essentials 50"
+desc = "The SQL questions that come up in almost every data interview: joins, aggregation, windows, NULLs."
+
+[[lists]]
+id = "sql-e2e"
+title = "SQL End-to-End 43"
+desc = "Sahil's own collection: 43 real interview-style SQL problems, from seat bookings to Uber rides."
+
+[[lists]]
+id = "pyspark-de"
+title = "PySpark for Data Engineers"
+desc = "DataFrame transformations you will actually write at work: dedup, SCD, windows, nested data."
+
+[[lists]]
+id = "python-de"
+title = "Python for Data Work"
+desc = "Plain-Python data wrangling and the classic coding-round patterns, minus the trivia."
+
+# ---- SQL ----
+[[patterns]]
+id = "sql-basics"
+lang = "sql"
+group = "Foundations"
+title = "Select & Filter"
+desc = "WHERE, ORDER BY, LIMIT, DISTINCT, CASE"
+
+[[patterns]]
+id = "sql-joins"
+lang = "sql"
+group = "Foundations"
+title = "Joins"
+desc = "Inner, left, self, anti and semi joins"
+
+[[patterns]]
+id = "sql-aggregation"
+lang = "sql"
+group = "Foundations"
+title = "Aggregation"
+desc = "GROUP BY, HAVING, conditional aggregates"
+
+[[patterns]]
+id = "sql-nulls"
+lang = "sql"
+group = "Foundations"
+title = "NULL Handling"
+desc = "Three-valued logic, COALESCE, NOT IN traps"
+
+[[patterns]]
+id = "sql-subqueries"
+lang = "sql"
+group = "Composition"
+title = "Subqueries & CTEs"
+desc = "Correlated subqueries, EXISTS, WITH chains"
+
+[[patterns]]
+id = "sql-strings-dates"
+lang = "sql"
+group = "Composition"
+title = "Strings & Dates"
+desc = "Parsing, date math, truncation, formatting"
+
+[[patterns]]
+id = "sql-window-ranking"
+lang = "sql"
+group = "Window Functions"
+title = "Ranking"
+desc = "ROW_NUMBER, RANK, DENSE_RANK, top N per group"
+
+[[patterns]]
+id = "sql-window-running"
+lang = "sql"
+group = "Window Functions"
+title = "Running & Rolling"
+desc = "Cumulative sums, moving averages, LAG/LEAD"
+
+[[patterns]]
+id = "sql-gaps-islands"
+lang = "sql"
+group = "Analytics"
+title = "Gaps & Islands"
+desc = "Streaks, consecutive runs, missing ranges"
+
+[[patterns]]
+id = "sql-sessions-funnels"
+lang = "sql"
+group = "Analytics"
+title = "Sessions & Funnels"
+desc = "Sessionization, retention, conversion steps"
+
+[[patterns]]
+id = "sql-pivot"
+lang = "sql"
+group = "Analytics"
+title = "Pivot & Reshape"
+desc = "Conditional aggregation, unpivot, crosstabs"
+
+[[patterns]]
+id = "sql-recursive"
+lang = "sql"
+group = "Advanced"
+title = "Recursive CTEs"
+desc = "Hierarchies, org charts, date spines"
+
+[[patterns]]
+id = "sql-dedup-scd"
+lang = "sql"
+group = "Advanced"
+title = "Dedup & History"
+desc = "Latest record, SCD Type 2, change detection"
+
+# ---- Python ----
+[[patterns]]
+id = "py-strings"
+lang = "python"
+group = "Core"
+title = "Strings"
+desc = "Parsing, normalizing and building strings"
+
+[[patterns]]
+id = "py-hashing"
+lang = "python"
+group = "Core"
+title = "Hashing & Counting"
+desc = "dict, set, Counter, defaultdict"
+
+[[patterns]]
+id = "py-sorting"
+lang = "python"
+group = "Core"
+title = "Sorting & Intervals"
+desc = "Custom keys, merging and sweeping ranges"
+
+[[patterns]]
+id = "py-two-pointers"
+lang = "python"
+group = "Arrays"
+title = "Two Pointers & Windows"
+desc = "Converging pointers, sliding windows"
+
+[[patterns]]
+id = "py-stack-queue"
+lang = "python"
+group = "Arrays"
+title = "Stacks & Queues"
+desc = "Matching, monotonic stacks, deque"
+
+[[patterns]]
+id = "py-binary-search"
+lang = "python"
+group = "Arrays"
+title = "Binary Search"
+desc = "Sorted lookup and answer-space search"
+
+[[patterns]]
+id = "py-records"
+lang = "python"
+group = "Data Wrangling"
+title = "Records & Grouping"
+desc = "Lists of dicts: group, join, dedupe, reshape"
+
+[[patterns]]
+id = "py-parsing"
+lang = "python"
+group = "Data Wrangling"
+title = "Parsing Logs & Files"
+desc = "Log lines, CSV, key=value, JSON-ish text"
+
+[[patterns]]
+id = "py-recursion"
+lang = "python"
+group = "Data Wrangling"
+title = "Nested Data & Recursion"
+desc = "Flattening, walking trees and JSON"
+
+[[patterns]]
+id = "py-heaps"
+lang = "python"
+group = "Algorithms"
+title = "Heaps & Top K"
+desc = "heapq, k-way merge, running medians"
+
+[[patterns]]
+id = "py-graphs"
+lang = "python"
+group = "Algorithms"
+title = "Graphs & Dependencies"
+desc = "BFS/DFS, topological order, DAG pipelines"
+
+# ---- PySpark ----
+[[patterns]]
+id = "spark-basics"
+lang = "pyspark"
+group = "DataFrame API"
+title = "Select, Filter, withColumn"
+desc = "Column expressions, when/otherwise, casting"
+
+[[patterns]]
+id = "spark-joins"
+lang = "pyspark"
+group = "DataFrame API"
+title = "Joins"
+desc = "Inner, left, anti, semi, self joins"
+
+[[patterns]]
+id = "spark-aggregation"
+lang = "pyspark"
+group = "DataFrame API"
+title = "Aggregations"
+desc = "groupBy/agg, collect_list, approx counts"
+
+[[patterns]]
+id = "spark-windows"
+lang = "pyspark"
+group = "Windows"
+title = "Window Functions"
+desc = "row_number, lag/lead, range windows"
+
+[[patterns]]
+id = "spark-nested"
+lang = "pyspark"
+group = "Semi-structured"
+title = "Arrays, Structs & JSON"
+desc = "explode, from_json, array functions"
+
+[[patterns]]
+id = "spark-dates"
+lang = "pyspark"
+group = "Semi-structured"
+title = "Dates & Timestamps"
+desc = "Truncation, intervals, time zones-free math"
+
+[[patterns]]
+id = "spark-dedup-scd"
+lang = "pyspark"
+group = "Pipelines"
+title = "Dedup, CDC & SCD2"
+desc = "Latest state, change feeds, history tables"
+
+[[patterns]]
+id = "spark-quality"
+lang = "pyspark"
+group = "Pipelines"
+title = "Data Quality & Reshape"
+desc = "Null checks, pivots, schema normalization"

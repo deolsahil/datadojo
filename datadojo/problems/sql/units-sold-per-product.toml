@@ -1,0 +1,36 @@
+title = "Units sold for every product"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-joins"
+lists = ["sql-essentials"]
+statement = """
+Inventory planning needs total units sold for **every** product in the catalog, including products that never sold.
+
+Tables `products(id, name)` and `sales(id, product_id, qty)`.
+
+Return `name` and `units`, the sum of `qty` across that product's sales. Products with no sales must show `units = 0` (not NULL). Sales for products not in the catalog are ignored.
+"""
+starter = "SELECT p.name\nFROM products p\n"
+solution = """
+SELECT p.name, COALESCE(SUM(s.qty), 0) AS units
+FROM products p
+LEFT JOIN sales s ON s.product_id = p.id
+GROUP BY p.id, p.name
+"""
+hints = [
+  "An inner join drops products that have no matching sales rows.",
+  "LEFT JOIN keeps every product; unmatched products get NULL for sales columns.",
+  "SUM over only NULLs is NULL, so wrap it: COALESCE(SUM(s.qty), 0).",
+]
+
+[[tests]]
+tables.products = { columns = "id INT, name STRING", rows = [[1, "Apple"], [2, "Bread"], [3, "Cheese"]] }
+tables.sales = { columns = "id INT, product_id INT, qty INT", rows = [[1, 1, 3], [2, 1, 2], [3, 3, 7], [4, 99, 5]] }
+
+[[tests]]  # no sales at all, and two products sharing a name
+tables.products = { columns = "id INT, name STRING", rows = [[1, "Widget"], [2, "Widget"]] }
+tables.sales = { columns = "id INT, product_id INT, qty INT", rows = '[[1, 1, 4]]' }
+
+[[tests]]
+tables.products = { columns = "id INT, name STRING", rows = [[1, "Ghost"]] }
+tables.sales = { columns = "id INT, product_id INT, qty INT", rows = [] }

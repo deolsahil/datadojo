@@ -1,0 +1,54 @@
+title = "Build SCD Type 2 from daily snapshots"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-dedup-scd"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`snapshots(customer_id, tier, snapshot_date)` holds a daily dump of each customer's loyalty tier.
+Some days were never captured, rows arrive in no particular order, and a few rows were loaded twice.
+`tier` is never NULL.
+
+Turn it into a Type 2 history table. Write `solve(spark, snapshots)` returning
+`customer_id, tier, valid_from, valid_to, is_current`:
+
+- A **version** is a run of consecutive snapshots (in date order) with the same tier.
+  Going silver → gold → silver produces **three** versions.
+- `valid_from` is the first snapshot date of the run.
+- `valid_to` is the next version's `valid_from` (exclusive end), or NULL for the latest version.
+- `is_current` is true only for the latest version.
+"""
+hints = [
+  "Compare each snapshot's tier with the previous one (`F.lag` over a window ordered by date) to flag where a new version starts.",
+  "A running sum of that flag gives a version id, so you can group runs (classic gaps-and-islands).",
+  "After grouping, `F.lead(\"valid_from\")` over versions gives `valid_to`.",
+]
+starter = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, snapshots):
+    return snapshots
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+def solve(spark, snapshots):
+    s = snapshots.dropDuplicates()
+    w = Window.partitionBy("customer_id").orderBy("snapshot_date")
+    same = F.coalesce(F.lag("tier").over(w) == F.col("tier"), F.lit(False))
+    s = s.withColumn("version", F.sum(F.when(same, 0).otherwise(1))
+                     .over(w.rowsBetween(Window.unboundedPreceding, 0)))
+    v = s.groupBy("customer_id", "version", "tier").agg(F.min("snapshot_date").alias("valid_from"))
+    w2 = Window.partitionBy("customer_id").orderBy("valid_from")
+    v = v.withColumn("valid_to", F.lead("valid_from").over(w2))
+    return v.select("customer_id", "tier", "valid_from", "valid_to",
+                    F.col("valid_to").isNull().alias("is_current"))
+"""
+
+[[tests]]
+tables.snapshots = { columns = "customer_id INT, tier STRING, snapshot_date DATE", rows = [
+  [1, "silver", "2024-01-02"], [1, "gold", "2024-01-04"], [1, "silver", "2024-01-01"],
+  [1, "gold", "2024-01-05"], [1, "silver", "2024-01-06"], [1, "silver", "2024-01-06"],
+  [2, "bronze", "2024-01-03"],
+  [3, "gold", "2024-01-05"], [3, "gold", "2024-01-01"], [3, "gold", "2024-01-03"],
+] }

@@ -1,0 +1,43 @@
+title = "Daily revenue with zero-filled days"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-recursive"
+lists = ["sql-essentials"]
+ordered = true
+statement = """
+Table `orders(order_id, order_date, amount)`. Some days have several orders, some have none.
+
+Return one row for **every calendar day** from the earliest to the latest `order_date` (inclusive):
+`day, revenue`, where `revenue` is the day's total `amount`, or `0` on days without orders. Order by `day`.
+If there are no orders, return no rows.
+
+Generate the calendar with a recursive CTE.
+"""
+starter = "SELECT order_date AS day, SUM(amount) AS revenue\nFROM orders\nGROUP BY order_date\nORDER BY day\n"
+solution = """
+WITH RECURSIVE days AS (
+  SELECT MIN(order_date) AS day, MAX(order_date) AS last_day FROM orders HAVING COUNT(*) > 0
+  UNION ALL
+  SELECT CAST(day + 1 AS DATE), last_day FROM days WHERE day < last_day
+)
+SELECT d.day, COALESCE(SUM(o.amount), 0) AS revenue
+FROM days d LEFT JOIN orders o ON o.order_date = d.day
+GROUP BY d.day
+ORDER BY d.day
+"""
+hints = [
+  "Anchor the recursion at MIN(order_date) and keep adding one day until you reach MAX(order_date).",
+  "On an empty table MIN is NULL; make sure the anchor produces no row then (HAVING COUNT(*) > 0, or WHERE day IS NOT NULL).",
+  "LEFT JOIN orders to the calendar, GROUP BY day and COALESCE(SUM(amount), 0).",
+]
+
+[[tests]]
+tables.orders = { columns = "order_id INT, order_date DATE, amount INT", rows = [
+  [1, "2024-02-27", 10], [2, "2024-02-27", 5], [3, "2024-03-01", 7],
+] }
+
+[[tests]]  # a single day
+tables.orders = { columns = "order_id INT, order_date DATE, amount INT", rows = [[1, "2024-07-04", 3]] }
+
+[[tests]]  # no orders
+tables.orders = { columns = "order_id INT, order_date DATE, amount INT", rows = [] }

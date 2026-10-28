@@ -1,0 +1,109 @@
+title = "The Data System Design Interview Framework"
+section = "ds-foundations"
+order = 1
+kind = "lesson"
+big_idea = "A good data design answer is a guided conversation: clarify what the data is for, size it, sketch the simplest pipeline that works, then go deep where the interviewer pushes and name the trade-offs out loud."
+summary = """Data system design interviews are less about drawing the perfect box diagram and more about showing judgment. The interviewer wants to see that you ask about **consumers and freshness** before picking tools, that you can put rough numbers on the problem, and that you know where pipelines actually break.
+
+A reliable structure is five steps: **clarify → estimate → design → deep dive → trade-offs**. Spend roughly the first 5-8 minutes clarifying and estimating, 10-15 on the high-level design, and the rest on one or two deep dives the interviewer chooses. Always leave a couple of minutes to summarize trade-offs and what you would do next.
+
+The framework is a safety net, not a script. If the interviewer jumps straight to "how do you handle late events?", follow them, and come back to the structure when the conversation settles."""
+diagram = """flowchart LR
+  A[Clarify] --> B[Estimate]
+  B --> C[High-level design]
+  C --> D[Deep dive]
+  D --> E[Trade-offs and next steps]
+  D -- new constraint --> A"""
+
+[[blocks]]
+heading = "Step 1: Clarify"
+body = """Ask questions that change the design, not trivia. The big ones:
+
+- **Who consumes the data and how?** Dashboards, ad-hoc SQL, ML features, an API serving users? This decides storage and latency.
+- **Freshness:** is daily fine, or do consumers need data within seconds? "Real-time" often turns out to mean "within 15 minutes".
+- **Sources:** OLTP databases (CDC?), event streams, third-party files, APIs.
+- **Correctness:** can we tolerate approximate counts or duplicates? Is this billing (must be exact) or a trend chart?
+- **Retention and compliance:** how long to keep raw data, PII handling, deletion requests (GDPR-style).
+
+Write the answers down as a short requirements list so you can point back to them when justifying choices."""
+
+[[blocks]]
+heading = "Step 2: Estimate"
+body = """Turn requirements into numbers: events per second (average and peak), bytes per event, daily volume, storage over the retention window, and query concurrency. You only need order of magnitude. Example: 100M daily active users × 50 events/day = 5B events/day ≈ 58K events/s average, maybe 3-5× that at peak. At 1 KB each that is ~5 TB/day raw, ~1 TB/day after columnar compression.
+
+These numbers justify decisions: 58K events/s is comfortable for a modest Kafka cluster; 5 TB/day means you need partitioned object storage, not a single Postgres."""
+
+[[blocks]]
+heading = "Step 3 and 4: Design, then deep dive"
+body = """Draw the **simplest end-to-end path first**: sources → ingestion → storage (raw/bronze) → transformation (cleaned/silver, modeled/gold) → serving → consumers. Name concrete technologies but say why ("Kafka because we need replay and multiple consumers").
+
+Then pick the risky parts for a deep dive, or let the interviewer pick. Common deep dives: exactly-once or dedup, late data, schema evolution, backfills, partitioning strategy, data quality checks, and cost. Go deep on mechanics: keys, partitions, failure handling, what happens on rerun."""
+
+[[blocks]]
+heading = "Step 5: Trade-offs and wrap-up"
+body = """Close by naming what you traded away and when you would change your mind: "I chose micro-batch every 5 minutes because it reuses our Spark stack; if the fraud team needs sub-second decisions, I would move that path to Flink." Mention monitoring (freshness, volume, quality), cost drivers, and one or two things you would build next. Interviewers remember candidates who know the limits of their own design."""
+
+key_points = [
+  "Clarify consumers, freshness, sources, correctness needs, and retention before choosing tools.",
+  "Estimate average and peak throughput, daily volume, and total storage; order of magnitude is enough.",
+  "Start with the simplest end-to-end pipeline, then add complexity only where a requirement demands it.",
+  "Deep dives are where you show seniority: failure modes, reruns, dedup, late data, schema changes.",
+  "Always state trade-offs explicitly and say what would make you choose differently.",
+]
+common_mistakes = [
+  "Jumping to 'Kafka + Spark + Flink' before knowing what the data is used for.",
+  "Treating 'real-time' as a given instead of asking what latency consumers actually need.",
+  "Skipping estimation, then being unable to justify why a single database will not work.",
+  "Designing only the happy path and having no answer for reruns, late data, or bad records.",
+  "Spending 30 minutes on the diagram and leaving no time for deep dives.",
+]
+interview_questions = [
+  "Walk me through how you would approach designing a pipeline for a new product analytics dashboard.",
+  "What questions would you ask before designing an ingestion system for clickstream data?",
+  "How do you decide between batch and streaming when the requirements say 'real-time'?",
+  "Your design is done. What would you monitor in production, and why?",
+]
+
+[[quiz]]
+q = "An interviewer says 'design a real-time dashboard for orders'. What is the best first move?"
+options = [
+  "Propose Kafka and Flink, since real-time requires streaming",
+  "Ask what freshness the dashboard actually needs and who uses it",
+  "Start estimating storage for five years of orders",
+  "Pick a warehouse vendor and design the schema",
+]
+answer = 1
+why = "Freshness and consumers drive every later choice. 'Real-time' often means minutes, which a micro-batch or warehouse refresh can handle far more cheaply than a streaming stack."
+
+[[quiz]]
+q = "Why do back-of-the-envelope estimates matter in a design interview?"
+options = [
+  "Interviewers grade on numeric precision",
+  "They justify architectural choices such as partitioning, cluster size, or ruling out a single database",
+  "They replace the need to clarify requirements",
+  "They are only needed for streaming systems",
+]
+answer = 1
+why = "Rough numbers turn opinions into justified decisions. Precision is not the point; the order of magnitude is."
+
+[[quiz]]
+q = "Which of these is the strongest trade-off statement to end on?"
+options = [
+  "This design is scalable and robust",
+  "I used the industry-standard tools",
+  "I chose hourly batch for simplicity; if fraud detection needs sub-minute latency, that path moves to a stream processor",
+  "There are no major trade-offs here",
+]
+answer = 2
+why = "A good trade-off names what was chosen, what was given up, and the concrete condition that would change the decision."
+
+[[quiz]]
+q = "During the high-level design, the interviewer asks how you handle duplicate events. What should you do?"
+options = [
+  "Say you will cover it at the end and continue drawing",
+  "Follow the deep dive now, then return to the framework",
+  "Ignore it, since duplicates are rare",
+  "Restart the design from the clarify step",
+]
+answer = 1
+why = "The framework is a guide, not a script. Following the interviewer's interest shows you can go deep; you can resume the structure afterward."

@@ -1,0 +1,167 @@
+title = "Design an ML Feature Store"
+section = "ds-cases-realtime"
+order = 2
+kind = "case_study"
+difficulty = "hard"
+companies = ["Uber", "Airbnb", "DoorDash"]
+big_idea = "Define each feature once, materialize it to an offline store for point-in-time correct training and an online store for low-latency serving, so the model sees the same values in both."
+summary = """Teams building ML models keep re-implementing the same features (a user's orders in the last 7 days, a restaurant's average prep time) in notebooks for training and again in services for inference. The two implementations drift, causing **training-serving skew**, and training sets accidentally include information from the future (**leakage**).
+
+A feature store fixes this with a **registry** of feature definitions, a **materialization** layer (batch with Spark, streaming with Flink), an **offline store** (Iceberg/Delta/BigQuery) with full history for building training sets through **point-in-time joins**, and an **online store** (Redis, DynamoDB, Cassandra) with the latest values per entity for serving at millisecond latency. Feast, Tecton, Databricks and SageMaker feature stores all follow this shape."""
+diagram = """flowchart LR
+  reg[Feature registry and definitions] --> batch[Spark batch materialization]
+  reg --> stream[Flink streaming materialization]
+  wh[("Warehouse and lake sources")] --> batch
+  k[("Kafka events")] --> stream
+  batch --> off[("Offline store: Iceberg history")]
+  stream --> off
+  batch --> on[("Online store: Redis or DynamoDB")]
+  stream --> on
+  off --> pit[Point-in-time training set builder]
+  pit --> train[Model training]
+  on --> serve[Online inference service]
+  serve --> logs[("Served feature logs")]"""
+
+[[blocks]]
+heading = "Clarifying questions"
+body = """- How many models and teams, and what kinds: real-time (ranking, ETA, fraud) or batch scoring?
+- Online latency target per feature lookup (e.g. p99 under 10 ms) and request rate?
+- How fresh must features be: daily, hourly, seconds?
+- Entities: users, items, merchants, drivers? Composite keys (user x item)?
+- Do we build on an existing warehouse/lake and orchestrator?
+- Are on-demand features needed (computed from request data, like distance between user and restaurant)?"""
+
+[[blocks]]
+heading = "Requirements"
+body = """**Functional**
+- Register features with owner, entity key, source, transformation, freshness SLA and description.
+- Batch and streaming materialization into both offline and online stores.
+- Generate training sets: given entity keys and event timestamps, return feature values as of each timestamp.
+- Online API: get features for a list of entity keys in one call.
+- Discovery and reuse across teams; lineage from feature to source.
+
+**Non-functional**
+- Online p99 under 10 ms for ~200 features per request at 50K requests/s.
+- Point-in-time correctness: no feature value with timestamp after the label event.
+- Same transformation code for offline and online values.
+- Backfill a new feature over a year of history in hours, not weeks.
+- Monitoring of freshness, null rates and drift per feature."""
+
+[[blocks]]
+heading = "Scale estimate"
+body = """- Entities: **100M users**, ~200 features each, ~8 B per value.
+- Online store: 100M x 200 x 8 B = **160 GB** of raw values; with keys and overhead (say 2x), **~320 GB**, spread over a Redis Cluster or DynamoDB.
+- Online reads: 50K requests/s, each a batched lookup of 1 user + ~50 candidate items, so **~2.5M key reads/s** at peak; this is why lookups must be batched (MGET/pipelines) and item features cached in the serving process.
+- Offline history: one daily snapshot of all user features = 160 GB/day; x 365 = **~58 TB/year** uncompressed, roughly **15 TB/year** with columnar compression (~4x). Storing only changed values (change-log style) is smaller still.
+- Streaming updates: suppose 20K feature-update events/s writing to the online store, well within capacity."""
+
+[[blocks]]
+heading = "High-level design"
+body = """1. **Registry**: features declared as code (Python/YAML) in a repo: entity, source table or topic, transformation (SQL, Spark or Flink), aggregation windows, TTL. CI validates and deploys definitions; the registry is the catalog for discovery.
+2. **Batch materialization**: Airflow-scheduled Spark/SQL jobs compute features from warehouse tables, append timestamped values to the offline store, and upload the latest values to the online store.
+3. **Streaming materialization**: Flink jobs compute windowed aggregations from Kafka and write to both stores (online for freshness, offline log for history), using the same definitions.
+4. **Offline store**: Iceberg/Delta tables per feature group with `(entity_id, event_ts, feature values, created_ts)`.
+5. **Online store**: key = entity id; value = latest feature vector with timestamps; TTL to evict stale entities.
+6. **Training set API**: takes a "spine" (entity_id, label_ts, label) and performs a point-in-time join against feature groups.
+7. **Serving API/SDK**: batched online lookups plus on-demand transformations from request data; the served vector is logged for monitoring and future training."""
+
+[[blocks]]
+heading = "Data model"
+body = """**Registry entry** (grain: one row per feature): feature_name, feature_group, entity, dtype, source, transformation, window, ttl, freshness_sla, owner, version.
+
+**Offline `fg_user_orders`** (grain: one row per user per computed timestamp): user_id, event_ts (time the value became valid), created_ts (time it was written), orders_7d, spend_30d, avg_basket_30d. Partitioned by date of event_ts.
+
+**Online** key `user:<id>` -> {orders_7d, spend_30d, avg_basket_30d, _event_ts}.
+
+**Training spine** (grain: one row per labeled example): user_id, label_ts, label.
+
+**Served log** (grain: one row per prediction): request_id, entity ids, feature values, model_version, ts."""
+
+[[blocks]]
+heading = "Deep dives"
+body = """**Point-in-time joins.** For each spine row (user, label_ts), pick the latest feature row with `event_ts <= label_ts`, and also within the feature's TTL so very old values are treated as missing. A naive join to the current value leaks the future: a model learns that users who churned had zero recent orders measured after they churned. Implementations use an as-of join (Spark with windowed ranking, or warehouse `ASOF JOIN` where available) and should also respect `created_ts <= label_ts` when values were backfilled later, so the training set reflects what was actually knowable then.
+
+**Offline/online consistency.** Use one definition compiled to both batch and streaming execution, or compute once and write to both stores. Logging served features lets you compare online values with what the offline store says for the same key and timestamp; disagreement rates per feature are a key health metric.
+
+**Backfills.** A new 30-day window feature must be computed for every day of the past year to train on. Computing it as 365 separate daily jobs is slow; a single job over the event history with sliding-window logic, written in bulk to the offline store, is usually much faster. Backfills must not overwrite the online store with old values; online loads take only the latest values.
+
+**Freshness for streaming features.** Online values carry `_event_ts`; serving can treat values older than the TTL as missing. Streaming writes must be idempotent (overwrite with a newer event_ts only)."""
+
+[[blocks]]
+heading = "Trade-offs"
+body = """- **Build vs. buy**: Feast (open source) covers registry and store integration but leaves streaming transformations to you; Tecton/Databricks provide managed transformations and monitoring at a price. Building fully is justified only at very large scale.
+- **Redis vs. DynamoDB/Cassandra for online**: Redis has the lowest latency but memory cost grows with data; DynamoDB scales without ops at higher per-read latency; Cassandra/ScyllaDB fit large datasets on disk with good latency.
+- **Snapshot vs. change-log offline storage**: daily snapshots make point-in-time joins simple but store many duplicates; change logs are compact but need as-of logic.
+- **Precompute vs. on-demand**: precompute anything expensive or aggregated; compute request-dependent features (distance, time of day) at serving time.
+- **Logged features vs. recomputed for training**: logged features avoid skew but only exist from the moment logging started; new features need point-in-time backfills."""
+
+[[blocks]]
+heading = "Failure modes & monitoring"
+body = """- **Stale online features** when a materialization job fails: per-feature freshness alerts based on `_event_ts` age.
+- **Online store latency**: p99 per call; hot keys (a celebrity item) mitigated by in-process caching.
+- **Silent distribution changes**: monitor null rate, mean and quantiles per feature against a baseline; alert on drift.
+- **Skew**: daily comparison of served values vs. offline values for sampled keys.
+- **Bad backfill**: validate row counts and value ranges before publishing a new feature version; keep feature versions immutable so models pin a version.
+- **Schema changes upstream**: contracts on source tables used by feature definitions."""
+
+key_points = [
+  "A feature store has a registry, materialization jobs, an offline store for history and an online store for latest values.",
+  "Point-in-time joins pick the latest value with event_ts at or before the label timestamp, preventing leakage.",
+  "Use one definition for both offline and online computation, and log served vectors to measure skew.",
+  "Online lookups must be batched; item features are often cached in the serving process.",
+  "Backfill new features in bulk over history, without overwriting online values with old data.",
+  "Monitor freshness, null rates and drift per feature, with feature versions that models can pin.",
+]
+common_mistakes = [
+  "Joining training labels to the current feature value, leaking future information.",
+  "Writing separate pandas code for training and Java code for serving that compute the same feature differently.",
+  "Letting backfill jobs overwrite the online store with historical values.",
+  "Ignoring TTLs so a user inactive for a year gets their year-old value as if current.",
+  "Making one network call per feature instead of batched lookups.",
+]
+interview_questions = [
+  "Write the logic for a point-in-time join between a label spine and a feature table.",
+  "How would you serve a feature that must reflect the user's activity in the last 30 seconds?",
+  "Two teams define 'orders in the last 7 days' differently. How does the platform handle it?",
+  "How would you detect that a feature's online and offline values have diverged?",
+  "What changes if the online store must be in three regions?",
+]
+
+[[quiz]]
+q = "In a point-in-time join for a label at time T, which feature value should be used?"
+options = [
+  "The current value in the online store",
+  "The latest value with event_ts <= T (and within the feature TTL)",
+  "The average of all values",
+  "The first value after T",
+]
+answer = 1
+why = "Only information available at T may be used. The latest value at or before T, subject to TTL, mirrors what the model would have seen in production at that moment."
+
+[[quiz]]
+q = "100M users x 200 features x 8 B is roughly how much raw online data?"
+options = ["16 GB", "160 GB", "1.6 TB", "16 TB"]
+answer = 1
+why = "100M x 200 = 20B values; 20B x 8 B = 160 GB before keys and overhead."
+
+[[quiz]]
+q = "What is training-serving skew?"
+options = [
+  "Uneven partition sizes in Spark",
+  "Feature values seen at training time differ from those computed at serving time for the same situation",
+  "The model is trained on more data than it serves",
+  "Latency differences between regions",
+]
+answer = 1
+why = "Different code paths, windows or data timing make the model see one distribution in training and another in production, degrading accuracy silently."
+
+[[quiz]]
+q = "A backfill computes a new feature for the past year. What must it avoid?"
+options = [
+  "Writing to the offline store",
+  "Overwriting the online store with historical values",
+  "Using Spark",
+  "Partitioning by date",
+]
+answer = 1
+why = "The online store holds only the latest value per entity; loading old backfilled values there would serve stale data. Only the most recent values belong online."

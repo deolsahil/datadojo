@@ -1,0 +1,31 @@
+title = "Big spenders on completed orders"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-aggregation"
+lists = ["sql-essentials"]
+statement = """
+The loyalty program rewards customers whose **completed** purchases add up to more than 500.
+
+Table `orders(id, customer_id, amount, status)`, `status` one of `completed`, `refunded`, `pending`.
+
+Return `customer_id` and `total_spent` (sum of `amount` over that customer's completed orders) for customers whose `total_spent` is **greater than 500**. Refunded and pending orders don't count toward the total.
+"""
+starter = "SELECT customer_id, SUM(amount) AS total_spent\nFROM orders\nGROUP BY customer_id\n"
+solution = """
+SELECT customer_id, SUM(amount) AS total_spent
+FROM orders
+WHERE status = 'completed'
+GROUP BY customer_id
+HAVING SUM(amount) > 500
+"""
+hints = [
+  "There are two filters: one on individual rows, one on the group total.",
+  "Row filters go in WHERE (before grouping); filters on aggregates go in HAVING (after grouping).",
+  "WHERE status = 'completed' ... GROUP BY customer_id HAVING SUM(amount) > 500",
+]
+
+[[tests]]
+tables.orders = { columns = "id INT, customer_id INT, amount INT, status STRING", rows = [[1, 1, 300, "completed"], [2, 1, 250, "completed"], [3, 2, 400, "completed"], [4, 2, 400, "refunded"], [5, 3, 900, "pending"], [6, 4, 501, "completed"]] }
+
+[[tests]]  # exactly 500 is not enough
+tables.orders = { columns = "id INT, customer_id INT, amount INT, status STRING", rows = [[1, 7, 200, "completed"], [2, 7, 300, "completed"], [3, 8, 100, "completed"]] }

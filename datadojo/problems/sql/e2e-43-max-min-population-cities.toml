@@ -1,0 +1,50 @@
+title = "Max and Min Population Cities by State"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-aggregation"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `city_population(state, city, population)`.
+
+For each state return `state, max_population_city, max_population, min_population_city, min_population`: the most and
+the least populated city and their populations. If several cities tie, pick the alphabetically first one. A state
+with one city reports it on both sides. Any row order.
+"""
+starter = "SELECT state, MAX(city) AS max_population_city, MAX(population) AS max_population,\n       MIN(city) AS min_population_city, MIN(population) AS min_population\nFROM city_population\nGROUP BY state\n"
+solution = """
+WITH r AS (
+  SELECT *,
+         ROW_NUMBER() OVER (PARTITION BY state ORDER BY population DESC, city) AS rn_high,
+         ROW_NUMBER() OVER (PARTITION BY state ORDER BY population, city) AS rn_low
+  FROM city_population
+)
+SELECT state,
+       MAX(CASE WHEN rn_high = 1 THEN city END) AS max_population_city,
+       MAX(population) AS max_population,
+       MAX(CASE WHEN rn_low = 1 THEN city END) AS min_population_city,
+       MIN(population) AS min_population
+FROM r
+GROUP BY state
+"""
+hints = [
+  "MAX(city) gives the alphabetically last city, not the most populated one.",
+  "Rank cities per state twice: by population DESC, city and by population ASC, city. Or compare with the state's MIN/MAX in a CTE.",
+  "Keep the rank-1 city of each ranking with conditional aggregation: MAX(CASE WHEN rn_high = 1 THEN city END).",
+]
+
+[[tests]]
+tables.city_population = { columns = "state STRING, city STRING, population INT", rows = [
+  ["Uttar Pradesh", "Mau", 600], ["Uttar Pradesh", "Lucknow", 500], ["Uttar Pradesh", "Agra", 700],
+  ["Bihar", "Gaya", 700], ["Bihar", "Patna", 800], ["Bihar", "Samastipur", 500],
+  ["Karnataka", "Bangalore", 750], ["Karnataka", "Udupi", 300], ["Karnataka", "Kolar", 500],
+  ["Maharashtra", "Shirur", 300], ["Maharashtra", "Pune", 500], ["Maharashtra", "Mumbai", 1400],
+  ["Orrisa", "Rourkela", 100], ["Orrisa", "Bhubaneshwar", 400], ["Orrisa", "Cuttack", 300],
+  ["Haryana", "Gurgaon", 500], ["Haryana", "Bhiwani", 300], ["Haryana", "Faridabad", 400],
+] }
+
+[[tests]]  # ties at the top and bottom; a one-city state
+tables.city_population = { columns = "state STRING, city STRING, population INT", rows = [
+  ["Goa", "Panaji", 900], ["Goa", "Margao", 900], ["Goa", "Vasco", 100], ["Goa", "Mapusa", 100],
+  ["Sikkim", "Gangtok", 300],
+] }

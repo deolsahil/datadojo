@@ -1,0 +1,26 @@
+title = "Products that have been sold"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-basics"
+statement = """
+Merchandising wants the list of products that have actually moved.
+
+Table `order_items(order_id, product_id, qty)`. A product can appear in many orders. Rows with `qty = 0` are placeholders left by a buggy checkout and do not count as a sale.
+
+Return one row per `product_id` that appears with `qty > 0` at least once. Each product must appear **only once** in the output.
+"""
+starter = "SELECT product_id\nFROM order_items\n"
+solution = """
+SELECT DISTINCT product_id FROM order_items WHERE qty > 0
+"""
+hints = [
+  "Filter out the placeholder rows first.",
+  "The same product shows up in many orders; you need to collapse duplicates.",
+  "SELECT DISTINCT product_id ... WHERE qty > 0",
+]
+
+[[tests]]
+tables.order_items = { columns = "order_id INT, product_id INT, qty INT", rows = [[1, 100, 2], [1, 101, 1], [2, 100, 5], [3, 102, 0], [4, 101, 3]] }
+
+[[tests]]  # product with both a placeholder and a real sale
+tables.order_items = { columns = "order_id INT, product_id INT, qty INT", rows = [[1, 7, 0], [2, 7, 1], [3, 8, 0]] }

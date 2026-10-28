@@ -1,0 +1,40 @@
+title = "3 or More Consecutive Empty Seats"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-gaps-islands"
+lists = ["sql-e2e", "sql-essentials"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+A booking management system stores one row per seat in table `bms(seat_no, is_empty)`. `seat_no` is a unique
+integer and seats are numbered in a single row; `is_empty` is `'Y'` or `'N'`.
+
+Return `seat_no` for every empty seat that belongs to a run of **3 or more consecutive empty seats**
+(consecutive seat numbers, all `'Y'`). Any row order.
+"""
+starter = "SELECT seat_no\nFROM bms\nWHERE is_empty = 'Y'\n"
+solution = """
+WITH e AS (
+  SELECT seat_no, seat_no - ROW_NUMBER() OVER (ORDER BY seat_no) AS grp
+  FROM bms
+  WHERE is_empty = 'Y'
+)
+SELECT seat_no
+FROM e
+WHERE grp IN (SELECT grp FROM e GROUP BY grp HAVING COUNT(*) >= 3)
+"""
+hints = [
+  "Only empty seats matter. How do you tell that empty seats form an unbroken run?",
+  "Among empty seats, seat_no - ROW_NUMBER() OVER (ORDER BY seat_no) is constant within a consecutive run.",
+  "Group by that difference, keep groups with COUNT(*) >= 3, then return every seat in those groups.",
+]
+
+[[tests]]
+tables.bms = { columns = "seat_no INT, is_empty STRING", rows = [
+  [1, "N"], [2, "Y"], [3, "N"], [4, "Y"], [5, "Y"], [6, "N"], [7, "Y"], [8, "Y"], [9, "Y"], [10, "N"],
+] }
+
+[[tests]]  # a run of 4, a run of exactly 3 at the end, unsorted input, a run of 2
+tables.bms = { columns = "seat_no INT, is_empty STRING", rows = [
+  [12, "Y"], [1, "Y"], [2, "Y"], [3, "Y"], [4, "Y"], [5, "N"], [6, "Y"], [7, "Y"], [8, "N"],
+  [10, "Y"], [11, "Y"], [9, "N"],
+] }

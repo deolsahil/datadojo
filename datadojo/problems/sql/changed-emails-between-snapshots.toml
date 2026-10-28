@@ -1,0 +1,35 @@
+title = "Accounts whose email changed"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-nulls"
+statement = """
+A nightly job compares yesterday's and today's account snapshots to emit change events.
+
+Tables `accounts_old(id, email)` and `accounts_new(id, email)`. Both contain the same set of `id`s. `email` may be NULL (not provided).
+
+Return the `id` of every account whose email changed. Treat these as changes:
+
+- a value changed to a different value
+- NULL became a value, or a value became NULL
+
+NULL in both snapshots is **not** a change.
+"""
+starter = "SELECT n.id\nFROM accounts_old o\nJOIN accounts_new n ON n.id = o.id\nWHERE o.email <> n.email\n"
+solution = """
+SELECT n.id FROM accounts_old o
+JOIN accounts_new n ON n.id = o.id
+WHERE o.email IS DISTINCT FROM n.email
+"""
+hints = [
+  "With `<>`, any comparison involving NULL is UNKNOWN, so NULL-to-value changes vanish.",
+  "You need a NULL-safe comparison that treats two NULLs as equal and NULL vs value as different.",
+  "WHERE o.email IS DISTINCT FROM n.email (Spark also has `NOT (a <=> b)`).",
+]
+
+[[tests]]
+tables.accounts_old = { columns = "id INT, email STRING", rows = '[[1, "a@x.com"], [2, "b@x.com"], [3, null], [4, "d@x.com"], [5, null]]' }
+tables.accounts_new = { columns = "id INT, email STRING", rows = '[[1, "a@x.com"], [2, "b2@x.com"], [3, "c@x.com"], [4, null], [5, null]]' }
+
+[[tests]]  # nothing changed, NULLs on both sides
+tables.accounts_old = { columns = "id INT, email STRING", rows = '[[1, null], [2, "z@z.z"]]' }
+tables.accounts_new = { columns = "id INT, email STRING", rows = '[[1, null], [2, "z@z.z"]]' }

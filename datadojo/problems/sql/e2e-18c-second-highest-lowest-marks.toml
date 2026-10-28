@@ -1,0 +1,47 @@
+title = "Student Performance: Second Highest and Second Lowest Marks"
+lang = "sql"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+difficulty = "medium"
+pattern = "sql-window-ranking"
+statement = """
+Table `students(studentid, studentname, subject, marks, testid, testdate)` has one row per student per subject
+test (the same student appears once per subject).
+
+For each subject, find the second highest and the second lowest **distinct** mark. Return the rows of the
+students who got either of those marks: `studentid, studentname, subject, marks, testid, testdate`. If several
+students share such a mark, return all of them; a row qualifying both ways appears once. Any row order.
+"""
+starter = "SELECT studentid, studentname, subject, marks, testid, testdate\nFROM students\n"
+solution = """
+SELECT studentid, studentname, subject, marks, testid, testdate
+FROM (
+  SELECT *,
+         DENSE_RANK() OVER (PARTITION BY subject ORDER BY marks) AS asc_rk,
+         DENSE_RANK() OVER (PARTITION BY subject ORDER BY marks DESC) AS desc_rk
+  FROM students
+) t
+WHERE asc_rk = 2 OR desc_rk = 2
+"""
+hints = [
+  "Rank marks within each subject twice: once ascending, once descending.",
+  "Ties call for DENSE_RANK, not ROW_NUMBER: two students with the same mark should get the same rank.",
+  "Keep rows where either rank is 2.",
+]
+
+[[tests]]
+tables.students = { columns = "studentid INT, studentname STRING, subject STRING, marks INT, testid INT, testdate DATE", rows = [
+  [2, "Max Ruin", "Subject1", 63, 1, "2022-01-02"], [3, "Arnold", "Subject1", 95, 1, "2022-01-02"],
+  [4, "Krish Star", "Subject1", 61, 1, "2022-01-02"], [5, "John Mike", "Subject1", 91, 1, "2022-01-02"],
+  [4, "Krish Star", "Subject2", 71, 1, "2022-01-02"], [3, "Arnold", "Subject2", 32, 1, "2022-01-02"],
+  [5, "John Mike", "Subject2", 61, 2, "2022-11-02"], [1, "John Deo", "Subject2", 60, 1, "2022-01-02"],
+  [2, "Max Ruin", "Subject2", 84, 1, "2022-01-02"], [2, "Max Ruin", "Subject3", 29, 3, "2022-01-03"],
+  [5, "John Mike", "Subject3", 98, 2, "2022-11-02"],
+] }
+
+[[tests]]  # tied second-highest marks; a subject with one distinct mark has no second
+tables.students = { columns = "studentid INT, studentname STRING, subject STRING, marks INT, testid INT, testdate DATE", rows = [
+  [1, "A", "Math", 90, 1, "2022-01-01"], [2, "B", "Math", 80, 1, "2022-01-01"], [3, "C", "Math", 80, 1, "2022-01-01"],
+  [4, "D", "Math", 70, 1, "2022-01-01"], [5, "E", "Math", 60, 1, "2022-01-01"],
+  [1, "A", "Art", 50, 1, "2022-01-01"], [2, "B", "Art", 50, 1, "2022-01-01"],
+] }

@@ -1,0 +1,41 @@
+title = "Penultimate Order Details"
+lang = "sql"
+difficulty = "easy"
+pattern = "sql-window-ranking"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `penultimate(order_id, order_date, customer_name, product_name, sales)`. A customer never has two orders on the
+same date.
+
+For every customer return their second most recent order, or their only order if they have just one. Return
+`order_id, order_date, customer_name, product_name, sales`, ordered by `customer_name`.
+"""
+ordered = true
+starter = "SELECT order_id, order_date, customer_name, product_name, sales\nFROM penultimate\nORDER BY customer_name\n"
+solution = """
+SELECT order_id, order_date, customer_name, product_name, sales
+FROM penultimate
+QUALIFY ROW_NUMBER() OVER (PARTITION BY customer_name ORDER BY order_date DESC)
+      = LEAST(2, COUNT(*) OVER (PARTITION BY customer_name))
+ORDER BY customer_name
+"""
+hints = [
+  "Number each customer's orders newest first with ROW_NUMBER.",
+  "COUNT(*) OVER (PARTITION BY customer_name) tells you whether the customer has only one order.",
+  "Keep row 2, or row 1 when the count is 1: rn = LEAST(2, cnt).",
+]
+
+[[tests]]
+tables.penultimate = { columns = "order_id INT, order_date DATE, customer_name STRING, product_name STRING, sales DOUBLE", rows = [
+  [1, "2023-01-01", "Alexa", "iphone", 100.0], [2, "2023-01-02", "Alexa", "boAt", 300.0],
+  [3, "2023-01-03", "Alexa", "Rolex", 400.0], [4, "2023-01-01", "Ramesh", "Titan", 200.0],
+  [5, "2023-01-02", "Ramesh", "Shirt", 300.0], [6, "2023-01-03", "Neha", "Dress", 100.0],
+] }
+
+[[tests]]  # order_id does not follow date order
+tables.penultimate = { columns = "order_id INT, order_date DATE, customer_name STRING, product_name STRING, sales DOUBLE", rows = [
+  [10, "2023-03-05", "Zoe", "Lamp", 40.5], [11, "2023-01-09", "Zoe", "Desk", 250.0],
+  [12, "2023-02-14", "Zoe", "Chair", 120.0], [13, "2023-04-01", "Zoe", "Rug", 80.0],
+  [14, "2023-02-01", "Ali", "Pen", 2.5],
+] }

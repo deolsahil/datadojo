@@ -1,0 +1,41 @@
+title = "First failing pipeline run"
+lang = "python"
+difficulty = "easy"
+pattern = "py-binary-search"
+function = "first_failing"
+source_url = "https://leetcode.com/problems/first-bad-version/"
+statement = """
+A regression slipped into a nightly pipeline. `first_failing(runs)` gets the run statuses in
+chronological order, each `"ok"` or `"fail"`. Once a run fails, every later run also fails,
+so the list looks like `ok, ok, ..., fail, fail, ...`.
+
+Return the index of the first `"fail"`, or `len(runs)` if every run is `"ok"`. Pretend each
+status check is expensive: inspect O(log n) entries, not all of them.
+"""
+hints = [
+    "The predicate `runs[i] == \"fail\"` is False then True: a boundary search.",
+    "Keep `lo` as 'all before this are ok' and `hi` as 'this and after fail'; start `hi` at `len(runs)`.",
+]
+starter = "def first_failing(runs):\n    pass\n"
+solution = """
+def first_failing(runs):
+    lo, hi = 0, len(runs)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if runs[mid] == "fail":
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+"""
+
+[[tests]]
+args = [["ok", "ok", "fail", "fail", "fail"]]
+[[tests]]
+args = [["fail"]]
+[[tests]]
+args = [["ok", "ok"]]
+[[tests]]
+args = [["ok", "ok", "ok", "ok", "ok", "ok", "fail"]]
+[[tests]]
+args = [[]]

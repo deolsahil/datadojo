@@ -1,0 +1,47 @@
+title = "Uber Profit Rides"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-window-running"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `uber_profit_rides(ID, start_time, end_time, start_loc, end_loc)`, one row per ride; `ID` is the driver and the
+times are `TIME` values on a single day. A driver's rides never overlap.
+
+A ride is a **profit ride** when it starts at the exact time and location where the same driver's previous ride (by
+`start_time`) ended. Return `ID, total_rides, profit_rides` for every driver. Any row order.
+"""
+starter = "SELECT ID, COUNT(*) AS total_rides, 0 AS profit_rides\nFROM uber_profit_rides\nGROUP BY ID\n"
+solution = """
+WITH r AS (
+  SELECT *,
+         LAG(end_time) OVER w AS prev_end,
+         LAG(end_loc) OVER w AS prev_loc
+  FROM uber_profit_rides
+  WINDOW w AS (PARTITION BY ID ORDER BY start_time)
+)
+SELECT ID, COUNT(*) AS total_rides,
+       COUNT(*) FILTER (WHERE start_time = prev_end AND start_loc = prev_loc) AS profit_rides
+FROM r
+GROUP BY ID
+"""
+hints = [
+  "Each ride needs its previous ride's end_time and end_loc: LAG over (PARTITION BY ID ORDER BY start_time).",
+  "Both must match: start_time = previous end_time AND start_loc = previous end_loc.",
+  "Count all rides and conditionally count the profit ones in the same GROUP BY.",
+]
+
+[[tests]]
+tables.uber_profit_rides = { columns = "ID STRING, start_time TIME, end_time TIME, start_loc STRING, end_loc STRING", rows = [
+  ["dri_1", "09:00:00", "09:30:00", "a", "b"], ["dri_1", "09:30:00", "10:30:00", "b", "c"],
+  ["dri_1", "11:00:00", "11:30:00", "d", "e"], ["dri_1", "12:00:00", "12:30:00", "f", "g"],
+  ["dri_1", "12:30:00", "14:30:00", "c", "h"], ["dri_2", "12:15:00", "12:30:00", "f", "g"],
+  ["dri_2", "12:30:00", "14:30:00", "c", "h"],
+] }
+
+[[tests]]  # a chain of back-to-back rides stored out of order; same place but a time gap
+tables.uber_profit_rides = { columns = "ID STRING, start_time TIME, end_time TIME, start_loc STRING, end_loc STRING", rows = [
+  ["dri_3", "10:00:00", "10:20:00", "y", "z"], ["dri_3", "09:00:00", "09:40:00", "w", "x"],
+  ["dri_3", "09:40:00", "10:00:00", "x", "y"],
+  ["dri_4", "08:00:00", "08:30:00", "p", "q"], ["dri_4", "08:45:00", "09:00:00", "q", "r"],
+] }

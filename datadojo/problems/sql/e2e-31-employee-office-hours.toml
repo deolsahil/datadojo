@@ -1,0 +1,55 @@
+title = "Employee Office Hours"
+lang = "sql"
+difficulty = "medium"
+pattern = "sql-sessions-funnels"
+lists = ["sql-e2e"]
+source_url = "https://github.com/deolsahil/sql-end-to-end-questions"
+statement = """
+Table `Swipes(employee_id, activity_type, activity_time)`. `activity_type` is `'login'` or `'logout'`; on each day an
+employee's swipes alternate login, logout, login, logout, ... and every login has a logout later the same day.
+
+For each employee and day return `employee_id, activity_day, total_hours, productive_hours`:
+
+- `activity_day`: the date of the swipes.
+- `total_hours`: hours from the first login to the last logout that day.
+- `productive_hours`: hours actually spent logged in (the sum of every login-to-logout session).
+
+Hours are exact decimals (90 minutes = `1.5`). Any row order.
+"""
+starter = "SELECT employee_id, CAST(activity_time AS DATE) AS activity_day, 0 AS total_hours, 0 AS productive_hours\nFROM Swipes\nGROUP BY ALL\n"
+solution = """
+WITH s AS (
+  SELECT employee_id, activity_type, activity_time,
+         CAST(activity_time AS DATE) AS activity_day,
+         LEAD(activity_time) OVER (PARTITION BY employee_id, CAST(activity_time AS DATE) ORDER BY activity_time) AS next_time
+  FROM Swipes
+)
+SELECT employee_id, activity_day,
+       date_diff('second', MIN(activity_time) FILTER (WHERE activity_type = 'login'),
+                           MAX(activity_time) FILTER (WHERE activity_type = 'logout')) / 3600.0 AS total_hours,
+       SUM(date_diff('second', activity_time, next_time)) FILTER (WHERE activity_type = 'login') / 3600.0 AS productive_hours
+FROM s
+GROUP BY employee_id, activity_day
+"""
+hints = [
+  "Group by employee and CAST(activity_time AS DATE). total_hours is just first login to last logout.",
+  "For productive time, pair each login with the swipe right after it: LEAD(activity_time) over the employee's day.",
+  "Sum the login-to-next gaps in seconds and divide by 3600.0 to keep fractions of an hour.",
+]
+
+[[tests]]
+tables.Swipes = { columns = "employee_id INT, activity_type STRING, activity_time TIMESTAMP", rows = [
+  [1, "login", "2024-07-23 08:00:00"], [1, "logout", "2024-07-23 12:00:00"],
+  [1, "login", "2024-07-23 13:00:00"], [1, "logout", "2024-07-23 17:00:00"],
+  [2, "login", "2024-07-23 09:00:00"], [2, "logout", "2024-07-23 11:00:00"],
+  [2, "login", "2024-07-23 12:00:00"], [2, "logout", "2024-07-23 15:00:00"],
+  [1, "login", "2024-07-24 08:30:00"], [1, "logout", "2024-07-24 12:30:00"],
+  [2, "login", "2024-07-24 09:30:00"], [2, "logout", "2024-07-24 10:30:00"],
+] }
+
+[[tests]]  # partial hours, swipes stored out of order, three sessions in a day
+tables.Swipes = { columns = "employee_id INT, activity_type STRING, activity_time TIMESTAMP", rows = [
+  [3, "logout", "2024-07-25 10:30:00"], [3, "login", "2024-07-25 09:00:00"],
+  [3, "logout", "2024-07-25 12:00:00"], [3, "login", "2024-07-25 11:15:00"],
+  [3, "login", "2024-07-25 13:00:00"], [3, "logout", "2024-07-25 13:20:00"],
+] }

@@ -1,0 +1,63 @@
+title = "Diff two JSON documents by path"
+lang = "python"
+difficulty = "hard"
+pattern = "py-recursion"
+lists = ["python-de"]
+function = "json_diff"
+statement = '''
+`json_diff(a, b)` compares two JSON documents and returns a list of `[path, kind]` pairs, any order, where `kind` is `"added"`, `"removed"` or `"changed"`.
+
+Paths: a top-level key is `k`; a nested key is `parent.k`; a list element is `parent[i]`; the root is `""`.
+
+- Both dicts: recurse into every key. A key only in `b` is `added`, only in `a` is `removed`, reported once at that key (do not descend into it).
+- Both lists: compare position by position. Positions past the end of `a` are `added`, past the end of `b` are `removed`.
+- Otherwise, if the values are not equal (`!=`), the path is `changed`. This includes type changes such as dict vs list.
+
+Equal documents give `[]`.
+'''
+starter = "def json_diff(a, b):\n    pass\n"
+solution = '''
+def json_diff(a, b):
+    out = []
+
+    def walk(x, y, path):
+        if isinstance(x, dict) and isinstance(y, dict):
+            for k in x.keys() | y.keys():
+                p = f"{path}.{k}" if path else k
+                if k not in y:
+                    out.append([p, "removed"])
+                elif k not in x:
+                    out.append([p, "added"])
+                else:
+                    walk(x[k], y[k], p)
+        elif isinstance(x, list) and isinstance(y, list):
+            for i in range(max(len(x), len(y))):
+                p = f"{path}[{i}]"
+                if i >= len(y):
+                    out.append([p, "removed"])
+                elif i >= len(x):
+                    out.append([p, "added"])
+                else:
+                    walk(x[i], y[i], p)
+        elif x != y:
+            out.append([path, "changed"])
+
+    walk(a, b, "")
+    return out
+'''
+hints = [
+    "One recursive helper taking both values and the current path.",
+    "Handle the dict/dict and list/list cases first; anything else is a leaf comparison.",
+    "List paths attach as `[i]` with no dot; a top-level key has no leading dot.",
+]
+
+[[tests]]
+args = '''[{"id": 1, "user": {"name": "a", "tags": ["x", "y"]}, "old": {"deep": 1}},
+           {"id": 2, "user": {"name": "a", "tags": ["x", "z", "w"]}, "new": {"deep": 1}}]'''
+[[tests]]  # shrinking list, type change, null
+args = '''[{"rows": [{"v": 1}, {"v": 2}, {"v": 3}], "cfg": {"a": 1}, "n": null},
+           {"rows": [{"v": 1}, {"v": 20}], "cfg": [1], "n": 0}]'''
+[[tests]]
+args = '''[[1, 2], [1, 2]]'''
+[[tests]]
+args = [5, "5"]
