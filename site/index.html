@@ -33,7 +33,7 @@
   .btn:hover { transform: translateY(-2px); border-color: var(--acc) }
   .btn.primary { background: var(--acc); color: var(--on-acc); border-color: var(--acc); box-shadow: 0 12px 34px -12px var(--acc) }
   .btn.small { padding: 7px 14px; font-size: 13px; border-radius: 9px }
-  .hero { display: grid; grid-template-columns: 1.25fr .75fr; gap: 30px; align-items: center; padding: 70px 0 40px }
+  .hero { display: grid; grid-template-columns: 1.25fr .75fr; gap: 30px; align-items: center; padding-block: 70px 40px }
   .kicker { color: var(--acc); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; font-weight: 700 }
   h1 { font-size: clamp(42px, 6.4vw, 72px); line-height: 1.02; margin: 14px 0 16px; font-weight: 800;
        background: linear-gradient(90deg, var(--acc), #bfe6f9, var(--acc2), var(--acc)); background-size: 300% 100%;
@@ -95,7 +95,52 @@
   @keyframes shimmer { to { background-position: 300% 0 } } @keyframes caret { 50% { opacity: 0 } }
   @keyframes spin { to { transform: rotate(360deg) } } @keyframes bob { 50% { translate: 0 -8px } }
   @keyframes pop { from { opacity: 0; transform: scale(.85) } } @keyframes fade { from { opacity: 0 } }
-  @media (max-width: 900px) { .hero, .help { grid-template-columns: 1fr } .grid, .steps { grid-template-columns: 1fr 1fr } .coaches { grid-template-columns: 1fr 1fr } nav a.l { display: none } }
+  /* ---------- any screen ---------- */
+  img, svg { max-width: 100% }
+  body { overflow-x: hidden }
+  @media (max-width: 960px) {
+    .hero { grid-template-columns: 1fr; padding-block: 48px 20px; gap: 10px } .stage { height: 300px; order: -1 }
+    .help { grid-template-columns: 1fr } .grid, .steps { grid-template-columns: 1fr 1fr } .coaches { grid-template-columns: repeat(4, minmax(0, 1fr)) }
+    nav a.l { display: none }
+  }
+  @media (max-width: 640px) {
+    .wrap { padding: 0 18px } nav .wrap { gap: 12px; height: 56px } .logo { font-size: 17px }
+    nav .btn.small { padding: 6px 11px; font-size: 12px }
+    .hero { padding-block: 26px 10px } h1 { font-size: 44px; margin: 8px 0 12px } .lead { font-size: 15px; margin-bottom: 20px }
+    .stage { height: 250px } .stage .ring { width: 220px; height: 220px } .stage .glow { width: 200px; height: 200px }
+    .stage #sensei svg { width: 124px; height: 124px } .orbit svg { width: 42px; height: 42px }
+    .orbit:nth-of-type(1) { top: 4px; left: 4px } .orbit:nth-of-type(2) { top: 14px; right: 0 } .orbit:nth-of-type(3) { bottom: 0; left: 8px }
+    .bubble { right: 0; bottom: 18px; max-width: 190px; font-size: 11.5px }
+    .dlg { grid-template-columns: 1fr } .dbtn { min-height: 56px; font-size: 15px; width: 100% }
+    .dl-meta { gap: 10px }
+    section.wrap { padding-top: 46px } h2 { font-size: 24px } .sub { font-size: 14px }
+    .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -18px 12px; padding: 0 18px } .tabs::-webkit-scrollbar { display: none }
+    .tabs button { white-space: nowrap } .win { border-radius: 12px } .win .bar span { font-size: 10.5px; margin-right: 0 }
+    .grid, .steps { grid-template-columns: 1fr } .coaches { grid-template-columns: 1fr 1fr } .coach svg { width: 70px; height: 70px }
+    footer .wrap { flex-direction: column; align-items: flex-start; gap: 10px } footer .sp { display: none }
+  }
+
+  /* ---------- "desktop only" popup for phones and tablets ---------- */
+  .pop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 18px; background: rgba(3,5,8,.62);
+         backdrop-filter: blur(6px); opacity: 0; pointer-events: none; transition: opacity .2s }
+  .pop.open { opacity: 1; pointer-events: auto }
+  .pop-card { width: min(440px, 100%); max-height: calc(100vh - 36px); overflow: auto; border-radius: 22px; background: var(--bg2);
+              border: 1px solid var(--line2); box-shadow: 0 30px 80px rgba(0,0,0,.6); text-align: center; transform: translateY(14px) scale(.96);
+              transition: transform .35s cubic-bezier(.2,.8,.2,1) }
+  .pop.open .pop-card { transform: none }
+  .pop-stage { position: relative; height: 170px; display: grid; place-items: center; overflow: hidden; border-bottom: 1px solid var(--line);
+    background: radial-gradient(240px 150px at 50% 72%, rgba(125,211,252,.22), transparent 70%), linear-gradient(180deg, rgba(251,191,36,.08), var(--bg2));
+    --mo-track-travel: 4px }
+  .pop-stage .ring { position: absolute; width: 150px; height: 150px; border-radius: 50%; border: 1px dashed rgba(125,211,252,.45); animation: spin 18s linear infinite }
+  .pop-stage .dev { position: absolute; font-size: 24px; animation: bob 4s ease-in-out infinite } .pop-stage .d1 { left: 16%; top: 30% } .pop-stage .d2 { right: 16%; top: 22%; animation-delay: -2s }
+  .pop-body { padding: 20px 24px 22px } .pop-body h3 { margin: 6px 0 8px; font-size: 21px } .pop-body p { margin: 0 0 16px; color: var(--dim); font-size: 13.5px }
+  .link-chip { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: var(--card);
+               border: 1px solid var(--line2); font-size: 12.5px; color: var(--text2); text-align: left; overflow: hidden }
+  .link-chip span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .pop-actions { display: grid; gap: 10px } .pop-actions .btn { justify-content: center; width: 100% }
+  .pop-later { margin-top: 12px; background: none; border: 0; color: var(--faint); font: 13px var(--mono); cursor: pointer; text-decoration: underline }
+  .toast { margin-top: 10px; min-height: 18px; font-size: 12.5px; color: var(--easy) }
+  .mobile-note { display: none; margin-top: 12px; color: var(--dim); font-size: 13px } body.is-mobile .mobile-note { display: block }
   @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important } .reveal { opacity: 1; transform: none } }
 </style>
 </head>
@@ -117,6 +162,7 @@
       <a class="dbtn" data-os="win" data-file="DataDojo-Windows-Setup.exe">⊞ Download for Windows</a>
       <a class="dbtn" data-os="linux" data-file="DataDojo-Linux-x64.tar.gz">🐧 Download for Linux</a>
     </div>
+    <div class="mobile-note">📱 On a phone? Tap a button and we'll help you send DataDojo to your computer.</div>
     <div class="dl-meta"><span class="count" id="dl-count" hidden></span>
       <span class="dl-note"><span id="dl-version">Free</span> · open source (MIT) · <a href="#first-open">first-open help</a></span></div>
   </div>
@@ -181,6 +227,16 @@
   <a href="https://github.com/deolsahil/datadojo/issues" target="_blank" rel="noreferrer">Report an issue</a><span class="sp"></span>
   <span>Mascots by <a href="https://blobatar.dev" target="_blank" rel="noreferrer">blobatar</a> · MIT licensed</span></div></footer>
 
+<div class="pop" id="pop" role="dialog" aria-modal="true" aria-labelledby="pop-title"><div class="pop-card">
+  <div class="pop-stage"><div class="ring"></div><span class="dev d1">💻</span><span class="dev d2">🖥️</span><div id="pop-blob"></div></div>
+  <div class="pop-body"><div class="kicker">Desktop app</div><h3 id="pop-title">DataDojo lives on your computer</h3>
+    <p>It runs real SQL, Python and Spark engines on your machine, so phones and tablets can't install it. Send yourself the link and grab it on a Mac, Windows or Linux computer.</p>
+    <div class="link-chip">🔗 <span id="pop-link"></span></div>
+    <div class="pop-actions"><button class="btn primary" id="pop-share">📤 Send to my computer</button><button class="btn" id="pop-copy">📋 Copy link</button>
+      <a class="btn" id="pop-mail">✉️ Email me the link</a></div>
+    <div class="toast" id="pop-toast" role="status"></div>
+    <button class="pop-later" id="pop-later">Maybe later</button></div></div></div>
+
 <script type="module">
 const $ = s => document.querySelector(s);
 const REL = 'https://github.com/deolsahil/datadojo/releases/latest/download/';
@@ -199,7 +255,12 @@ function macChip() {
     return /Intel|AMD|Radeon/i.test(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '') ? 'DataDojo-macOS-x64.dmg' : 'DataDojo-macOS-arm64.dmg';
   } catch { return 'DataDojo-macOS-arm64.dmg'; }
 }
-const os = platform();
+// Phones and tablets can't run DataDojo. iPadOS reports itself as a Mac, so check touch points too.
+const isMobile = /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle|Opera Mini/i.test(navigator.userAgent)
+  || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1)
+  || (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches);
+document.body.classList.toggle('is-mobile', isMobile);
+const os = isMobile ? 'mac' : platform();
 $('#dl-mac').dataset.file = macChip();
 document.querySelectorAll('.dbtn').forEach(b => {
   b.classList.toggle('primary', b.dataset.os === os);
@@ -208,7 +269,29 @@ document.querySelectorAll('.dbtn').forEach(b => {
 const dlg = $('.dlg');                                         // the visitor's OS goes first
 const mine = os === 'mac' ? $('.mac') : document.querySelector(`.dbtn[data-os="${os}"]`);
 if (mine) dlg.prepend(mine);
-$('#mac-caret').onclick = e => { e.preventDefault(); e.stopPropagation(); $('#mac-menu').classList.toggle('open'); };
+$('#mac-caret').onclick = e => { e.preventDefault(); e.stopPropagation(); if (isMobile) return openPop(); $('#mac-menu').classList.toggle('open'); };
+if (isMobile) document.querySelectorAll('.dbtn').forEach(b => b.addEventListener('click', e => { e.preventDefault(); openPop(); }));
+
+// "Desktop only" popup with ways to get the link onto a computer.
+const PAGE = location.origin + location.pathname;
+$('#pop-link').textContent = PAGE.replace(/^https?:\/\//, '');
+$('#pop-mail').href = `mailto:?subject=${encodeURIComponent('DataDojo download link')}&body=${encodeURIComponent('Download DataDojo on my computer: ' + PAGE)}`;
+let popFace = null;
+function openPop() {
+  $('#pop').classList.add('open'); $('#pop-toast').textContent = '';
+  if (window.dojoBlob && !popFace) { $('#pop-blob').innerHTML = window.dojoBlob('sensei-sql', 112, 'surprised'); popFace = $('#pop-blob svg'); }
+  setTimeout(() => window.dojoMood?.(popFace, 'happy'), 700);
+}
+const closePop = () => $('#pop').classList.remove('open');
+const done = msg => { $('#pop-toast').textContent = msg; window.dojoMood?.(popFace, 'love'); };
+$('#pop-later').onclick = closePop;
+$('#pop').onclick = e => { if (e.target.id === 'pop') closePop(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
+$('#pop-copy').onclick = async () => { try { await navigator.clipboard.writeText(PAGE); done('Copied! Paste it on your computer ✓'); } catch { done('Long-press the link above to copy it.'); } };
+$('#pop-share').onclick = async () => {
+  if (navigator.share) { try { await navigator.share({ title: 'DataDojo', text: 'Download DataDojo on my computer', url: PAGE }); done('Sent! Open it on your computer ✓'); } catch {} }
+  else $('#pop-copy').click();
+};
 $('#mac-menu').onclick = e => { const a = e.target.closest('[data-file]'); if (a) location.href = REL + a.dataset.file; };
 document.addEventListener('click', e => { if (!e.target.closest('.mac')) $('#mac-menu').classList.remove('open'); });
 
@@ -236,6 +319,12 @@ try {
   const [I, E, G] = await Promise.all(['internal', 'expression', 'gaze'].map(f => import(`./vendor/blobatar/${f}.js`)));
   const blob = (seed, size, mood = 'idle') => { const p = I._parts(seed, { animate: 'always', expression: E[mood], background: false });
     return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" style="${I.serializeVars(p.vars)}" aria-hidden="true"><g class="${p.cls}">${p.inner}</g></svg>`; };
+  window.dojoBlob = blob;
+  window.dojoMood = (svg, mood) => { if (!svg) return;
+    const p = I._parts('sensei-sql', { animate: 'always', expression: E[mood], background: false });
+    for (const k of [...svg.style]) if (k.startsWith('--mo-') && !(k in p.vars)) svg.style.removeProperty(k);
+    for (const [k, v] of Object.entries(p.vars)) svg.style.setProperty(k, v);
+    svg.querySelector('g').setAttribute('class', p.cls); };
   $('#sensei').innerHTML = blob('sensei-sql', 170, 'happy');
   G.gaze($('#sensei svg'), { target: 'pointer' });
   document.querySelectorAll('.orbit').forEach(o => o.insertAdjacentHTML('afterbegin', blob(o.dataset.seed, 54, 'idle')));
