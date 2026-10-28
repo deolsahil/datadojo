@@ -4,6 +4,7 @@
 
 macOS  -> dist/release/DataDojo-macOS-<arch>.dmg   (drag-to-Applications disk image)
 Windows-> dist/release/DataDojo-Windows-Setup.exe   (Inno Setup installer; needs `iscc` on PATH)
+Linux  -> dist/release/DataDojo-Linux-x64.tar.gz    (extract, run ./DataDojo/DataDojo; opens in the browser)
 PySpark is deliberately not bundled (~320 MB); the app installs it on first use.
 Unsigned: see README for the one-time "Open Anyway" / "Run anyway" step.
 """
@@ -55,6 +56,14 @@ def windows_setup():
     return OUT / "DataDojo-Windows-Setup.exe"
 
 
+def linux_tarball():
+    import tarfile
+    out = OUT / "DataDojo-Linux-x64.tar.gz"
+    with tarfile.open(out, "w:gz") as t:
+        t.add(DIST / "DataDojo", arcname="DataDojo")
+    return out
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":  # Inno Setup wants a real .ico
@@ -62,7 +71,7 @@ def main():
         BUILD.mkdir(exist_ok=True)
         Image.open(ROOT / "packaging" / "icon.png").save(BUILD / "DataDojo.ico", sizes=[(s, s) for s in (16, 32, 48, 64, 128, 256)])
     pyinstaller()
-    out = mac_dmg() if sys.platform == "darwin" else windows_setup() if sys.platform == "win32" else None
+    out = mac_dmg() if sys.platform == "darwin" else windows_setup() if sys.platform == "win32" else linux_tarball()
     print(f"built {out}" if out else f"built {DIST / 'DataDojo'} (no installer format for {sys.platform})")
 
 

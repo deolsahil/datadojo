@@ -19,6 +19,7 @@ jobs:
           - os: macos-latest        # Apple Silicon -> DataDojo-macOS-arm64.dmg
           - os: macos-15-intel      # Intel         -> DataDojo-macOS-x64.dmg
           - os: windows-latest      # x64           -> DataDojo-Windows-Setup.exe
+          - os: ubuntu-22.04        # x64           -> DataDojo-Linux-x64.tar.gz (older glibc = wider compatibility)
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
