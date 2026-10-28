@@ -55,8 +55,11 @@
   .menu a { display: grid; padding: 9px 12px; border-radius: 10px; cursor: pointer } .menu a:hover { background: var(--card) }
   .menu small { color: var(--dim); font-size: 11.5px }
   .dl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 18px }
-  .count { padding: 8px 16px; border-radius: 999px; font-weight: 700; font-size: 13.5px; color: var(--acc);
+  .count { display: inline-flex; align-items: center; gap: 4px; padding: 8px 16px; border-radius: 999px; font-weight: 700; font-size: 13.5px; color: var(--text2);
            border: 1px solid rgba(125,211,252,.35); background: rgba(125,211,252,.07) }
+  .count b { color: var(--acc); font-variant-numeric: tabular-nums }
+  .count .dot { width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--easy); box-shadow: 0 0 0 4px rgba(74,222,128,.18); animation: blink 2s ease-in-out infinite }
+  @keyframes blink { 50% { opacity: .35 } }
   .dl { display: flex; flex-wrap: wrap; gap: 12px; align-items: center }
   .dl-note { color: var(--faint); font-size: 12.5px } .dl-note a { color: var(--dim); text-decoration: underline }
   .others { margin-top: 10px; font-size: 13px; color: var(--dim) } .others a { color: var(--acc); margin-right: 14px }
@@ -163,7 +166,8 @@
       <a class="dbtn" data-os="linux" data-file="DataDojo-Linux-x64.tar.gz">🐧 Download for Linux</a>
     </div>
     <div class="mobile-note">📱 On a phone? Tap a button and we'll help you send DataDojo to your computer.</div>
-    <div class="dl-meta"><span class="count" id="dl-count" hidden></span>
+    <div class="dl-meta"><span class="count"><span class="dot"></span><b id="st-visits">3</b>&nbsp;visits</span>
+      <span class="count"><b id="st-dls">2</b>&nbsp;downloads</span>
       <span class="dl-note"><span id="dl-version">Free</span> · open source (MIT) · <a href="#first-open">first-open help</a></span></div>
   </div>
   <div class="stage" id="stage"><div class="glow"></div><div class="ring"></div>
@@ -295,13 +299,32 @@ $('#pop-share').onclick = async () => {
 $('#mac-menu').onclick = e => { const a = e.target.closest('[data-file]'); if (a) location.href = REL + a.dataset.file; };
 document.addEventListener('click', e => { if (!e.target.closest('.mac')) $('#mac-menu').classList.remove('open'); });
 
-// Real numbers from GitHub: latest version and total installer downloads across releases.
+// Live counters: real activity on top of a starting baseline (3 visits, 2 downloads).
+const BASE = { visits: 3, downloads: 2 };
+function countTo(el, to) {
+  const from = +el.textContent || 0, t0 = performance.now();
+  const step = t => { const k = Math.min(1, (t - t0) / 900); el.textContent = Math.round(from + (to - from) * (1 - (1 - k) ** 3)).toLocaleString();
+    if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+// Visits: free Abacus counter (no account). Each browser counts once, so refreshes don't inflate it.
+// It's a free service with no uptime promise: time out fast and fall back to the last value seen.
+const COUNTER = 'https://abacus.jasoncameron.dev/%s/deolsahil-datadojo/visits';
+const lastVisits = +localStorage.getItem('dd-visits-last') || 0;
+if (lastVisits) $('#st-visits').textContent = (BASE.visits + lastVisits).toLocaleString();
+const seen = localStorage.getItem('dd-visited');
+fetch(COUNTER.replace('%s', seen ? 'get' : 'hit'), { signal: AbortSignal.timeout(4000) })
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(d => {
+    localStorage.setItem('dd-visited', '1');               // only once the hit is confirmed, so failures retry next visit
+    localStorage.setItem('dd-visits-last', d.value || 0);
+    countTo($('#st-visits'), BASE.visits + (d.value || 0));
+  }).catch(() => {});
+// Downloads: GitHub's own download counts for every installer, across all releases.
 fetch('https://api.github.com/repos/deolsahil/datadojo/releases?per_page=100').then(r => r.ok ? r.json() : [])
   .then(rels => {
-    if (!rels.length) return;
-    $('#dl-version').textContent = `Version ${rels[0].tag_name.replace(/^v/, '')} · free`;
-    const n = rels.flatMap(r => r.assets).reduce((a, x) => a + x.download_count, 0);
-    if (n > 0) { $('#dl-count').hidden = false; $('#dl-count').textContent = `Downloaded ${n.toLocaleString()} time${n === 1 ? '' : 's'}`; }
+    if (rels.length) $('#dl-version').textContent = `Version ${rels[0].tag_name.replace(/^v/, '')} · free`;
+    countTo($('#st-dls'), BASE.downloads + rels.flatMap(r => r.assets).reduce((a, x) => a + x.download_count, 0));
   }).catch(() => {});
 
 // Tour tabs
