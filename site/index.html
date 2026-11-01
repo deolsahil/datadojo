@@ -96,6 +96,20 @@
   .help { display: grid; grid-template-columns: 1fr 1fr; gap: 16px } .help ol { margin: 8px 0 0; padding-left: 20px; color: var(--text2); font-size: 13.5px }
   footer { border-top: 1px solid var(--line); padding: 34px 0 50px; color: var(--faint); font-size: 13px }
   footer .wrap { display: flex; gap: 18px; align-items: center; flex-wrap: wrap } footer a { color: var(--dim) } footer a:hover { color: var(--acc) }
+  .grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)) }
+  .tag-new { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .08em;
+             color: var(--on-acc); background: var(--acc2); vertical-align: 2px }
+  /* NEW: interview launch (remove after 2026-11-08): announcement pill + spotlight */
+  .new-pill { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 6px 14px 6px 6px; border-radius: 999px;
+              border: 1px solid rgba(251,191,36,.45); background: rgba(251,191,36,.08); color: var(--text2); font-size: 13px; transition: border-color .2s, transform .2s }
+  .new-pill:hover { border-color: var(--acc2); transform: translateY(-1px) } .new-pill b { padding: 2px 9px; border-radius: 999px; background: var(--acc2); color: var(--on-acc); font-size: 11px; letter-spacing: .08em }
+  .spot { display: grid; grid-template-columns: .9fr 1.1fr; gap: 34px; align-items: center; padding: 30px; border-radius: 20px;
+          border: 1px solid rgba(251,191,36,.35); background: linear-gradient(135deg, rgba(251,191,36,.07), rgba(125,211,252,.05) 60%, transparent) }
+  .spot h2 { margin: 8px 0 10px; font-size: clamp(24px, 3vw, 32px); line-height: 1.25 } .spot ul { margin: 14px 0 22px; padding: 0; list-style: none; display: grid; gap: 9px }
+  .spot li { display: flex; gap: 10px; color: var(--text2); font-size: 14px } .spot li i { font-style: normal; flex: none }
+  .spot .tracks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px } .spot .tracks span { padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); font-size: 12.5px; color: var(--text) }
+  .spot .win img { animation: none }
+  /* end NEW */
   .js .reveal:not(.in) { opacity: 0; transform: translateY(12px) } .reveal { transition: opacity .35s, transform .35s cubic-bezier(.2,.8,.2,1) }
   @keyframes shimmer { to { background-position: 300% 0 } } @keyframes caret { 50% { opacity: 0 } }
   @keyframes spin { to { transform: rotate(360deg) } } @keyframes bob { 50% { translate: 0 -8px } }
@@ -105,7 +119,7 @@
   body { overflow-x: hidden }
   @media (max-width: 960px) {
     .hero { grid-template-columns: 1fr; padding-block: 48px 20px; gap: 10px } .stage { height: 300px; order: -1 }
-    .help { grid-template-columns: 1fr } .grid, .steps { grid-template-columns: 1fr 1fr } .coaches { grid-template-columns: repeat(4, minmax(0, 1fr)) }
+    .help { grid-template-columns: 1fr } .grid, .grid.four, .steps { grid-template-columns: 1fr 1fr } .spot { grid-template-columns: 1fr; padding: 22px } .coaches { grid-template-columns: repeat(4, minmax(0, 1fr)) }
     nav a.l { display: none }
   }
   @media (max-width: 640px) {
@@ -151,15 +165,18 @@
 </head>
 <body>
 <nav><div class="wrap"><a class="logo" href="#">DATA<span>DOJO</span></a>
+  <a class="l" href="#interview">Interview <span class="tag-new">NEW</span></a><!-- NEW: remove badge after 2026-11-08 -->
   <a class="l" href="#tour">Tour</a><a class="l" href="#features">Features</a><a class="l" href="#start">Get started</a>
   <span class="sp"></span><a class="btn small" href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub ★</a>
   <a class="btn small primary" id="nav-dl" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg">Download</a></div></nav>
 
 <header class="wrap hero" id="download">
   <div>
+    <!-- NEW: interview launch (remove after 2026-11-08) -->
+    <a class="new-pill" href="#interview"><b>NEW</b> Interview practice: speak your answers, get graded →</a>
     <div class="kicker">Free desktop app · Mac, Windows &amp; Linux</div>
     <h1>DATADOJO<i>_</i></h1>
-    <p class="lead">Practice SQL, Python and PySpark like it's the real interview. 234 problems graded by real engines, a data system design course, brain games, and friendly AI coaches that give hints, not answers. Everything runs on your own computer.</p>
+    <p class="lead">Practice SQL, Python and PySpark like it's the real interview. 234 problems graded by real engines, mock interviews you can answer out loud, data and AI system design courses, brain games, and friendly AI coaches that give hints, not answers. Everything runs on your own computer.</p>
     <div class="dlg">
       <div class="mac"><a class="dbtn" data-os="mac" id="dl-mac" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg" data-file="DataDojo-macOS-arm64.dmg">⌘ Download for Mac <span class="caret" id="mac-caret" role="button" aria-label="Choose Mac chip">▾</span></a>
         <div class="menu" id="mac-menu"><a href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg" data-file="DataDojo-macOS-arm64.dmg"><b>Apple Silicon</b><small>M1, M2, M3, M4 and later</small></a>
@@ -178,18 +195,41 @@
     <div id="sensei"></div><div class="bubble">Hi! I'm Sensei. Stuck on a window function? I'll nudge, you'll solve. 🐾</div></div>
 </header>
 
+<!-- NEW: interview launch spotlight (remove after 2026-11-08; the tour tab and feature card stay) -->
+<section id="interview" class="wrap reveal">
+  <div class="spot">
+    <div>
+      <div class="kicker" style="color:var(--acc2)">New · Interview practice</div>
+      <h2>Answer out loud. Sensei grades it like an interviewer.</h2>
+      <p class="sub" style="margin:0">Mock interviews and topic drills for four roles, at entry, mid or senior level.</p>
+      <ul>
+        <li><i>🎙️</i><span>Speak or type. Your words appear as you talk, transcribed on your own computer, so audio never leaves it.</span></li>
+        <li><i>✅</i><span>Every answer is checked point by point against what a strong answer covers, with a score, what to improve and a suggested answer.</span></li>
+        <li><i>🗣️</i><span>Delivery feedback too: pace, length and filler words.</span></li>
+        <li><i>📒</i><span>A cheatsheet per role, in plain English first, then interview-ready depth.</span></li>
+      </ul>
+      <div class="tracks"><span>Data Engineer</span><span>AI Engineer</span><span>ML Engineer</span><span>Data Analyst</span></div>
+    </div>
+    <div class="win"><div class="bar"><i></i><i></i><i></i><span>interview/data-engineer · Sensei</span></div>
+      <img decoding="async" loading="lazy" src="assets/interview-card.webp" alt="A graded interview answer in DataDojo" width="852" height="792"></div>
+  </div>
+</section>
+<!-- end NEW -->
+
 <section id="tour" class="wrap reveal">
   <div class="kicker">Tour</div><h2>See it in action</h2>
-  <div class="tabs" id="tabs"><button class="on" data-i="workspace">Coaching workspace</button><button data-i="home">Your dashboard</button>
+  <div class="tabs" id="tabs"><button class="on" data-i="workspace">Coaching workspace</button><button data-i="interview">Interview practice <span class="tag-new">NEW</span></button><button data-i="home">Your dashboard</button>
     <button data-i="design">System design</button><button data-i="games">Brain games</button></div>
   <div class="win"><div class="bar"><i></i><i></i><i></i><span id="win-title">sql/joins/customers-without-orders · Duck</span></div>
     <img id="shot" decoding="async" src="assets/workspace.webp" alt="DataDojo coaching workspace" width="1440" height="900"></div>
 </section>
 
 <section id="features" class="wrap reveal">
-  <div class="kicker">What's inside</div><h2>Everything a data engineer practices</h2>
+  <div class="kicker">What's inside</div><h2>Everything you practice for data and AI roles</h2>
   <p class="sub">Problems are graded by actually running your code, the same way an interviewer would check it.</p>
-  <div class="grid">
+  <div class="grid four">
+    <div class="card"><div class="ico">🎙️</div><h3>Mock interviews <span class="tag-new">NEW</span></h3><p>Data Engineer, AI Engineer, ML Engineer and Data Analyst. Speak or type; every answer graded with a report at the end.</p></div>
+    <div class="card"><div class="ico">🤖</div><h3>AI system design <span class="tag-new">NEW</span></h3><p>Production GenAI: RAG, fine-tuning, evals, observability, caching, feedback loops and guardrails.</p></div>
     <div class="card"><div class="ico">🧮</div><h3>234 real problems</h3><p>SQL, Python and PySpark by pattern: windows, gaps &amp; islands, CDC, SCD2, joins, parsing and more, plus curated lists.</p></div>
     <div class="card"><div class="ico">⚙️</div><h3>Any engine</h3><p>DuckDB, SQLite, PostgreSQL, Spark SQL, plus MySQL, Snowflake, BigQuery and SQL Server syntax. Python 3.10 to 3.15, PySpark 3.4 to 4.x.</p></div>
     <div class="card"><div class="ico">🐾</div><h3>Coaches, not answer keys</h3><p>A six-stage coaching chat (understand → approach → build → edge cases → optimize → review) that reacts to your test runs.</p></div>
@@ -329,12 +369,15 @@ fetch('https://api.github.com/repos/deolsahil/datadojo/releases/latest').then(r 
   .then(r => { if (r) $('#dl-version').textContent = `Version ${r.tag_name.replace(/^v/, '')} · free`; }).catch(() => {});
 
 // Tour tabs
-const TITLES = { workspace: 'sql/joins/customers-without-orders · Duck', home: 'Home · Sensei', design: 'system-design/cdc-into-a-lakehouse · Sensei', games: 'games/join-size · Sensei' };
+const TITLES = { workspace: 'sql/joins/customers-without-orders · Duck', interview: 'interview/data-engineer · Sensei', home: 'Home · Sensei', design: 'system-design/cdc-into-a-lakehouse · Sensei', games: 'games/join-size · Sensei' };
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return;
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   $('#shot').src = `assets/${b.dataset.i}.webp`; $('#win-title').textContent = TITLES[b.dataset.i]; };
 
-// Scroll reveal
+// Scroll reveal: sections already on screen stay put (hiding them now would flash); only ones below the fold fade in
+// (on refresh / back the browser restores the scroll position later, so show everything instead of guessing)
+const restored = ['reload', 'back_forward'].includes(performance.getEntriesByType('navigation')[0]?.type);
+document.querySelectorAll('.reveal').forEach(el => (restored || el.getBoundingClientRect().top < innerHeight) && el.classList.add('in'));
 document.documentElement.classList.add('js');
 const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')), { rootMargin: '0px 0px 25% 0px' });
 document.querySelectorAll('.reveal').forEach(el => io.observe(el));
