@@ -1,2 +1,2 @@
 """DataDojo: local SQL, Python and PySpark practice with friendly AI coaches."""
-__version__ = "0.2.0"
+__version__ = "0.2.1"

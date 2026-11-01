@@ -1,4 +1,10 @@
-## What's new
+## What's new in 0.2.1
+
+- **Easier updates:** the Update button now shows what's new and downloads the right installer for your computer in one click.
+- **Clearer microphone button** for spoken interview answers, with an obvious recording state.
+- Sensei says **"Up late?"** after midnight instead of "Good morning".
+
+## New in 0.2.0
 
 **🎙️ Interview practice**
 - Mock interviews and topic drills for **Data Engineer, AI Engineer, ML Engineer and Data Analyst**, at entry, mid or senior level (243 questions).
