@@ -558,7 +558,15 @@ select.field { max-width: none; padding: 10px 12px }
 #iv-ans:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 18%, transparent) }
 #iv-ans[readonly] { opacity: .85 }
 .iv-ctrl { display: flex; align-items: center; gap: 10px; margin-top: 12px }
-.iv-mic.on { border-color: var(--hard); color: var(--hard); animation: pulse 1.4s infinite }
+.iv-mic { display: inline-flex; align-items: center; gap: 8px; padding: 7px 16px 7px 12px; border-radius: 999px; font-weight: 700 }
+.mic-ico { width: 17px; height: 17px; flex: none }
+#iv-mic:not(.on) { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 45%, var(--line2)); background: color-mix(in srgb, var(--acc) 8%, var(--card)) }
+#iv-mic:not(.on):hover { background: color-mix(in srgb, var(--acc) 14%, var(--card)) }
+.iv-mic.on { color: var(--hard); border-color: var(--hard); background: color-mix(in srgb, var(--hard) 10%, var(--card));
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--hard) 45%, transparent); animation: mic-ring 1.6s ease-out infinite }
+.rec-dot { width: 10px; height: 10px; border-radius: 3px; background: currentColor; flex: none }
+@keyframes mic-ring { to { box-shadow: 0 0 0 10px transparent } }
+.iv-voice-h { display: flex; align-items: center; gap: 8px } .iv-voice-h .mic-ico { color: var(--acc) }
 .iv-wait { margin-top: 16px }
 .iv-grade { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line) }
 .iv-grade .lbl, .iv-item .lbl { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; margin: 16px 0 6px }

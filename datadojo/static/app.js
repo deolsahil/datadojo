@@ -1183,6 +1183,9 @@ async function setupPage() {
 const LEVEL_INFO = { entry: ['Entry level', 'Fundamentals: explain the core ideas clearly and correctly.'],
   mid: ['Mid level', 'More depth: trade-offs, failure modes and real scenarios.'],
   senior: ['Senior', 'System design and judgment: defend decisions under follow-up.'] };
+// microphone icon (stroke, follows the button colour) and the two button states
+const MIC = '<svg class="mic-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21M8.5 21h7"/></svg>';
+const MIC_IDLE = `${MIC}<span>Speak</span>`, MIC_REC = '<i class="rec-dot"></i><span>Stop</span>';
 const KIND_LABEL = { concept: 'Concept', scenario: 'Scenario', design: 'System design', behavioral: 'Behavioral' };
 const STATUS_ICON = { covered: ['✓', 'pass', 'Covered'], partial: ['~', 'partial', 'Partly'], missed: ['✗', 'fail', 'Missed'] };
 
@@ -1223,7 +1226,7 @@ function voiceCallout(voice, onReady) {  // one-time local speech-to-text setup
   const box = document.createElement('div');
   const draw = v => {
     box.className = 'callout iv-voice';
-    box.innerHTML = v.ready ? '' : `<b>🎙 Answer out loud (optional)</b>
+    box.innerHTML = v.ready ? '' : `<b class="iv-voice-h">${MIC} Answer out loud (optional)</b>
       <p class="dim">Voice answers are transcribed on this computer with Whisper, so audio never leaves it. One-time download, about 300 MB.</p>
       ${v.status === 'error' ? `<p class="fail">${esc(v.error)}</p>` : ''}
       ${['idle', 'error', 'done'].includes(v.status) ? '<button id="voice-go">Set up voice answers</button>'
@@ -1370,8 +1373,8 @@ async function interviewSession(tid, mode, level, topic) {
       return;
     }
     const mic = localStorage.getItem('iv-mic');
-    $('#iv-ctrl').innerHTML = `${mic === 'off' ? `<button class="ghost" id="iv-mic-again" title="Use your voice instead of typing">🎙 Try microphone again</button>`
-        : `<button id="iv-mic" class="iv-mic">🎙 Speak</button>`}
+    $('#iv-ctrl').innerHTML = `${mic === 'off' ? `<button class="ghost iv-mic" id="iv-mic-again" title="Use your voice instead of typing">${MIC}<span>Try microphone again</span></button>`
+        : `<button id="iv-mic" class="iv-mic" title="Answer out loud">${MIC_IDLE}</button>`}
       <span class="faint" id="iv-rec-state"></span><span class="sp"></span>
       <button class="ghost" id="iv-skip">Skip</button><button class="primary" id="iv-submit">Submit answer</button>`;
     if ($('#iv-mic-again')) $('#iv-mic-again').onclick = () => { localStorage.removeItem('iv-mic'); controls(); $('#iv-mic').click(); };
@@ -1424,7 +1427,7 @@ async function interviewSession(tid, mode, level, topic) {
     const tickRec = setInterval(() => { if ($('#iv-rec-state')) $('#iv-rec-state').textContent = `● recording ${Math.round((Date.now() - t0) / 1000)}s · press Stop when done`; }, 500);
     rec.onstop = async () => {
       clearInterval(tickRec); stream.getTracks().forEach(x => x.stop());
-      $('#iv-mic').classList.remove('on'); $('#iv-mic').textContent = '🎙 Speak'; $('#iv-mic').disabled = true;
+      $('#iv-mic').classList.remove('on'); $('#iv-mic').innerHTML = MIC_IDLE; $('#iv-mic').disabled = true;
       $('#iv-rec-state').innerHTML = '<span class="spinner"></span>transcribing…';
       const r = await send(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }));
       if (!$('#iv-ans')) return;
@@ -1435,7 +1438,7 @@ async function interviewSession(tid, mode, level, topic) {
       $('#iv-rec-state').textContent = 'Check the text, fix anything misheard, then submit.';
     };
     rec.start(1000);  // a chunk every second feeds the live preview
-    $('#iv-mic').classList.add('on'); $('#iv-mic').textContent = '■ Stop'; $('#iv-mic-msg').innerHTML = '';
+    $('#iv-mic').classList.add('on'); $('#iv-mic').innerHTML = MIC_REC; $('#iv-mic-msg').innerHTML = '';
   }
 
   async function submit() {
