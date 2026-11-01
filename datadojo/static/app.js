@@ -1564,6 +1564,24 @@ document.querySelectorAll('.dd-btn').forEach(b => b.onclick = () => {  // click/
 document.addEventListener('click', e => { if (!e.target.closest('.dd')) document.querySelectorAll('.dd').forEach(x => x.classList.remove('open')); });
 renderThemeToggle();
 blobReady.then(renderMe);
-api('/api/version').then(v => { if (v.update) $('#nav-update').outerHTML = `<a class="pill-update" href="${esc(v.url)}" target="_blank" rel="noreferrer"
-  title="You have ${esc(v.version)}">✨ Update to ${esc(v.latest)}</a>`; });
+api('/api/version').then(v => {
+  if (!v.update) return;
+  $('#nav-update').outerHTML = `<button class="pill-update" id="pill-update" title="You have ${esc(v.version)}">✨ Update to ${esc(v.latest)}</button>`;
+  $('#pill-update').onclick = () => updateModal(v);
+});
+
+// "what's new" + the right way to update for how DataDojo was installed; progress lives in the data folder, so it survives
+function updateModal(v) {
+  const how = v.install === 'desktop' && v.download
+    ? `<a class="up-dl" href="${esc(v.download)}"><button class="primary">⬇ Download DataDojo ${esc(v.latest)} for ${esc(v.os)}</button></a>
+       <p class="dim" style="margin:10px 0 0">Open the download and install it over the old one${v.os === 'Mac' ? ' (drag DataDojo into Applications and choose Replace)' : ''}, then reopen DataDojo.</p>`
+    : `<div class="dim" style="margin-bottom:6px">Run this in your terminal, then start <code>datadojo</code> again:</div>
+       <div class="sol-code"><button class="copy" id="up-copy">Copy</button><pre>uv tool upgrade datadojo</pre></div>`;
+  modal(`<div class="kicker dot">Update available</div>
+    <h3 style="margin:6px 0 2px">DataDojo ${esc(v.latest)} is here</h3><div class="faint">You have ${esc(v.version)} · your progress, settings and history are kept</div>
+    <div class="up-how">${how}</div>
+    ${v.notes ? `<div class="up-notes">${md(v.notes.split(/^## How to update/m)[0].replace(/^## (.*)$/gm, '**$1**'))}</div>` : ''}
+    <div class="row-end"><a class="faint" href="${esc(v.url)}" target="_blank" rel="noreferrer" style="text-decoration:underline">Release page on GitHub</a></div>`);
+  if ($('#up-copy')) $('#up-copy').onclick = () => navigator.clipboard.writeText('uv tool upgrade datadojo').then(() => { $('#up-copy').textContent = 'Copied ✓'; });
+}
 route();

@@ -189,12 +189,22 @@ def latest_release():
             r = json.load(urllib.request.urlopen(urllib.request.Request(
                 "https://api.github.com/repos/deolsahil/datadojo/releases/latest",
                 headers={"Accept": "application/vnd.github+json"}), timeout=4))
-            _release["data"] = {"tag": r["tag_name"], "url": r["html_url"]}
+            _release["data"] = {"tag": r["tag_name"], "url": r["html_url"], "notes": (r.get("body") or "")[:6000],
+                                "assets": {a["name"]: a["browser_download_url"] for a in r.get("assets", [])}}
         except Exception:
             _release["data"] = None
-    latest = (_release["data"] or {}).get("tag", "").lstrip("v")
-    newer = bool(latest) and tuple(map(int, latest.split("."))) > tuple(map(int, __version__.split(".")))
-    return {"version": __version__, "latest": latest or None, "update": newer, "url": (_release["data"] or {}).get("url")}
+    data = _release["data"] or {}
+    latest = data.get("tag", "").lstrip("v")
+    try:
+        newer = bool(latest) and tuple(map(int, latest.split("."))) > tuple(map(int, __version__.split(".")))
+    except ValueError:  # a tag like v1.0.0-beta: don't offer it
+        newer = False
+    import platform
+    arch = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
+    asset = {"darwin": f"DataDojo-macOS-{arch}.dmg", "win32": "DataDojo-Windows-Setup.exe"}.get(sys.platform, "DataDojo-Linux-x64.tar.gz")
+    return {"version": __version__, "latest": latest or None, "update": newer, "url": data.get("url"), "notes": data.get("notes", ""),
+            "install": "desktop" if getattr(sys, "frozen", False) else "terminal",  # frozen = the packaged desktop app
+            "download": data.get("assets", {}).get(asset), "os": {"darwin": "Mac", "win32": "Windows"}.get(sys.platform, "Linux")}
 
 
 def uv_binary():

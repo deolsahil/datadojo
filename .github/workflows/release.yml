@@ -1,5 +1,5 @@
 # Builds the desktop installers and attaches them to the GitHub release for the tag.
-# Release a version:  bump datadojo/__init__.py, then  git tag v0.2.0 && git push origin v0.2.0
+# Release a version:  bump datadojo/__init__.py, update .github/release-notes.md, then  git tag vX.Y.Z && git push origin vX.Y.Z
 name: Build desktop apps
 
 on:
@@ -38,4 +38,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/release/*
-          generate_release_notes: true
+          body_path: .github/release-notes.md   # one copy of the notes; generated notes were appended once per build job
