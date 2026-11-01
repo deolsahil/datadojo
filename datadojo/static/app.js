@@ -246,6 +246,12 @@ function senseiSays(stats) {
   const name = me() ? `, ${me().split(' ')[0]}` : '';
   const h = new Date().getHours(), hello = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
   const state = streakState(stats);
+  if (h < 4) {  // midnight to 4 am, local time: "good morning" feels off
+    if (!stats.runs) return ['wink', `Up late${name}? I'm Sensei. One small problem before bed is a great way to start.`];
+    if (state === 'lit') return ['sleepy', `Up late${name}! You already practiced today, so the streak is safe. Get some rest.`];
+    if (state === 'risk') return ['surprised', `Up late${name}? Your ${stats.streak}-day streak is waiting. One quick problem before bed keeps it alive.`];
+    return ['wink', `Up late${name}? Welcome back! One easy warm-up, then some sleep.`];
+  }
   if (!stats.runs) return ['happy', `${hello}${name}! I'm Sensei. Pick any pattern below and one of my coaches will walk you through it.`];
   if (state === 'lit') return ['love', `${hello}${name}! You already practiced today. That's how habits are built.`];
   if (state === 'risk') return ['surprised', `${hello}${name}! Your ${stats.streak}-day streak is waiting. One quick problem keeps it alive.`];
