@@ -1,0 +1,94 @@
+title = "From Prototype to Production GenAI"
+section = "ai-systems"
+order = 1
+kind = "lesson"
+difficulty = "medium"
+big_idea = "The model is only one component: a production GenAI system is the retrieval, evaluation, monitoring, caching, feedback and safety engineering built around it."
+summary = """A prototype is one line: **Prompt → LLM → Response**. It demos well, but it can't answer questions about your private or fresh data, nobody knows whether it is right, it is slow and expensive at scale, and nothing stops it from doing something unsafe.
+
+A production system wraps the model in engineering. **RAG** gives the model the right information, **fine-tuning** teaches it specialized behavior, **evals** tell us whether it works, **observability** tells us what happened, **caching** makes it faster and cheaper, **user feedback** tells us what we're missing, and **guardrails** keep it within acceptable boundaries.
+
+The most important relationship is the loop: **production failures → feedback → evals → improvements → fewer future failures.** That loop is the real difference between an LLM demo and a production AI system."""
+diagram = """flowchart TD
+  U[User] --> IG[Input guardrails] --> L1[LLM]
+  L1 --> RAG[RAG] & AD[Application data]
+  RAG --> CTX[Relevant context] --> L2[LLM] --> OG[Output guardrails] --> U2[User]
+  U2 --> FB[Feedback] & OBS[Observability]
+  FB & OBS --> EV[Evals] --> FA[Failure analysis]
+  FA --> RAG2[Improve RAG] & FT[Fine-tuning]
+  RAG2 & FT --> B[Better system]"""
+
+[[blocks]]
+heading = "Why a prototype isn't a product"
+body = """```
+Prompt → LLM → Response
+```
+becomes a production system involving **retrieval, evaluation, monitoring, optimization, feedback, and safety**. Each piece answers a question the prototype can't:
+- *Does it know our data?* RAG.
+- *Does it behave the way we need?* Fine-tuning (or better prompts).
+- *Does it actually work, and did my change break anything?* Evals.
+- *Why did this answer fail?* Observability.
+- *Can we afford it at 10x traffic?* Caching.
+- *What are users hitting that we never tested?* Feedback loops.
+- *What stops it doing harm?* Guardrails."""
+
+[[blocks]]
+heading = "How everything fits together"
+body = """The request path: the user's input passes **input guardrails**, the LLM pulls **relevant context** from RAG and application data, generates an answer, and **output guardrails** check it before it reaches the user.
+
+The learning path: what happens in production flows into **feedback** and **observability**, both feed **evals**, evals drive **failure analysis**, and the fixes go into **RAG** (knowledge problems) or **fine-tuning** (behavior problems), giving a **better system**.
+
+**Caching operates across the expensive components:** embeddings, retrieval, model responses and external API results."""
+
+[[blocks]]
+heading = "The production feedback loop"
+body = """```
+BUILD → EVAL → DEPLOY → OBSERVE → COLLECT FEEDBACK
+  ↑                                        ↓
+IMPROVE ← CREATE NEW EVALS ← ANALYZE FAILURES
+```
+The model is only one component. The engineering system around the model determines whether the application is **reliable, measurable, safe, scalable, and continuously improving.**"""
+
+[[blocks]]
+heading = "The one-minute summary"
+body = """If someone asks you to explain the whole stack:
+- **RAG** gives the model the right information.
+- **Fine-tuning** teaches it specialized behavior.
+- **Evals** tell us whether it works.
+- **Observability** tells us what happened.
+- **Caching** makes it faster and cheaper.
+- **User feedback** tells us what we're missing.
+- **Guardrails** keep the system within acceptable boundaries.
+
+And the most important relationship: production failures → feedback → evals → improvements → fewer future failures."""
+
+key_points = [
+  "Prompt → LLM → Response is a demo; production adds retrieval, evaluation, monitoring, optimization, feedback and safety.",
+  "RAG fixes knowledge, fine-tuning fixes behavior, evals measure, observability explains, caching saves cost, feedback finds gaps, guardrails bound behavior.",
+  "Caching sits across the expensive components rather than at one point.",
+  "The core loop is failures → feedback → evals → improvements.",
+]
+common_mistakes = [
+  "Treating the model choice as the whole design and skipping evals and monitoring.",
+  "Shipping without a way to tell whether a prompt or model change made things worse.",
+  "Collecting feedback but never turning it into new eval cases.",
+  "Letting the LLM make final business decisions without deterministic checks.",
+]
+interview_questions = [
+  "Walk me through what it takes to turn a working LLM prototype into a production system.",
+  "Your assistant's answer quality dropped last week. How would you find out why?",
+  "Explain the full GenAI stack in one minute.",
+  "Where would you put caching in a RAG application, and what are the risks?",
+]
+
+[[quiz]]
+q = "Which component tells you WHY a production answer failed, rather than WHETHER it worked?"
+options = ["Evals", "Observability", "Caching", "Fine-tuning"]
+answer = 1
+why = "Evals answer 'did it work?'; observability (traces of each stage) answers 'why did it work or fail?'."
+
+[[quiz]]
+q = "What is the core improvement loop of a production GenAI system?"
+options = ["Train → deploy → retrain monthly", "Failures → feedback → evals → improvements", "Prompt → LLM → response", "Cache → retrieve → generate"]
+answer = 1
+why = "Production failures become feedback, feedback becomes evals, evals guide fixes, which means fewer future failures."

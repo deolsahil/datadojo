@@ -4,7 +4,7 @@ from collections import Counter
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from datadojo import content, llm
+from datadojo import content, interview, llm
 from datadojo.paths import DATA_HOME
 
 ROOT = Path(__file__).parent          # read-only app files (problems, static, ...)
@@ -71,6 +71,9 @@ def db():
     con.execute("CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY, kind TEXT, problem TEXT, category TEXT, "
                 "rating INTEGER, name TEXT, email TEXT, text TEXT, code TEXT, resolved INTEGER DEFAULT 0, "
                 "ts TEXT DEFAULT CURRENT_TIMESTAMP)")
+    con.execute("CREATE TABLE IF NOT EXISTS explanations (key TEXT PRIMARY KEY, text TEXT)")
+    con.execute("CREATE TABLE IF NOT EXISTS interviews (id INTEGER PRIMARY KEY, track TEXT, level TEXT, mode TEXT, topic TEXT, "
+                "score INTEGER, items TEXT, ts TEXT DEFAULT CURRENT_TIMESTAMP)")
     return con
 
 
@@ -367,11 +370,19 @@ STAGES = {
 }
 
 
-def coach(p, code, result, stage, messages):
-    system = f"""You are Sensei, a coach for SQL, Python and PySpark interview practice. The learner
+def coach(p, code, result, stage, messages, solution=False):
+    rules = f"""The learner already opened the reference solution below and wants to understand it.
+EXPLAIN it directly: do not quiz them, do not answer with questions, do not hold anything back. Walk through
+the solution clause by clause in plain words, using the problem's example rows to show what each part does
+(e.g. which values become 0, what each COUNT returns). If their own code differs, say what it is missing.
+At most 10 short sentences or bullets. Only at the very end, you may ask one short check question.
+
+Reference solution:
+{p['solution']}""" if solution else f"""The learner
 wants to build skill, not be handed answers. Reply in at most 5 short sentences, ask one question at a
 time, and never write the full solution (small snippets of syntax are fine).
-Current stage: {stage}. {STAGES.get(stage, '')}
+Current stage: {stage}. {STAGES.get(stage, '')}"""
+    system = f"""You are Sensei, a coach for SQL, Python and PySpark interview practice. {rules}
 
 Problem ({p['lang']}, {p['difficulty']}): {p['title']}
 {p['statement']}
@@ -382,6 +393,34 @@ Learner's current code:
 Latest test run (may be empty):
 {json.dumps(result)[:2500]}"""
     return chat(system, messages)
+
+
+def explain(p):
+    """A walkthrough of the reference solution, generated once per solution and cached in dojo.db."""
+    key = p["id"] + ":v2:" + hashlib.sha256(p["solution"].encode()).hexdigest()[:16]
+    with db() as con:
+        row = con.execute("SELECT text FROM explanations WHERE key=?", (key,)).fetchone()
+    if row:
+        return {"explanation": row[0]}
+    system = f"""You explain reference solutions to people practising {p['lang']} for data interviews.
+Write a clear walkthrough in Markdown (paragraphs, `code`, **bold**, - bullets only; no headings, no tables):
+1. One or two sentences on the core idea / pattern.
+2. A bullet per step or clause of the solution, in the order it runs, saying what it does and why it is needed.
+3. "Watch out:" with the edge cases it handles (NULLs, ties, duplicates, empty input) and common wrong attempts.
+Keep it under 250 words. Do not repeat the full code, and never put `code` inside **bold**.
+
+Problem: {p['title']}
+{p['statement']}
+
+Reference solution:
+{p['solution']}"""
+    try:
+        text = llm.chat(system, [{"role": "user", "content": "Explain this solution."}], strict=True).strip()
+    except Exception as e:
+        return {"error": f"Couldn't reach the coach ({llm._reason(e)}). Check coach setup."}
+    with db() as con:
+        con.execute("INSERT OR REPLACE INTO explanations VALUES (?,?)", (key, text))
+    return {"explanation": text}
 
 
 def coach_lesson(d, messages):
@@ -479,6 +518,28 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json([g | {"best": best.get(g["id"]), "plays": plays.get(g["id"], 0)} for g in content.GAME_LIST])
             if parts[3:] == ["rounds"] and parts[2] in {g["id"] for g in content.GAME_LIST}:
                 return self.send_json(content.rounds(parts[2]))
+        if parts[1:2] == ["interview"]:
+            tracks = content.load_interview()
+            if len(parts) == 2:
+                rows = db().execute("SELECT id, track, level, mode, topic, score, ts FROM interviews ORDER BY id DESC LIMIT 30")
+                return self.send_json({
+                    "tracks": [{k: t[k] for k in ("id", "title", "desc", "topics")} | {"count": len(t["questions"]), "sheet": len(t["sheet"])}
+                               for t in tracks.values()],
+                    "history": [dict(zip(("id", "track", "level", "mode", "topic", "score", "ts"), r)) for r in rows],
+                    "voice": interview.whisper_status(), "coach": llm.public()})
+            if parts[2] == "session" and len(parts) == 4:
+                r = db().execute("SELECT id, track, level, mode, topic, score, items, ts FROM interviews WHERE id=?", (parts[3],)).fetchone()
+                if r:
+                    d = dict(zip(("id", "track", "level", "mode", "topic", "score", "items", "ts"), r))
+                    d["items"] = json.loads(d["items"])
+                    return self.send_json(d | {"report": interview.report(d["items"])})
+            if parts[2] in tracks:
+                t = tracks[parts[2]]
+                if parts[3:] == ["cheatsheet"]:
+                    return self.send_json({"id": t["id"], "title": t["title"], "sheet": t["sheet"]})
+                if len(parts) == 3:
+                    return self.send_json({k: t[k] for k in ("id", "title", "desc", "topics")} | {"count": len(t["questions"]),
+                                          "sheet": len(t["sheet"]), "voice": interview.whisper_status()})
         if parts[1:] == ["setup"]:
             return self.send_json({"settings": llm.public(), "ollama": llm.ollama_status(),
                                    "local_models": llm.LOCAL_MODELS, "providers": llm.PROVIDERS})
@@ -503,6 +564,13 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_json({"error": "not found"}, 404)
 
     def do_POST(self):
+        if self.path.startswith("/api/transcribe"):  # raw audio from MediaRecorder, not JSON
+            n = int(self.headers.get("Content-Length", 0))
+            if not 0 < n <= 25_000_000:
+                return self.send_json({"error": "recording is empty or too long"}, 400)
+            kind = self.headers.get("Content-Type", "")
+            suffix = ".mp4" if "mp4" in kind else ".ogg" if "ogg" in kind else ".wav" if "wav" in kind else ".webm"
+            return self.send_json(interview.transcribe(self.rfile.read(n), suffix))
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or "{}")
         if self.path == "/api/setup/save":
             cur = llm.load()
@@ -552,6 +620,35 @@ class Handler(SimpleHTTPRequestHandler):
             with db() as con:
                 con.execute("UPDATE feedback SET resolved = NOT resolved WHERE id = ?", (body.get("fid"),))
             return self.send_json({"ok": True})
+        if self.path == "/api/setup/whisper":
+            interview.install_whisper(uv_binary)
+            return self.send_json(interview.whisper_status())
+        if self.path == "/api/interview/delete":  # one session by id, or every session with {"all": true}
+            with db() as con:
+                if body.get("all"):
+                    con.execute("DELETE FROM interviews")
+                else:
+                    con.execute("DELETE FROM interviews WHERE id=?", (body.get("session"),))
+            return self.send_json({"ok": True})
+        if self.path.startswith("/api/interview/"):
+            t = content.load_interview().get(body.get("track"))
+            if not t:
+                return self.send_json({"error": "unknown track"}, 404)
+            level = body.get("level") if body.get("level") in interview.LEVELS else "mid"
+            if self.path == "/api/interview/start":
+                return self.send_json({"questions": interview.pick(t, level, body.get("mode", "mock"), body.get("topic"))})
+            if self.path == "/api/interview/grade":
+                q = t["questions"].get(body.get("id"))
+                if not q:
+                    return self.send_json({"error": "unknown question"}, 404)
+                return self.send_json(interview.grade(t, q, str(body.get("answer", ""))[:8000], body.get("seconds")))
+            if self.path == "/api/interview/finish":
+                items = body.get("items") or []
+                rep = interview.report(items)
+                with db() as con:
+                    cur = con.execute("INSERT INTO interviews (track, level, mode, topic, score, items) VALUES (?,?,?,?,?,?)",
+                                      (t["id"], level, body.get("mode"), body.get("topic"), rep["score"], json.dumps(items)))
+                return self.send_json({"id": cur.lastrowid, "report": rep})
         p = load_problems().get(body.get("id"))
         if not p:
             return self.send_json({"error": "unknown problem"}, 404)
@@ -564,7 +661,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(res | {"passed": passed})
         if self.path == "/api/coach":
             return self.send_json({"reply": coach(p, body.get("code", ""), body.get("result"),
-                                                  body.get("stage", "build"), body.get("messages", []))})
+                                                  body.get("stage", "build"), body.get("messages", []),
+                                                  bool(body.get("solution")))})
+        if self.path == "/api/explain":
+            return self.send_json(explain(p))
         self.send_json({"error": "not found"}, 404)
 
 

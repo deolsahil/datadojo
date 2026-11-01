@@ -1,0 +1,229 @@
+title = "SQL for Data Engineers"
+order = 7
+desc = "Window functions, dedup, gaps and islands, NULLs, incremental loads, MERGE and query tuning."
+
+[[questions]]
+id = "sql-dedup-row-number"
+q = "Your bronze orders table has several versions of each order_id. Write a query that keeps only the latest version per order."
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Uses ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY updated_at DESC) and keeps rn = 1",
+  "Adds a deterministic tie-breaker (e.g. ingest offset or file name) so reruns pick the same row",
+  "Explains why ROW_NUMBER rather than RANK (ties would return multiple rows with RANK)",
+  "Mentions QUALIFY as a shorter form or a MERGE of the deduplicated result into silver",
+]
+answer = """```
+SELECT * FROM (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY order_id
+    ORDER BY updated_at DESC, _ingest_offset DESC) AS rn
+  FROM bronze.orders) t
+WHERE rn = 1;
+```
+- `PARTITION BY order_id` groups the versions, `ORDER BY updated_at DESC` puts the latest first, and `rn = 1` keeps it.
+- The second sort key is a **tie-breaker**: two versions with the same `updated_at` would otherwise be chosen arbitrarily, so a rerun could pick a different row.
+- I use `ROW_NUMBER`, not `RANK`, because RANK gives ties the same number and would return two rows.
+- In Databricks SQL I can write `QUALIFY ROW_NUMBER() OVER (...) = 1` instead of the subquery. The result is then MERGEd into silver."""
+study = "window-functions"
+
+[[questions]]
+id = "sql-rank-functions"
+q = "What is the difference between ROW_NUMBER, RANK and DENSE_RANK? How would you get the top 3 products by revenue in each category?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "ROW_NUMBER gives unique sequential numbers even for ties",
+  "RANK gives ties the same rank and leaves gaps after them (1,2,2,4)",
+  "DENSE_RANK gives ties the same rank with no gaps (1,2,2,3)",
+  "Top N per group: window partitioned by category ordered by revenue desc, then filter rank <= 3, choosing the function based on how ties should be handled",
+]
+answer = """- For scores 100, 90, 90, 80:
+```
+ROW_NUMBER  1, 2, 3, 4   unique, ties broken arbitrarily
+RANK        1, 2, 2, 4   ties share, gap after
+DENSE_RANK  1, 2, 2, 3   ties share, no gap
+```
+- Top 3 per category:
+```
+SELECT * FROM (
+  SELECT category, product_id, revenue,
+         DENSE_RANK() OVER (PARTITION BY category ORDER BY revenue DESC) AS r
+  FROM product_revenue) t
+WHERE r <= 3;
+```
+- The function choice is a business decision: `ROW_NUMBER` returns exactly 3 rows per category, while `RANK` or `DENSE_RANK` include every product tied at the cutoff. DENSE_RANK gives the top 3 distinct revenue values."""
+study = "window-functions"
+
+[[questions]]
+id = "sql-null-semantics"
+q = "How does SQL treat NULL in comparisons, aggregates and joins? Give a few gotchas."
+level = "entry"
+kind = "concept"
+rubric = [
+  "Comparisons with NULL (=, <>, <) return unknown, and WHERE keeps only true rows; use IS NULL / IS NOT NULL",
+  "Null-safe equality (<=> or IS NOT DISTINCT FROM) treats two NULLs as equal",
+  "Aggregates ignore NULLs (COUNT(col), AVG, SUM) while COUNT(*) counts all rows; SUM of only NULLs is NULL",
+  "Join keys that are NULL never match",
+  "col <> 'x' drops NULL rows silently",
+]
+answer = """- NULL means unknown. `x = NULL`, `x <> NULL` and even `NULL = NULL` are **unknown**, and `WHERE` keeps only true rows. Use `IS NULL` / `IS NOT NULL`, or null-safe equality `<=>` (`IS NOT DISTINCT FROM`) when NULLs should match each other.
+- Aggregates skip NULLs: `COUNT(col)` counts non-null values while `COUNT(*)` counts rows; `AVG` divides by the non-null count; `SUM` over only NULLs returns NULL, so wrap it in `COALESCE`.
+- Join keys that are NULL never match, so rows silently drop out of inner joins.
+- `WHERE status <> 'cancelled'` also drops rows where status is NULL; add `OR status IS NULL` if those should stay.
+- `GROUP BY` puts all NULLs in one group."""
+study = "sql-nulls-merge"
+
+[[questions]]
+id = "sql-gaps-islands"
+q = "Given a table of (user_id, activity_date), find each user's streaks of consecutive active days with start date, end date and length."
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Deduplicates to one row per user per date first",
+  "Uses ROW_NUMBER per user ordered by date and subtracts it from the date so consecutive dates share a group key",
+  "Groups by user and that group key to get MIN date, MAX date and COUNT",
+  "Explains why the trick works: date and row number both increase by one within a streak",
+  "Mentions the LAG alternative: flag a new streak when the gap to the previous date is more than one day, then running SUM",
+]
+answer = """```
+WITH d AS (SELECT DISTINCT user_id, activity_date FROM activity),
+g AS (
+  SELECT user_id, activity_date,
+         date_sub(activity_date,
+           ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY activity_date)) AS grp
+  FROM d)
+SELECT user_id, MIN(activity_date) AS start_date,
+       MAX(activity_date) AS end_date, COUNT(*) AS days
+FROM g GROUP BY user_id, grp;
+```
+- First remove duplicate dates, or they break the numbering.
+- Within a streak, the date and the row number both go up by one each row, so `date - row_number` stays constant. A gap in dates changes it, starting a new island.
+- Grouping by user and that constant gives each streak's start, end and length.
+- Alternative: use `LAG` to flag rows where the gap to the previous date is over one day, then a running `SUM` of the flags as the streak id."""
+study = "window-functions"
+
+[[questions]]
+id = "sql-window-frames"
+q = "How do you compute a running total and a 7-day moving average with window functions? What is the difference between ROWS and RANGE frames?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Running total: SUM(x) OVER (PARTITION BY ... ORDER BY date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+  "Moving average: AVG(x) OVER (... ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) on one row per day",
+  "ROWS counts physical rows; RANGE uses values of the ORDER BY column, so ties (peers) are included together",
+  "Default frame with ORDER BY is RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW, which can surprise with duplicate order values",
+  "Missing days must be filled (date spine) for a row-based 7-day window to mean 7 calendar days",
+]
+answer = """```
+SUM(revenue) OVER (PARTITION BY store ORDER BY d
+  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total,
+AVG(revenue) OVER (PARTITION BY store ORDER BY d
+  ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS avg_7d
+```
+- **ROWS** counts physical rows before and after the current one. **RANGE** works on the ORDER BY values, so rows with the same value (peers) are always included together.
+- With ORDER BY and no frame, the default is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. With duplicate dates, every tied row gets the same running total, which surprises people. Spelling out `ROWS` avoids that.
+- A 6-preceding ROWS window equals 7 days only if there is exactly one row per day. Aggregate to daily first and join to a date spine so missing days count as zero."""
+study = "window-functions"
+
+[[questions]]
+id = "sql-not-in-null"
+q = "A query using WHERE customer_id NOT IN (SELECT customer_id FROM churned) suddenly returns zero rows. Why, and how do you fix it?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "The subquery now contains at least one NULL customer_id",
+  "x NOT IN (..., NULL) evaluates to unknown for every row (never true), so all rows are filtered out",
+  "Fix with NOT EXISTS or a LEFT ANTI JOIN, which handle NULLs as expected",
+  "Or filter NULLs in the subquery, and investigate why NULL keys appeared upstream (add a not-null check)",
+]
+answer = """- Almost certainly a **NULL** appeared in `churned.customer_id`.
+- `NOT IN` means "not equal to every value in the list". Comparing with NULL gives unknown, so for every customer the condition is either false or unknown, never true, and `WHERE` returns nothing.
+- Fix by using a NULL-safe pattern:
+```
+SELECT c.* FROM customers c
+WHERE NOT EXISTS (SELECT 1 FROM churned x WHERE x.customer_id = c.customer_id);
+-- or: customers c LEFT ANTI JOIN churned x ON c.customer_id = x.customer_id
+```
+- A quick patch is `WHERE customer_id IS NOT NULL` inside the subquery.
+- Also find out why NULL keys entered `churned` and add a not-null quality check, since NULL keys usually signal an upstream problem."""
+study = "sql-nulls-merge"
+
+[[questions]]
+id = "sql-incremental-load"
+q = "How would you build an incremental load that pulls only new or changed rows from a source table every hour?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Track a high-water mark (max updated_at, ID or log position) from the last successful run in a control table or the target",
+  "Read only rows beyond the mark, with a small overlap or lookback to catch late commits and clock skew",
+  "Write with MERGE on the primary key (or overwrite of affected partitions) so overlaps and reruns do not duplicate",
+  "Advance the mark only after a successful write",
+  "Notes timestamp-based loads miss hard deletes; use CDC, Change Data Feed or periodic full reconciliation",
+]
+answer = """- Keep a **high-water mark**: the maximum `updated_at` (or an increasing id or log position) processed by the last successful run, stored in a control table or computed from the target.
+- Each run reads `WHERE updated_at > mark - interval 1 hour`. The overlap catches rows that committed late with older timestamps or clock skew.
+- Dedupe the batch by primary key and **MERGE** into the target, so overlapping or rerun rows update rather than duplicate.
+- Move the mark forward only after the write succeeds, so a failed run simply repeats.
+- Limits: polling `updated_at` misses **hard deletes** and needs an index on the source. When available I use CDC (Debezium), Delta Change Data Feed, or a periodic full comparison to catch deletes."""
+study = "sql-nulls-merge"
+
+[[questions]]
+id = "sql-merge-duplicate-source"
+q = "Your MERGE INTO silver.customers fails with an error saying multiple source rows matched the same target row. What does it mean and how do you fix it properly?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "The source batch has more than one row for the same key, so MERGE cannot decide which update to apply",
+  "Delta refuses rather than applying updates in an arbitrary order",
+  "Fix by deduplicating the source to the latest change per key with ROW_NUMBER over a reliable ordering column (e.g. updated_at or LSN)",
+  "Investigate why duplicates exist (replayed files, CDC with several changes per key) and keep the dedup as a permanent step",
+]
+answer = """- The source batch contains two or more rows with the same key, for example two updates to customer 42 in one hour. Both match the same target row, and MERGE cannot know which one should win, so Delta fails instead of guessing.
+- Fix: dedupe the source before MERGE, keeping the latest change per key with a reliable order:
+```
+QUALIFY ROW_NUMBER() OVER (PARTITION BY customer_id
+                           ORDER BY lsn DESC) = 1
+```
+- Order by the source's change sequence (LSN, version, or `updated_at` plus a tie-breaker), not arrival time.
+- Then find why duplicates appear: CDC batches naturally contain several changes per key, files might be replayed, or a join upstream fanned rows out. Keep the dedup step permanently and add a uniqueness check on the staged batch."""
+study = "sql-nulls-merge"
+
+[[questions]]
+id = "sql-pruning-broken"
+q = "A query on a table partitioned by event_date filters WHERE date(event_ts) = '2026-10-01' and scans the whole table. Why, and how do you fix it and verify?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "The filter is on event_ts wrapped in a function, not on the partition column, so the engine cannot prune partitions",
+  "Fix by filtering directly on event_date, or with a range on event_ts that can use file statistics",
+  "Verify with EXPLAIN or the query profile: partition filters present, files and bytes read much lower",
+  "Mentions other pruning killers: casts or type mismatches, functions on columns, filters applied after joins",
+  "Optionally: generated columns or liquid clustering to make such filters prune automatically",
+]
+answer = """- Partition pruning works when the filter is on the **partition column** itself. `date(event_ts)` is a function on a different column, so the engine cannot map it to `event_date` folders and reads them all. Min/max skipping on `event_ts` may also fail with the function wrapped around it.
+- Fix: `WHERE event_date = '2026-10-01'`, or a range `event_ts >= '2026-10-01' AND event_ts < '2026-10-02'` added alongside it.
+- Verify with `EXPLAIN` (partition filters listed) or the query profile: files read and bytes scanned should drop sharply.
+- Other pruning killers: casting the column, comparing a string partition to a date, functions like `upper(col)`, and filters that only apply after a join.
+- To make it robust, Delta **generated columns** (`event_date GENERATED ALWAYS AS (CAST(event_ts AS DATE))`) let filters on `event_ts` prune partitions, and liquid clustering on `event_ts` works without partitions."""
+study = "query-tuning"
+
+[[questions]]
+id = "sql-query-tuning"
+q = "A dashboard query joining a 5 TB fact table to three dimensions takes 20 minutes. How do you approach tuning it?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Reads the query plan or profile first to find where time and bytes go",
+  "Reduces data read: partition pruning and file skipping on filter columns, selecting only needed columns",
+  "Filters and pre-aggregates the fact table before joins; broadcasts small dimensions",
+  "Checks join correctness (exploding joins from non-unique keys) and fresh statistics for join ordering",
+  "Improves layout (compaction, clustering on common filters) or adds a pre-aggregated gold table or materialized view",
+]
+answer = """- Start with the **plan and query profile**: which operator takes the time, how many files and bytes are scanned, and which join strategies are used.
+- **Read less**: make sure filters hit partition or clustering columns so files are pruned and skipped; select only needed columns instead of `SELECT *`.
+- **Join smarter**: filter and aggregate the fact table to the needed grain before joining; broadcast the small dimensions; refresh statistics so the optimizer orders joins well.
+- **Check correctness**: a dimension with duplicate keys multiplies fact rows. That is slow and wrong, and `DISTINCT` only hides it.
+- **Fix layout**: compact small files and cluster the fact by the dashboard's common filters (date, store).
+- If it is still heavy and runs often, build a gold **aggregate table or materialized view** at the dashboard's grain, refreshed incrementally."""
+study = "query-tuning"

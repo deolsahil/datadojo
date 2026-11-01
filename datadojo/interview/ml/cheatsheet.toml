@@ -1,0 +1,906 @@
+# ML Engineer cheatsheet: field notes the interview questions link to via `study`.
+
+# ---------------------------------------------------------------- Fundamentals
+
+[[sections]]
+id = "bias-variance"
+group = "ML Fundamentals"
+title = "Bias, Variance and Overfitting"
+plain = "Bias is being wrong in a consistent way because the model is too simple; variance is being jumpy because the model memorized noise in the training data."
+how = [
+  "Train the model and measure error on training data and on held-out validation data",
+  "High error on both means high bias (underfitting): add capacity or better features",
+  "Low training error but much higher validation error means high variance (overfitting)",
+  "Fix variance with more data, regularization, simpler models or early stopping",
+]
+uses = [
+  "Deciding whether to add features or add regularization to a churn model",
+  "Reading a learning curve to see whether more labeled data would help",
+]
+picture = "Bias is a dart thrower whose darts all land in a tight group, but off to the left. Variance is one whose darts land all over the board around the bullseye."
+body = """Expected test error splits into **bias squared + variance + irreducible noise**. You cannot remove the noise, so you trade the other two.
+
+```
+symptom                          diagnosis       typical fix
+train err high, val err high     high bias       bigger model, more features, less regularization
+train err low,  val err high     high variance   more data, regularization, simpler model
+train err low,  val err low      good fit        ship it, then watch it in production
+```
+
+- A **learning curve** (error vs training set size) tells you whether more data helps: if train and validation curves have already converged at a high error, more data will not fix it.
+- Gradient-boosted trees overfit through too many trees, too deep trees or too high a learning rate; deep nets overfit when parameters vastly exceed the signal in the data.
+- A big gap between validation and test usually means you tuned too hard on the validation set, or the splits differ in distribution."""
+diagram = """flowchart LR
+  S[Model too simple] --> B[High bias: underfit]
+  C[Model too complex] --> V[High variance: overfit]
+  B --> F1[Add capacity or features]
+  V --> F2[Regularize, more data, early stop]"""
+
+[[sections]]
+id = "regularization"
+group = "ML Fundamentals"
+title = "Regularization: L1, L2, Dropout, Early Stopping"
+plain = "Regularization is any rule that stops a model from fitting the training data too perfectly, so it does better on new data."
+how = [
+  "Add a penalty on weight size to the loss: L1 sums absolute weights, L2 sums squared weights",
+  "The strength (lambda or alpha) is a hyperparameter tuned on validation data",
+  "For neural nets, dropout randomly zeroes units during training so no single unit is relied on",
+  "Early stopping halts training when validation loss stops improving",
+]
+uses = [
+  "L1 (Lasso) to shrink hundreds of sparse features down to a few that matter",
+  "Early stopping rounds in XGBoost or LightGBM to pick the number of trees",
+]
+picture = "Like a tax on complexity: every extra unit of weight costs the model something, so it only keeps weights that really pay for themselves."
+body = """- **L1 (Lasso)** pushes many weights to exactly zero, so it doubles as feature selection. Good when you believe only a few features matter.
+- **L2 (Ridge, weight decay)** shrinks all weights smoothly toward zero but rarely to zero. Handles correlated features better by spreading weight across them.
+- **Elastic Net** mixes both.
+- **Dropout** (rate ~0.1-0.5) is only active in training; at inference all units are used. Modern frameworks scale activations during training so nothing changes at inference.
+- **Early stopping** watches a validation metric and keeps the best checkpoint. It is cheap and almost always worth using.
+- Tree models regularize through **max depth, min samples per leaf, subsampling rows and columns, learning rate** and L1/L2 terms on leaf weights (XGBoost `alpha`, `lambda`).
+- Regularization penalties assume features are on similar scales, so standardize first for linear models."""
+
+[[sections]]
+id = "data-splits"
+group = "ML Fundamentals"
+title = "Train, Validation, Test and Cross-Validation"
+plain = "You hide some data from the model so you can honestly measure how it does on data it has never seen."
+how = [
+  "Train set: the model learns its weights here",
+  "Validation set: you pick hyperparameters and features here",
+  "Test set: touched once at the end for an unbiased estimate",
+  "Cross-validation rotates which fold is held out when data is small",
+]
+uses = [
+  "5-fold CV to tune a model trained on 20k labeled rows",
+  "A time-based split for demand forecasting: train on Jan-Sep, validate on Oct, test on Nov",
+]
+picture = "Like a teacher who writes practice quizzes (validation) but keeps the final exam (test) locked in a drawer until the end of term."
+body = """- Typical split for medium data: 70/15/15 or 80/10/10. For millions of rows, a few percent each for validation and test is plenty.
+- **k-fold CV**: split into k folds, train k times each with a different held-out fold, average the score. More reliable for small data, k times the cost.
+- **Stratified** splits keep class ratios the same in each fold; use them for imbalanced labels.
+- **Group** splits keep all rows from one user, patient or device in the same fold so the model cannot memorize the entity.
+- **Time-based** splits are mandatory when the future must be predicted from the past. Random shuffling leaks future information. Use a forward-chaining (rolling or expanding window) scheme:
+
+```
+fold 1: train [Jan-Mar]          validate [Apr]
+fold 2: train [Jan-Apr]          validate [May]
+fold 3: train [Jan-May]          validate [Jun]
+```
+
+- If you check the test set many times and keep changing the model, it quietly becomes a validation set and your final number is optimistic."""
+
+[[sections]]
+id = "class-imbalance"
+group = "ML Fundamentals"
+title = "Class Imbalance"
+plain = "When one class is rare (fraud, defects, churn), a model can look accurate by always predicting the common class, so you have to measure and train differently."
+how = [
+  "Stop using accuracy; use precision, recall, PR-AUC",
+  "Try class weights in the loss first, it is the cheapest fix",
+  "Optionally resample: undersample the majority or oversample the minority, on training data only",
+  "Pick the decision threshold from business cost, not 0.5",
+]
+uses = [
+  "Fraud models with 0.1 percent positives",
+  "Manufacturing defect detection where 1 in 5,000 parts fails",
+]
+picture = "Like a smoke alarm that never beeps: it is right 99.99 percent of the time and completely useless."
+body = """- **Class weights** (`class_weight='balanced'`, XGBoost `scale_pos_weight` ~ negatives/positives) make mistakes on the rare class cost more.
+- **Undersampling** the majority speeds training; **oversampling** or **SMOTE** creates more minority rows. Resample only the training split; validation and test must keep the real ratio or your metrics lie.
+- Resampling or weighting shifts predicted probabilities. If you need calibrated probabilities, recalibrate on untouched validation data afterwards.
+- Strong tree ensembles often handle imbalance fine with no resampling; the bigger win is usually the right metric and threshold.
+- Collect more positives where you can (active learning, analyst labels) - it beats any trick."""
+
+[[sections]]
+id = "gradient-descent"
+group = "ML Fundamentals"
+title = "Gradient Descent and Feature Scaling"
+plain = "Gradient descent finds good weights by repeatedly stepping downhill on the loss; feature scaling makes that hill a smooth bowl instead of a long narrow canyon."
+how = [
+  "Compute the loss on a mini-batch of data",
+  "Compute the gradient: the direction the loss rises fastest for each weight",
+  "Move each weight a small step (the learning rate) in the opposite direction",
+  "Repeat over many batches and epochs until the validation loss stops improving",
+]
+uses = [
+  "Training logistic regression and every neural network",
+  "Standardizing income and age before a linear model so neither dominates",
+]
+picture = "Like walking down a foggy hill by feeling which way the ground slopes under your feet and taking a step that way."
+body = """- **Batch** GD uses all data per step (slow, smooth); **stochastic** uses one row (noisy); **mini-batch** (e.g. 32-4096 rows) is the standard.
+- **Learning rate** too high: loss bounces or explodes to NaN. Too low: training crawls. Schedules (warmup, cosine decay) and adaptive optimizers (**Adam, AdamW**) help.
+- **Scaling**: standardize (subtract mean, divide by std) or min-max scale. Needed for gradient-based models, distance-based models (kNN, k-means, SVM) and regularized linear models.
+- **Tree models do not need scaling**: splits depend only on the order of values.
+- Fit the scaler on training data only, then apply it to validation, test and serving. Fitting on all data leaks statistics from the test set.
+- Exploding gradients in deep nets: gradient clipping, lower learning rate, normalization layers."""
+
+# ---------------------------------------------------------------- Models
+
+[[sections]]
+id = "linear-logistic"
+group = "Models"
+title = "Linear and Logistic Regression"
+plain = "Linear regression predicts a number as a weighted sum of features; logistic regression squashes that sum through a sigmoid to get a probability between 0 and 1."
+how = [
+  "Multiply each feature by a learned weight and add a bias",
+  "Linear regression outputs the sum directly and minimizes squared error",
+  "Logistic regression passes the sum through a sigmoid and minimizes log loss",
+  "Each weight says how the output (or the log-odds) moves when that feature rises by one unit",
+]
+uses = [
+  "A credit-risk scorecard that regulators can read",
+  "A fast, well-calibrated baseline before trying boosted trees",
+]
+picture = "Like a recipe where every ingredient has a fixed amount: more of a heavy ingredient moves the result a lot, a light one barely at all."
+body = """- Logistic regression is still a **linear classifier**: the decision boundary is a straight line (hyperplane) in feature space. Non-linear patterns need feature engineering (bins, interactions, splines) or a different model.
+- Weights are interpretable as **log-odds**: a weight of 0.7 means one unit up multiplies the odds by e^0.7 ~ 2.
+- Interpretation breaks with strongly correlated features (multicollinearity): weights become unstable. L2 helps.
+- Log loss training tends to give reasonably **calibrated** probabilities out of the box.
+- Scale features and regularize. Handles millions of sparse features (one-hot, hashed) cheaply, which is why it powered ad click prediction for years."""
+
+[[sections]]
+id = "tree-ensembles"
+group = "Models"
+title = "Decision Trees, Random Forests and Gradient Boosting"
+plain = "A decision tree asks a series of yes/no questions about features; ensembles combine many trees so their mistakes cancel out."
+how = [
+  "A tree picks the feature split that best separates the target, then repeats on each side",
+  "Random forest: train many deep trees on bootstrap samples and random feature subsets, then average",
+  "Gradient boosting: add shallow trees one at a time, each fitting the errors of the trees so far",
+  "Tune depth, learning rate, number of trees and subsampling; use early stopping",
+]
+uses = [
+  "XGBoost or LightGBM as the default for tabular problems like churn, credit and fraud",
+  "Random forest as a robust baseline that needs little tuning",
+]
+picture = "Random forest is a jury voting independently; gradient boosting is a relay team where each runner fixes the ground the last one lost."
+body = """```
+                   random forest           gradient boosting (XGBoost, LightGBM, CatBoost)
+trees built        in parallel, independent  sequentially, each fixes residual errors
+tree depth         deep                      shallow (e.g. depth 4-8, or leaf-limited)
+reduces mainly     variance                  bias (and variance with regularization)
+tuning effort      low                       higher; learning rate and trees interact
+overfit risk       low                       higher without early stopping
+```
+
+- Trees handle mixed feature types, missing values (XGBoost and LightGBM learn a default direction) and non-linear interactions with **no scaling**.
+- **LightGBM** grows leaf-wise with histogram binning, so it is fast on large data; **CatBoost** handles high-cardinality categoricals natively.
+- Trees cannot **extrapolate**: a tree predicting price will never output beyond the range of training targets.
+- Feature importance by split gain is biased toward high-cardinality features; prefer **permutation importance** or **SHAP** values.
+- On most tabular benchmarks, tuned boosted trees still match or beat deep nets."""
+
+[[sections]]
+id = "deep-learning-when"
+group = "Models"
+title = "When Deep Learning Is Worth It"
+plain = "Deep learning wins when the data is unstructured (images, text, audio) or huge and the patterns are too complex to hand-engineer; for ordinary tables, boosted trees usually win."
+how = [
+  "Start with a strong simple baseline: logistic regression or boosted trees",
+  "Move to deep learning when inputs are raw text, images, audio or sequences",
+  "Or when you have very large data and need learned embeddings for IDs",
+  "Weigh the extra cost: GPUs, tuning time, serving latency, harder debugging",
+]
+uses = [
+  "Image classification for product photos",
+  "Sequence models over user click histories for recommendations",
+]
+picture = "Like hiring a specialist surgeon: brilliant for the hard case, overkill and expensive for a splinter."
+body = """- Deep nets learn representations from raw input, which beats hand-crafted features for vision, speech and language.
+- For text and images today, the default is to **start from a pretrained model** (fine-tune or use its embeddings), not train from scratch.
+- For tabular data with up to a few million rows, gradient-boosted trees are usually more accurate, faster to train, cheaper to serve and easier to explain.
+- Deep learning helps tabular problems when there are high-cardinality IDs (user, item) that benefit from learned embeddings, or when you combine tabular with text or images.
+- Hidden costs: GPU training and serving, more hyperparameters, nondeterminism, harder explanations for regulated decisions."""
+
+[[sections]]
+id = "embeddings-recsys"
+group = "Models"
+title = "Embeddings and Recommendation Basics"
+plain = "An embedding is a list of numbers that places an item, user or piece of text in a space where similar things sit close together."
+how = [
+  "A model learns vectors so that related things (a user and items they click) end up close",
+  "Similarity is measured by dot product or cosine similarity",
+  "Store item vectors in an approximate nearest neighbour (ANN) index",
+  "At request time, embed the query or user and fetch the closest items",
+]
+uses = [
+  "Two-tower retrieval: pick 500 candidate videos out of 10 million in milliseconds",
+  "Semantic search and 'similar products' using text or image embeddings",
+]
+picture = "Like a map of a city where similar shops cluster on the same street, so finding 'more like this' is just looking next door."
+body = """- **Collaborative filtering / matrix factorization**: learn user and item vectors whose dot product predicts the interaction.
+- **Two-tower model**: one tower encodes user and context, the other encodes the item. Because towers only meet at the final dot product, item vectors can be precomputed and indexed. Trained with sampled negatives (often in-batch negatives).
+- **Recsys funnel**: retrieval (cheap, recall-focused, thousands of candidates from millions) then ranking (heavier model with cross features, precision-focused, hundreds) then re-ranking for business rules and diversity.
+- **ANN indexes** (HNSW, IVF, product quantization; libraries like FAISS or vector databases) trade a little recall for big speedups.
+- **Cold start**: new items have no interactions, so use content features (text or image embeddings, category) in the item tower; new users get popularity or context-based defaults.
+- Pretrained text embedding models make semantic features cheap to add to classic models."""
+diagram = """flowchart LR
+  U[User and context] --> UT[User tower]
+  I[Item features] --> IT[Item tower]
+  IT --> IDX[ANN index]
+  UT --> Q[Nearest neighbour query]
+  IDX --> Q
+  Q --> R[Top candidates to ranker]"""
+
+[[sections]]
+id = "clustering"
+group = "Models"
+title = "Clustering"
+plain = "Clustering groups similar rows together without any labels, so you can find natural segments in data."
+how = [
+  "Scale the features so no single feature dominates distances",
+  "k-means: pick k centers, assign each point to its nearest center, move each center to its points' mean, repeat",
+  "Choose k with the elbow method, silhouette score and, mostly, whether the clusters are useful",
+  "Profile each cluster to give it a business meaning",
+]
+uses = [
+  "Customer segmentation for marketing",
+  "Grouping similar support tickets or log lines",
+]
+picture = "Like sorting a pile of mixed laundry into heaps by feel, without anyone telling you what the categories are."
+body = """- **k-means** assumes roughly round, similar-sized clusters, needs k up front and is sensitive to scale, outliers and initialization (use k-means++ and several restarts).
+- **DBSCAN / HDBSCAN** find arbitrarily shaped clusters, do not need k and label outliers as noise; they need density parameters instead.
+- **Hierarchical** clustering builds a tree of merges you can cut at any level; fine for small data.
+- **Gaussian mixture models** give soft (probabilistic) membership.
+- Clustering has no ground truth, so evaluation is partly subjective: silhouette, stability across runs, and whether the segments drive different actions.
+- Clustering embeddings (text, images) is a common way to explore unlabeled data before labeling."""
+
+[[sections]]
+id = "llm-vs-classic"
+group = "Models"
+title = "LLMs vs Classic Models, Fine-tuning vs Prompting"
+plain = "Large language models can do many text tasks with just a prompt, but for a narrow, high-volume task a small trained model is often cheaper, faster and just as accurate."
+how = [
+  "Prototype with a prompted LLM to prove the task is learnable and to label data",
+  "Measure quality, latency and cost per prediction on a labeled eval set",
+  "If volume is high and the task is narrow, train or fine-tune a smaller model, possibly on LLM-generated labels",
+  "Keep the LLM for the long tail or open-ended cases",
+]
+uses = [
+  "Using an LLM to label 20k support tickets, then training a small classifier on them",
+  "Embedding text with a pretrained model and feeding the vectors to a boosted tree",
+]
+picture = "Like hiring a brilliant generalist consultant to figure out the job, then training a dedicated employee to do it every day."
+body = """```
+                  prompted LLM              fine-tuned small model / classic model
+data needed       few or zero examples      hundreds to many thousands of labels
+cost per call     higher                    very low
+latency           higher, variable          low, predictable
+output            free text, needs parsing  fixed label or score, easy to calibrate
+change the task   edit the prompt           relabel and retrain
+```
+
+- **Fine-tuning** (often parameter-efficient, such as LoRA) adapts a pretrained model to your format or domain. It teaches behavior and style better than it adds new facts; for fresh facts, use retrieval.
+- Classic tabular problems (fraud, churn, pricing) still belong to boosted trees; LLMs help mainly through text features and embeddings.
+- Whatever you pick, evaluate on the same held-out labeled set with the same metrics and include cost and latency."""
+
+# ---------------------------------------------------------------- Evaluation
+
+[[sections]]
+id = "classification-metrics"
+group = "Evaluation"
+title = "Precision, Recall and F1"
+plain = "Precision asks 'when the model says yes, how often is it right?'; recall asks 'of all the real yeses, how many did it catch?'"
+how = [
+  "Build the confusion matrix: true positives, false positives, false negatives, true negatives",
+  "Precision = TP / (TP + FP)",
+  "Recall = TP / (TP + FN)",
+  "F1 = harmonic mean of precision and recall",
+]
+uses = [
+  "Spam filtering where false positives (lost real email) hurt most, so precision matters",
+  "Cancer screening where missed cases hurt most, so recall matters",
+]
+picture = "A fishing net: recall is how many of the fish in the lake you caught; precision is how much of your net is fish rather than old boots."
+body = """```
+                 predicted yes   predicted no
+actually yes     TP              FN
+actually no      FP              TN
+```
+
+- Accuracy = (TP + TN) / all. Misleading under imbalance.
+- Raising the threshold usually raises precision and lowers recall; lowering it does the reverse.
+- **F1** punishes a lopsided pair: precision 1.0 with recall 0.1 gives F1 ~ 0.18. **F-beta** weights recall beta times as much as precision.
+- For multi-class: **macro** averages per-class scores equally (rare classes count), **micro** pools all decisions (dominated by common classes).
+- **Specificity** = TN / (TN + FP), the recall of the negative class."""
+
+[[sections]]
+id = "roc-vs-pr-auc"
+group = "Evaluation"
+title = "ROC-AUC vs PR-AUC"
+plain = "Both summarize a model across all thresholds; ROC-AUC measures how well it ranks positives above negatives, PR-AUC measures how precise it stays as you try to catch more positives."
+how = [
+  "Sweep the threshold from high to low",
+  "ROC curve plots true positive rate against false positive rate",
+  "PR curve plots precision against recall",
+  "AUC is the area under each curve",
+]
+uses = [
+  "ROC-AUC for balanced problems or comparing ranking quality",
+  "PR-AUC for fraud or rare-disease models where positives are scarce",
+]
+picture = "ROC-AUC is the chance a random guilty suspect looks more suspicious than a random innocent one; PR-AUC is how crowded the jail gets with innocents as you arrest more of the guilty."
+body = """- **ROC-AUC = probability that a random positive scores higher than a random negative.** 0.5 is random, 1.0 perfect. Insensitive to class ratio.
+- Under heavy imbalance, FPR stays tiny even when false positives vastly outnumber true positives, so ROC-AUC can look great (0.95) while precision is terrible.
+- **PR-AUC** (or average precision) has a random baseline equal to the positive rate (e.g. 0.001 for 0.1 percent fraud), so it exposes that weakness.
+- Neither picks your threshold. Both ignore calibration: multiplying all scores by 0.5 leaves AUCs unchanged.
+- For operations, report the metric at the operating point too, such as recall at 1 percent FPR or precision at top-k."""
+
+[[sections]]
+id = "calibration"
+group = "Evaluation"
+title = "Calibration"
+plain = "A model is calibrated when its probabilities mean what they say: of all the cases it scores 0.8, about 80 percent are actually positive."
+how = [
+  "Bucket predictions by score (0-0.1, 0.1-0.2, ...)",
+  "Compare the average predicted probability with the actual positive rate per bucket",
+  "Plot them as a reliability diagram; a well-calibrated model hugs the diagonal",
+  "Fix with Platt scaling or isotonic regression fitted on held-out data",
+]
+uses = [
+  "Expected-value decisions: bid = P(click) x value per click",
+  "Risk scores shown to humans who read them as probabilities",
+]
+picture = "Like a weather forecaster: if it says 70 percent rain on 100 days, it should rain on about 70 of them."
+body = """- Ranking metrics (AUC) do not care about calibration; anything that multiplies probabilities by money does.
+- Often miscalibrated: boosted trees, deep nets, any model trained with class weights or resampling, naive Bayes. Logistic regression is usually close.
+- **Platt scaling**: fit a logistic regression on the model's scores; good with little data. **Isotonic regression**: a monotone step function; more flexible, needs more data.
+- Measure with **log loss**, **Brier score** (mean squared error of probabilities) or **expected calibration error**.
+- Calibration drifts when the base rate changes in production; recheck after retraining and on recent data."""
+
+[[sections]]
+id = "threshold-business-cost"
+group = "Evaluation"
+title = "Choosing a Threshold from Business Cost"
+plain = "The cut-off score that turns a probability into an action should come from what each kind of mistake costs, not from a default of 0.5."
+how = [
+  "Price each outcome: cost of a false positive, cost of a false negative, value of a true positive",
+  "On validation data, compute total cost or profit at every candidate threshold",
+  "Pick the threshold with the best expected value that also respects capacity limits",
+  "Re-check the threshold whenever the model or the base rate changes",
+]
+uses = [
+  "Fraud: a missed fraud costs 200 dollars, a manual review costs 5 dollars",
+  "A review team that can handle only 1,000 cases a day, so flag the top 1,000",
+]
+picture = "Like setting how sensitive a car alarm is: too touchy and neighbours stop listening, too lax and the car gets stolen."
+body = """With calibrated probability p, act when the expected cost of acting is lower than not acting:
+
+```
+act if  p * cost_FN  >  (1 - p) * cost_FP
+=>      threshold = cost_FP / (cost_FP + cost_FN)
+example: FP 5 dollars, FN 200 dollars -> threshold = 5 / 205 ~ 0.024
+```
+
+- That closed form needs **calibrated** probabilities. Otherwise sweep thresholds on validation data and pick the cost minimum empirically.
+- **Capacity constraints** often dominate: if reviewers can check 2 percent of traffic, the threshold is the score at the 98th percentile.
+- Consider a **three-way decision**: auto-approve, send to review, auto-block.
+- Customer friction (blocked good users) is a real cost; get finance or ops to agree on the numbers."""
+
+[[sections]]
+id = "regression-metrics"
+group = "Evaluation"
+title = "Regression Metrics"
+plain = "Regression metrics measure how far numeric predictions land from the truth; they differ in how harshly they punish big misses."
+how = [
+  "MAE: average absolute error, in the target's units",
+  "RMSE: square errors, average, take the root; big errors dominate",
+  "MAPE: average percentage error; easy to explain, breaks near zero",
+  "R squared: share of variance explained compared with predicting the mean",
+]
+uses = [
+  "MAE in minutes for ETA prediction",
+  "Weighted MAPE for demand forecasting across stores of different size",
+]
+picture = "MAE is a teacher who docks one point per mistake; RMSE is one who docks more and more points the worse the mistake is."
+body = """- The model you train targets the metric's optimum: **MSE loss predicts the mean, MAE loss predicts the median**, quantile loss predicts a chosen quantile (e.g. p90 delivery time for a promise).
+- **RMSE >= MAE** always; a big gap means a few large errors.
+- **MAPE** is undefined at zero actuals and penalizes over-prediction more than under-prediction. **WMAPE** (sum of absolute errors / sum of actuals) is more stable.
+- Log-transform skewed targets (prices) or use RMSLE when relative error matters more than absolute.
+- Always compare against a naive baseline (last value, historical mean) so the number has context."""
+
+[[sections]]
+id = "online-experiments"
+group = "Evaluation"
+title = "Offline vs Online Metrics and A/B Testing Models"
+plain = "Offline metrics tell you a model ranks held-out data better; only an online experiment with real users tells you whether it moves the business."
+how = [
+  "Pick a primary online metric (conversion, revenue per session) and guardrail metrics (latency, complaints)",
+  "Compute sample size from the minimum effect you care about",
+  "Randomly split users (not requests) between the old and new model",
+  "Run for full weekly cycles, then test significance on the pre-registered metric",
+]
+uses = [
+  "Testing a new ranking model on 10 percent of users before full rollout",
+  "Checking that a fraud model change does not raise good-customer declines",
+]
+picture = "Offline evaluation is a flight simulator; an A/B test is the first real flight with passengers on board."
+body = """Why offline gains fail to show up online:
+- Offline metric is a weak proxy for the business goal (AUC on clicks vs revenue).
+- **Feedback loop / selection bias**: logged data only contains items the old model chose to show.
+- Training-serving skew or stale features in production.
+- Gain is concentrated in segments that matter little, or is too small to detect.
+- Latency increase from a heavier model eats the gain.
+
+Experiment hygiene:
+- Randomize by **user** to avoid one person seeing both models; check the sample ratio matches the planned split (**SRM check**).
+- Do not stop the moment p < 0.05 (**peeking**); fix the duration or use sequential testing.
+- Watch for novelty effects; run at least one to two weekly cycles.
+- **Interleaving** (mixing results from both rankers in one list) detects ranking preferences with far less traffic than A/B tests."""
+
+# ---------------------------------------------------------------- Features & Data
+
+[[sections]]
+id = "feature-stores"
+group = "Features and Data"
+title = "Feature Stores: Offline, Online and Freshness"
+plain = "A feature store is a shared system where features are defined once and then served both as history for training and as the latest values for live predictions."
+how = [
+  "Engineers register a feature definition: entity key, source, transformation, freshness target",
+  "Batch or streaming jobs materialize values to an offline store (full history) and an online store (latest value per key)",
+  "Training builds datasets from the offline store with point-in-time joins",
+  "The serving path reads the same features from the online store in milliseconds",
+]
+uses = [
+  "A fraud model reading a card's transaction count in the last 10 minutes from Redis",
+  "Many teams reusing one 'user orders last 30 days' feature instead of rebuilding it",
+]
+picture = "Like a central kitchen that preps sauces once and supplies both the cooking school (training) and the restaurant line (serving), so the taste is the same."
+body = """```
+                offline store                    online store
+holds           full history with timestamps     latest value per entity key
+backed by       lake or warehouse tables         Redis, DynamoDB, Cassandra, Bigtable
+read by         training jobs, batch scoring     real-time inference
+latency         seconds to minutes               single-digit milliseconds
+```
+
+- **Freshness** is how old a feature value is when it is read. Batch features may be a day old; streaming features (Flink, Spark Structured Streaming) can be seconds old. Pick per feature by how fast the signal changes and what it costs.
+- **On-demand features** are computed at request time from request data (distance between user and store).
+- Monitor per feature: freshness lag, null rate, distribution shift.
+- Examples: Feast (open source), Tecton, Databricks and SageMaker feature stores.
+- It is not mandatory: one model with batch scoring often does fine with plain warehouse tables."""
+diagram = """flowchart LR
+  SRC[Batch and stream sources] --> MAT[Materialization jobs]
+  MAT --> OFF[Offline store: history]
+  MAT --> ON[Online store: latest]
+  OFF --> TR[Training sets]
+  ON --> INF[Live inference]"""
+
+[[sections]]
+id = "data-leakage"
+group = "Features and Data"
+title = "Data Leakage and Point-in-Time Correctness"
+plain = "Leakage is when training data contains information the model would not have at prediction time, so it looks brilliant offline and fails in production."
+how = [
+  "For each training row, fix the prediction moment (the event timestamp)",
+  "Only use feature values that were known strictly before that moment",
+  "Join features with an as-of (point-in-time) join, not a join on the latest value",
+  "Split train and test by time and entity, and fit preprocessing on training data only",
+]
+uses = [
+  "Building a churn training set where each row only sees activity before the snapshot date",
+  "Catching a feature like 'refund_issued' that is only filled in after a fraud decision",
+]
+picture = "Like a student who saw the answer key before the exam: perfect score, learned nothing."
+body = """Common leaks:
+- **Target leakage**: a feature is caused by or recorded after the label (account_closed_date in a churn model, a 'chargeback_count' that includes the current transaction).
+- **Time leakage**: random splits on time series; aggregates computed over the full dataset (a user's lifetime average that includes future rows).
+- **Preprocessing leakage**: scaling, imputation or target encoding fitted on all data before splitting.
+- **Entity leakage**: the same user in train and test, so the model memorizes users.
+
+Point-in-time join:
+
+```
+label row: user 42, event_time 2026-03-10 14:00
+feature history for user 42:
+  2026-03-09 00:00  orders_7d = 3
+  2026-03-11 00:00  orders_7d = 5   <- after the event, must not be used
+correct value: 3 (latest value with timestamp <= event_time)
+```
+
+Red flags: AUC suspiciously close to 1.0, one feature with overwhelming importance, a big drop from offline to online. Spark, Feast and most warehouses support as-of joins."""
+
+[[sections]]
+id = "training-serving-skew"
+group = "Features and Data"
+title = "Training-Serving Skew"
+plain = "Training-serving skew is when the model sees features computed one way in training and a different way in production, so its live predictions are off."
+how = [
+  "Log the exact features the model received at serving time",
+  "Join those logs to the training-time values for the same entity and moment",
+  "Compare distributions and row-level mismatches feature by feature",
+  "Fix by sharing one transformation definition for both paths or training on the logged features",
+]
+uses = [
+  "Finding that serving used a timezone-shifted day-of-week feature",
+  "Catching a missing-value default of 0 online versus NaN in training",
+]
+picture = "Like practising penalty kicks with a light ball and playing the match with a heavy one."
+body = """Typical causes:
+- Two code paths: SQL or Spark for training, Java or Python reimplementation for serving.
+- Different defaults for missing values, different units, timezone or tokenization differences.
+- Feature freshness: training used end-of-day values, serving reads values that lag by hours.
+- Upstream data changed meaning (a column now in cents, not dollars).
+
+Prevention:
+- One feature definition reused by both paths (a feature store, or shared transformation library).
+- **Log-and-wait**: log served features and train future models on those logs, so training data is exactly what serving saw.
+- Validation checks comparing training and serving feature distributions (TFDV-style schema and skew checks).
+- Shadow-run a new model on live traffic and compare its scores with offline scores for the same rows."""
+
+[[sections]]
+id = "label-quality"
+group = "Features and Data"
+title = "Label Quality and Delayed Labels"
+plain = "A model can only be as good as its labels, and in real systems labels are often noisy, biased or arrive weeks late."
+how = [
+  "Define the label precisely: what event, in what window after the prediction",
+  "Measure noise: have multiple annotators label a sample and compute agreement",
+  "Find suspicious labels with model disagreement or confident-learning methods and relabel",
+  "Handle delay by waiting for labels to mature before training, and use proxy metrics meanwhile",
+]
+uses = [
+  "Chargebacks confirming fraud up to 60-90 days after the transaction",
+  "Human-labeled content moderation with written guidelines and audits",
+]
+picture = "Like learning to cook from a recipe book with typos: you faithfully reproduce the mistakes."
+body = """- **Label definition** matters as much as the model: 'churn' = no purchase in 30 days vs cancelled subscription gives very different models.
+- **Delayed labels**: training data must only include examples whose label window has closed, otherwise recent rows look falsely negative.
+- **Selection bias**: you only learn outcomes for actions you took (approved loans have repayment labels, declined ones do not). Mitigate with a small random exploration slice or reject inference.
+- **Noisy labels**: inter-annotator agreement (Cohen's kappa), gold-standard test questions, clear guidelines, adjudication of disagreements.
+- Prioritize relabeling the examples where the model is confidently wrong; they are often label errors.
+- LLMs can pre-label or adjudicate at scale, but audit a sample with humans."""
+
+# ---------------------------------------------------------------- Training & Serving
+
+[[sections]]
+id = "batch-vs-realtime-inference"
+group = "Training and Serving"
+title = "Batch vs Real-time Inference"
+plain = "Batch inference scores everything on a schedule and stores the results; real-time inference scores one request at a time while the user waits."
+how = [
+  "Batch: a scheduled job loads the model, scores a table, writes predictions to a table or cache",
+  "Real-time: a service loads the model, receives a request, fetches features, returns a score in milliseconds",
+  "Streaming: a consumer scores events from a stream as they arrive",
+  "Choose by how fresh the input must be and how fast the answer is needed",
+]
+uses = [
+  "Batch: nightly churn scores pushed to the CRM",
+  "Real-time: fraud check during card authorization",
+]
+picture = "Batch is a bakery baking tomorrow's bread overnight; real-time is a barista making each coffee to order."
+body = """```
+                 batch                          real-time
+latency          hours                          milliseconds
+features         can be heavy, any SQL          must be fetched fast, often precomputed
+cost             cheap, spot instances, Spark   always-on service, autoscaling
+failure impact   rerun the job                  user-facing errors, need fallbacks
+good for         known entity set, slow change  depends on request context
+```
+
+- Hybrid is common: precompute user embeddings in batch, combine with request context in real time.
+- Batch predictions go stale; record the prediction timestamp and model version with each score.
+- Real-time needs a **fallback** (cached score, rule, default) when the model or feature store is slow or down."""
+
+[[sections]]
+id = "serving-latency"
+group = "Training and Serving"
+title = "Model Serving and Latency"
+plain = "Serving latency is the time from request to prediction, and it is usually eaten by feature lookups and model size, not just the math."
+how = [
+  "Break the latency budget into steps: network, feature fetch, preprocessing, model, postprocessing",
+  "Measure p50, p95 and p99 per step, not only the average",
+  "Fix the biggest step first: batch or cache feature lookups, shrink or compile the model",
+  "Load test at peak traffic and autoscale on the right signal",
+]
+uses = [
+  "A ranking service that must answer in 50 ms p99 for 500 candidates",
+  "A GPU text model served with dynamic batching",
+]
+picture = "Like a restaurant ticket time: the chef may cook fast, but if the waiter walks to three storerooms for ingredients the meal is still late."
+body = """Levers:
+- **Features**: one batched lookup (Redis MGET or pipeline) instead of hundreds of calls; cache slowly changing item features in process memory.
+- **Model**: fewer or shallower trees, distillation into a smaller model, quantization (int8), compiled runtimes (ONNX Runtime, TensorRT, Treelite-style tree compilation).
+- **Architecture**: a cascade or funnel so the expensive model scores only the top candidates.
+- **Hardware**: CPUs are fine for trees and small nets; GPUs pay off for large deep models with **dynamic batching** of concurrent requests.
+- **Tail latency**: timeouts with fallbacks, avoid GC pauses, warm up models on startup, hedge slow requests.
+- Serving frameworks: KServe, Seldon, BentoML, Triton, TorchServe or a plain FastAPI or gRPC service for simple models."""
+
+[[sections]]
+id = "model-registry-reproducibility"
+group = "Training and Serving"
+title = "Model Registry, Versioning and Reproducibility"
+plain = "A model registry is the catalog of trained models with their versions, metrics and stage; reproducibility means you can rebuild any of them exactly."
+how = [
+  "Each training run logs code commit, data snapshot, config, hyperparameters, seed, environment and metrics",
+  "The artifact is registered as a new version tied to that run",
+  "Versions move through stages or aliases (candidate, staging, production) after checks and approval",
+  "Serving loads a specific version, so rollback is pointing back to the previous one",
+]
+uses = [
+  "MLflow Model Registry or SageMaker Model Registry to promote a churn model",
+  "An auditor asking which data trained the model that declined a loan last March",
+]
+picture = "Like a lab notebook plus a labeled sample freezer: every sample says exactly how it was made and you can grab last week's if today's goes bad."
+body = """To reproduce a model you need all of:
+- **Code** version (git commit) and **environment** (locked dependencies, container image).
+- **Data** version: a snapshot or table version (Delta or Iceberg time travel, DVC), plus the query that built the training set.
+- **Config**: hyperparameters, feature list, random seeds.
+- **Lineage** from model version back to run, data and code.
+
+Remaining nondeterminism: GPU kernels, multi-threaded tree building and distributed training can vary slightly even with seeds; aim for statistically equivalent results and pin deterministic flags where it matters.
+
+Experiment trackers (MLflow, Weights and Biases) log runs; the registry holds the versions you might deploy. Store the model **signature** (input schema) with it so serving can reject bad inputs."""
+
+[[sections]]
+id = "distributed-training"
+group = "Training and Serving"
+title = "GPUs and Distributed Training"
+plain = "When a model or dataset is too big or slow for one GPU, you split the work: either each GPU gets different data (data parallel) or different parts of the model (model parallel)."
+how = [
+  "Data parallel: copy the full model to every GPU, give each a different slice of the batch",
+  "After the backward pass, average gradients across GPUs (all-reduce) so all copies stay identical",
+  "Model parallel: split the model's layers (pipeline) or individual tensors (tensor parallel) across GPUs",
+  "Sharded data parallel (FSDP, ZeRO) splits weights, gradients and optimizer state to save memory",
+]
+uses = [
+  "PyTorch DDP to train an image model 8x faster on one 8-GPU node",
+  "FSDP or tensor parallelism to fine-tune a model that does not fit on one GPU",
+]
+picture = "Data parallel is eight cooks each making the same dish from different groceries and comparing notes; model parallel is an assembly line where each cook does one stage."
+body = """- GPUs win on large dense matrix math (deep nets). Boosted trees mostly train fine on CPUs, though XGBoost and LightGBM have GPU modes.
+- GPU memory holds weights, gradients, optimizer state (Adam keeps two extra values per weight) and activations. Mixed precision (bf16), gradient checkpointing and smaller batches cut memory.
+- **Data parallel** scales throughput; the effective batch size grows with GPU count, so learning rate often needs adjusting (warmup, scaling rules).
+- **Model parallel** is needed when the model does not fit; pipeline parallel suffers idle 'bubbles', tensor parallel needs very fast interconnect (NVLink).
+- Communication is the bottleneck at scale; watch GPU utilization and checkpoint often because long jobs on many machines hit failures.
+- Spark or Ray can distribute tabular training and hyperparameter search across CPU workers."""
+diagram = """flowchart LR
+  D[Data batch] --> S1[GPU 1: full model, slice 1]
+  D --> S2[GPU 2: full model, slice 2]
+  S1 --> AR[All-reduce gradients]
+  S2 --> AR
+  AR --> U[Same update on every GPU]"""
+
+# ---------------------------------------------------------------- MLOps
+
+[[sections]]
+id = "ml-cicd"
+group = "MLOps and Monitoring"
+title = "CI/CD for Models"
+plain = "CI/CD for ML automatically tests not just the code but also the data and the trained model before anything reaches production."
+how = [
+  "On every code change: unit tests for features and transformations, schema checks, a tiny training smoke test",
+  "On a training run: data validation, then train, then evaluate against the production model on a fixed holdout",
+  "Gate promotion on metric thresholds, slice checks, latency and size checks",
+  "Deploy through shadow or canary, with automatic rollback on alerts",
+]
+uses = [
+  "Blocking a model whose recall on a key country dropped 5 points",
+  "Rejecting a training job when the input table arrived half empty",
+]
+picture = "Like airport security with three checkpoints: one for the luggage (data), one for the passenger (code) and one for the plane itself (model)."
+body = """Three things change in ML, and each needs tests:
+- **Code**: unit tests on feature logic, integration tests on the pipeline, contract tests on the serving API.
+- **Data**: schema, null rates, ranges, row counts, freshness, distribution shift vs the last good run (Great Expectations, TFDV-style checks).
+- **Model**: beats the current production model on a frozen eval set; no regression on important slices (region, device, new users); fairness checks where relevant; latency and memory within budget; predictions on a golden set unchanged in unexpected ways.
+
+Continuous training (CT) pipelines (Airflow, Kubeflow, SageMaker Pipelines, Vertex AI Pipelines) run the same steps on a schedule or trigger. Everything is versioned so any promotion can be traced and rolled back."""
+diagram = """flowchart LR
+  C[Code change] --> T[Unit and data tests]
+  T --> TR[Train]
+  TR --> E[Evaluate vs production]
+  E --> G[Promotion gate]
+  G --> SH[Shadow or canary]
+  SH --> P[Production]"""
+
+[[sections]]
+id = "drift"
+group = "MLOps and Monitoring"
+title = "Data Drift vs Concept Drift"
+plain = "Data drift is when the inputs change; concept drift is when the relationship between inputs and the right answer changes."
+how = [
+  "Data (covariate) drift: P(X) shifts, such as a new customer segment or a new app version",
+  "Prior or label drift: P(y) shifts, such as fraud rate doubling",
+  "Concept drift: P(y given X) shifts, such as fraudsters changing tactics so old patterns stop working",
+  "Detect data drift without labels; confirming concept drift needs labels or strong proxies",
+]
+uses = [
+  "Shopping behaviour shifting suddenly at the start of a lockdown",
+  "A spam model degrading as spammers adapt their wording",
+]
+picture = "Data drift is a new crowd of customers walking into your shop; concept drift is the same customers suddenly wanting different things."
+body = """Detecting data drift per feature, comparing a reference window (training data) with a recent window:
+- **PSI** (population stability index): rough rule of thumb, under 0.1 stable, 0.1-0.25 moderate, above 0.25 large shift.
+- **KS test** for numeric features, chi-squared for categoricals, Jensen-Shannon or Wasserstein distance.
+- Also track the **prediction distribution**; it moves when inputs that matter move.
+
+Cautions:
+- With huge samples, statistical tests flag tiny, harmless shifts. Alert on effect size and on features with high importance.
+- Not all drift hurts. Drift on an unimportant feature may change nothing; concept drift can hurt with no input drift at all.
+- Sudden drift is often a **pipeline bug** (unit change, broken join, null flood) rather than the world changing. Check upstream first."""
+
+[[sections]]
+id = "monitoring"
+group = "MLOps and Monitoring"
+title = "Monitoring and Alerting for ML"
+plain = "ML monitoring watches the service, the data going in, the predictions coming out and, once labels arrive, the actual accuracy."
+how = [
+  "Service health: latency, errors, throughput, resource use",
+  "Data health: schema, null rates, freshness, drift of key features",
+  "Prediction health: score distribution, share of positives, fallback rate",
+  "Model quality: accuracy metrics once labels arrive, plus business KPIs",
+]
+uses = [
+  "Alerting when the share of transactions flagged as fraud doubles in an hour",
+  "A weekly dashboard of precision and recall by region once chargebacks land",
+]
+picture = "Like a car dashboard: engine temperature, fuel and speed tell you something is wrong long before the engine actually breaks."
+body = """- Labels are often **delayed** (chargebacks, churn), so leading indicators matter: input drift, prediction drift, business proxies (click rate, review overturn rate).
+- Log every prediction with request ID, model version, features and score so you can join labels later and debug.
+- Slice metrics by segment; an average can hide a broken country or device.
+- Alerts need owners, runbooks and thresholds that are not so noisy people ignore them. Use page-worthy alerts for service health and sudden prediction shifts; tickets for slow drift.
+- Tools: Prometheus and Grafana for service metrics; Evidently, WhyLabs, Arize, or warehouse SQL jobs for data and model metrics."""
+
+[[sections]]
+id = "retraining"
+group = "MLOps and Monitoring"
+title = "Retraining Strategies"
+plain = "Models decay as the world changes, so you retrain them on a schedule, when monitoring says so, or continuously."
+how = [
+  "Measure how fast the model decays: train on old data, test on successive later months",
+  "Pick a cadence that keeps decay acceptable, such as weekly or monthly",
+  "Add triggers: drift or performance drops start an off-cycle retrain",
+  "Every retrained model passes the same evaluation gate and rollout as a new model",
+]
+uses = [
+  "Daily retraining of a news recommender",
+  "Quarterly retraining of a credit model with heavy validation and sign-off",
+]
+picture = "Like servicing a car: on a schedule, plus right away when a warning light comes on."
+body = """```
+strategy            when it fits                                 risk
+scheduled           steady decay, labels arrive regularly        retrains when nothing changed
+trigger-based       drift or metric alerts are reliable          late if alerts lag
+online/incremental  very fast change, huge streams               harder to validate, can drift badly
+```
+
+- **Window choice**: sliding window (recent data only) adapts fast but forgets rare patterns; expanding window keeps everything; weighting recent data is a middle path.
+- Retraining does not fix a **pipeline bug** or a broken feature; it can bake the bug in. Validate data first.
+- Retraining on data influenced by the model itself creates **feedback loops** (recommenders only learn from what they showed). Keep an exploration slice.
+- Fully automated retrain-and-deploy is fine only with strong gates and monitoring; regulated models usually need human sign-off."""
+
+[[sections]]
+id = "safe-rollouts"
+group = "MLOps and Monitoring"
+title = "Shadow, Canary and Rollback"
+plain = "Instead of switching every user to a new model at once, you first run it silently next to the old one, then give it a small slice of traffic, and keep a one-click way back."
+how = [
+  "Shadow: the new model scores live traffic but its output is only logged, never used",
+  "Compare shadow scores, latency and errors against the current model",
+  "Canary: route a small share (1-5 percent) of real traffic to the new model and watch guardrail metrics",
+  "Ramp up gradually; on any alert, roll back by repointing to the previous version",
+]
+uses = [
+  "Shadowing a new fraud model for two weeks to compare flag rates",
+  "Canary releasing a ranking model to 5 percent of users in one region",
+]
+picture = "Like a new pilot flying as co-pilot first (shadow), then flying short routes (canary), with a captain ready to take back the controls (rollback)."
+body = """- **Shadow** catches crashes, latency issues, skew and surprising score distributions with zero user risk, but cannot measure user impact because users never see its output.
+- **Canary** limits blast radius; **A/B test** is a canary with a proper statistical comparison.
+- **Blue-green**: two full environments, switch traffic at once, switch back instantly.
+- **Rollback** must be fast and boring: keep the previous model version deployed or loadable, keep its features available, and make the switch a config change rather than a rebuild.
+- Watch for features that only the new model needs; if they are removed during rollback, the old model must still work.
+- Feature flags and model aliases in the registry make the switch traceable."""
+diagram = """flowchart LR
+  T[Live traffic] --> OLD[Current model: serves users]
+  T --> NEW[New model in shadow: logged only]
+  NEW --> CMP[Compare scores and latency]
+  CMP --> CAN[Canary 5 percent]
+  CAN --> FULL[Full rollout or rollback]"""
+
+# ---------------------------------------------------------------- System Design
+
+[[sections]]
+id = "ml-design-framework"
+group = "ML System Design"
+title = "A Framework for ML System Design Interviews"
+plain = "An ML design answer walks from the business problem to the label, data, features, model, serving, evaluation and monitoring, in that order."
+how = [
+  "Clarify the goal, users, scale and latency; translate the goal into an ML task and a label",
+  "Describe data sources, features and how to avoid leakage",
+  "Start with a simple baseline model, then a stronger one, with reasons",
+  "Design training and serving: batch or real-time, feature store, latency budget",
+  "Define offline metrics, online A/B metrics and guardrails, then monitoring, retraining and failure modes",
+]
+uses = [
+  "ETA prediction, fraud detection, feed ranking, search ranking interviews",
+]
+picture = "Like planning a trip: destination first (goal), then route (data and model), then what to do if the road is closed (fallbacks)."
+body = """```
+step                 questions to answer out loud
+problem framing      what decision does the model drive? what is the label? what is a mistake worth?
+data and labels      where do labels come from, how delayed, how noisy, how biased?
+features             which entities, which windows, how fresh, offline and online parity?
+model                baseline, then upgrade; why this model for this data and latency?
+serving              batch or online, latency budget, fallback, scale
+evaluation           offline metric that matches the goal, online metric, guardrails
+operations           monitoring, drift, retraining cadence, rollout and rollback
+```
+
+- Say the **baseline** out loud (rules, logistic regression, historical average). Interviewers want to see you would not start with the most complex model.
+- Spend time on **labels and evaluation**; that is where most real ML systems go wrong.
+- Mention **feedback loops** and **fairness** where the model influences what data it gets next."""
+
+[[sections]]
+id = "ranking-systems"
+group = "ML System Design"
+title = "Ranking Systems: Feeds and Search"
+plain = "Ranking systems pick the best handful of items out of millions for one user or query, using a funnel of fast-then-precise models."
+how = [
+  "Candidate generation: several cheap sources (embeddings ANN, followed accounts, popular items, keyword match) pull thousands of candidates",
+  "Ranking: a heavier model scores each candidate with user, item and cross features",
+  "Re-ranking: apply diversity, freshness, business rules and policy filters",
+  "Log impressions and engagement to train the next model",
+]
+uses = [
+  "A social feed ranking posts by predicted engagement",
+  "E-commerce search ranking products for a query",
+]
+picture = "Like hiring: a recruiter skims thousands of CVs quickly, then interviewers spend real time on the shortlist, then the manager balances the team."
+body = """- **Ranking objective**: often multi-task (click, like, purchase, dwell time, hide) combined into one score with weights tuned online. Optimizing clicks alone invites clickbait.
+- **Learning to rank**: pointwise (predict click probability), pairwise (which of two is better), listwise (optimize the whole list, e.g. LambdaMART with LightGBM).
+- **Metrics**: offline NDCG, MRR, recall at k for retrieval; online CTR, conversions, session length, long-term retention as guardrails.
+- **Position bias**: items shown higher get clicked more regardless of quality. Use position as a training feature set to a fixed value at serving, or randomize a small slice.
+- **Search-specific**: query understanding (spelling, intent, embeddings), lexical retrieval (BM25) plus semantic retrieval combined (hybrid), freshness and exact-match signals.
+- **Latency**: retrieval ~10-20 ms, ranking a few hundred candidates in ~30-50 ms; cache features and use a light first-pass ranker if needed."""
+diagram = """flowchart LR
+  R[Request] --> CG[Candidate generation: thousands]
+  CG --> RK[Ranker: hundreds scored]
+  RK --> RR[Re-rank: rules and diversity]
+  RR --> F[Final list: tens]
+  F --> L[Logged impressions and clicks]
+  L --> TR[Training data]"""
+
+[[sections]]
+id = "real-time-risk"
+group = "ML System Design"
+title = "Real-time Risk Scoring: Fraud Detection"
+plain = "Fraud systems score each transaction in milliseconds by combining fresh behavioural features, a fast model and rules, then learn from labels that arrive weeks later."
+how = [
+  "On each transaction, fetch features: velocity counts, device, merchant risk, distance from usual location",
+  "Score with a boosted-tree model and combine with hard rules",
+  "Decide: approve, step-up (one-time code), send to review or decline, based on cost thresholds",
+  "Collect labels from chargebacks, disputes and analyst reviews and retrain regularly",
+]
+uses = [
+  "Card authorization decisions within a tight latency budget",
+  "Account takeover detection at login",
+]
+picture = "Like a bouncer who checks your ID, remembers you were at three other bars in the last ten minutes, and calls the manager when something feels off."
+body = """- **Velocity features** (transactions per card in last 1 min, 1 hour, 1 day; amount vs card's average) need **streaming** aggregation and an online store.
+- **Labels** are delayed (chargebacks take weeks) and **biased**: declined transactions never get a fraud label. Keep a tiny random holdout of approvals or use analyst labels.
+- **Adversarial drift**: fraudsters adapt quickly, so retrain often, monitor flag rates hourly and keep rules for fast response.
+- **Imbalance**: positives well under 1 percent; use PR-AUC, recall at a fixed false-positive rate, and dollar-weighted metrics.
+- **Fallback**: if the model or feature store times out, use rules or a cached risk score; decide in advance whether to fail open or closed.
+- Graph features (shared devices, cards, addresses) catch fraud rings that single-transaction features miss.
+- Explanations (reason codes) are often required for analysts and regulators."""

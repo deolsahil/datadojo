@@ -1,0 +1,1162 @@
+# Data Engineer cheatsheet. Questions link here via `study = "<section id>"`.
+
+# ---------------------------------------------------------------- Spark
+
+[[sections]]
+id = "spark-architecture"
+group = "Spark"
+title = "Spark Architecture & APIs"
+plain = "One driver program plans the work and many executors do it in parallel; a cluster manager hands out the machines."
+how = [
+  "Your code runs in the driver, which owns the SparkSession and builds the plan",
+  "The cluster manager (Standalone, YARN, Kubernetes, or Databricks) allocates executors",
+  "The driver splits each job into stages and tasks, one task per partition",
+  "Executors run tasks, keep cached data and shuffle files, and report back to the driver",
+]
+uses = ["Sizing a cluster: more cores means more tasks in parallel", "Explaining why collect() on a huge table kills the driver"]
+picture = "A head chef (driver) writes the plan and hands tickets to line cooks (executors); the restaurant manager (cluster manager) decides how many cooks are on shift."
+body = """**SparkSession** is the single entry point since Spark 2.0. It wraps the older `SparkContext` (low-level RDD API) and `SQLContext`. In notebooks on Databricks it is pre-created as `spark`.
+
+Three APIs over the same engine:
+```
+RDD        low-level, typed objects, no Catalyst optimization, you control everything
+DataFrame  rows with a schema, optimized by Catalyst + Tungsten, Python/Scala/SQL/R
+Dataset    typed DataFrame (Scala/Java only); in Python a DataFrame is all you get
+```
+Prefer DataFrames: Spark can optimize them because it understands the columns and operations. Use RDDs only for unusual low-level control.
+
+Job, stage, task:
+- **Job**: triggered by one action.
+- **Stage**: a chunk of the job between shuffles.
+- **Task**: one stage applied to one partition, run on one executor core.
+
+The driver is a single machine. Anything that pulls data to it (`collect`, `toPandas`, very large broadcast variables) is limited by driver memory."""
+diagram = """flowchart LR
+  D[Driver - SparkSession, planner] --> CM[Cluster manager]
+  CM --> E1[Executor 1 - tasks, cache]
+  CM --> E2[Executor 2 - tasks, cache]
+  D -. tasks .-> E1
+  D -. tasks .-> E2"""
+
+[[sections]]
+id = "lazy-evaluation-dag"
+group = "Spark"
+title = "Lazy Evaluation, DAG, Narrow & Wide"
+plain = "Spark writes down what you asked for and only does the work when you ask for a result."
+how = [
+  "Transformations (select, filter, join, groupBy) add steps to a plan",
+  "An action (count, collect, show, write) triggers a job",
+  "Spark optimizes the whole plan and cuts it into stages at shuffle boundaries",
+  "Each stage runs as one task per partition",
+]
+uses = ["Filtering a 2 TB table before a join without reading unneeded columns", "Explaining why an error only appears at write time"]
+picture = "Like a chef who reads the whole recipe before cooking, so they can chop all the onions at once."
+body = """**Narrow** transformations: each output partition needs data from one input partition (`map`, `filter`, `select`, `withColumn`, `union`). They are pipelined together in one stage with no data movement.
+
+**Wide** transformations: an output partition needs data from many input partitions (`groupBy`, `join` without broadcast, `distinct`, `orderBy`, `repartition`). They require a **shuffle**, which ends one stage and starts another.
+```
+narrow (map, filter, select)    -> no shuffle, same stage
+wide (groupBy, join, distinct)  -> shuffle, new stage
+```
+**map vs flatMap** (RDD API): `map` returns exactly one output per input; `flatMap` returns zero or more and flattens them, e.g. splitting lines into words. In DataFrames the equivalent of flatMap is `explode`.
+
+Consequence of laziness: a bad cast or missing column in a transformation may only fail when an action runs. Calling an action twice recomputes the plan twice unless you cache."""
+diagram = """flowchart LR
+  T[Transformations] --> P[Logical plan] --> O[Optimized plan] --> S[Stages split at shuffles] --> K[Tasks per partition]"""
+
+[[sections]]
+id = "catalyst-aqe"
+group = "Spark"
+title = "Catalyst, Tungsten & AQE"
+plain = "Catalyst rewrites your query into a faster plan, Tungsten runs it efficiently in memory, and AQE re-plans mid-query using real statistics."
+how = [
+  "Catalyst: parse, analyze against the catalog, apply rule-based optimizations, pick a physical plan",
+  "Tungsten: compact binary row format, off-heap memory, whole-stage code generation",
+  "AQE: after each shuffle stage, use actual sizes to re-optimize the rest of the plan",
+]
+uses = ["Predicate pushdown so Parquet skips row groups", "AQE turning a sort-merge join into a broadcast join after a filter shrinks one side"]
+picture = "Catalyst is the route planner before you leave; AQE is the GPS rerouting you once it sees real traffic."
+body = """Catalyst optimizations you should name: **predicate pushdown**, **column pruning**, **constant folding**, join reordering (with statistics), and choosing join strategies. See the plans with `df.explain(True)` or `explain("formatted")`.
+
+**Tungsten** stores rows in a compact binary format instead of JVM objects, which cuts garbage collection, and fuses operators into generated code (whole-stage codegen, shown as `*(n)` in plans).
+
+**AQE** (Adaptive Query Execution, on by default since Spark 3.2):
+- **Coalesces shuffle partitions**: merges many tiny post-shuffle partitions into fewer reasonable ones.
+- **Switches join strategy**: converts a sort-merge join to a broadcast join when one side turns out small.
+- **Splits skewed partitions** in sort-merge joins so one huge partition does not become one straggler task.
+
+AQE only acts at shuffle boundaries, using statistics from completed stages. It cannot fix skew in a non-join aggregation the same way, and it cannot help a plan with no shuffles."""
+diagram = """flowchart LR
+  Q[Query] --> A[Analyzed plan] --> L[Optimized logical plan] --> P[Physical plan] --> C[Codegen and run]
+  C --> R[Runtime stats] --> AQE[AQE re-plan] --> C"""
+
+[[sections]]
+id = "caching-serialization"
+group = "Spark"
+title = "Caching, Serialization & Compression"
+plain = "Cache a DataFrame you reuse so Spark does not recompute it, and pick serializers and codecs that keep data small and fast to move."
+how = [
+  "cache() or persist(level) marks the data; it is filled on the next action",
+  "Later actions read the cached partitions instead of recomputing",
+  "unpersist() frees the memory when you are done",
+]
+uses = ["Reusing a cleaned DataFrame in three different aggregations", "Iterative algorithms that loop over the same data"]
+picture = "Like prepping a sauce once and keeping it in the fridge instead of making it again for every dish."
+body = """Defaults matter:
+```
+DataFrame.cache()  -> MEMORY_AND_DISK   (spills partitions to disk if memory is short)
+RDD.cache()        -> MEMORY_ONLY       (evicted partitions are recomputed)
+```
+Other levels: `MEMORY_ONLY`, `DISK_ONLY`, `_2` variants for replication. In PySpark, data is always stored serialized, so there is no separate `MEMORY_ONLY_SER` to choose.
+
+Caching is **lazy**: nothing appears in the Spark UI Storage tab until an action runs. Do not cache everything: it costs memory that execution needs, and a cache read only helps if the data is reused. On Databricks, the automatic **disk cache** keeps copies of remote Parquet/Delta files on local SSDs; it is separate from `cache()`.
+
+**Serialization**: Java serialization is slow and bulky; **Kryo** is faster and smaller and helps RDD shuffles and caching of custom objects. DataFrames already use Tungsten's binary format and encoders, so Kryo matters much less there.
+
+**Compression codecs**: **snappy** is the usual Parquet default (fast, moderate ratio); **zstd** gives better compression for a bit more CPU and is a good choice for storage-heavy tables; gzip compresses well but is slow and a gzip text file is not splittable. Shuffle and broadcast data is compressed separately (lz4 by default)."""
+
+# ---------------------------------------------------------------- Spark Performance
+
+[[sections]]
+id = "shuffles-partitioning"
+group = "Spark Performance"
+title = "Shuffles, Partitions, Repartition vs Coalesce"
+plain = "A shuffle moves rows across the network so matching keys end up together; it is usually the most expensive part of a Spark job."
+how = [
+  "Map side: each task writes its output split by key into shuffle files on local disk",
+  "Reduce side: tasks fetch their key range from every map task over the network",
+  "The number of reduce partitions comes from spark.sql.shuffle.partitions (200 by default) or AQE coalescing",
+]
+uses = ["Sizing partitions to roughly 100-200 MB each", "Reducing output file count before a write"]
+picture = "Like sorting a mountain of mail: every sorter has to walk letters over to the bin for each zip code."
+body = """```
+repartition(n or cols)  full shuffle, can increase or decrease, evenly balanced partitions
+coalesce(n)             no shuffle, only decreases, merges neighbouring partitions (can be uneven)
+```
+Use `coalesce` to cut the number of output files cheaply. Use `repartition` to increase parallelism or to spread data by a key. Watch out: `coalesce(1)` early in a plan can collapse upstream work onto one task too, because it is narrow.
+
+Rules of thumb:
+- Aim for partitions of roughly 100-200 MB; thousands of tiny tasks waste scheduling overhead, a few giant ones spill or OOM.
+- 200 shuffle partitions is wrong for both 1 GB and 5 TB jobs; with AQE enabled, set a reasonable value and let it coalesce.
+- Fewer shuffles: filter and project early, broadcast small tables, avoid unnecessary `distinct` and `orderBy`.
+
+**Table partitioning on disk** is different from in-memory partitions. Partition tables by a **low-cardinality** column such as date. Partitioning by a high-cardinality column like `user_id` creates millions of tiny folders and files. For high-cardinality filters on Delta, use liquid clustering instead."""
+
+[[sections]]
+id = "data-skew"
+group = "Spark Performance"
+title = "Data Skew & Salting"
+plain = "Skew means a few keys have far more rows than the rest, so one task does most of the work while the others sit idle."
+how = [
+  "Spot it: in the Spark UI one task in a stage takes far longer or reads far more shuffle data than the median",
+  "First try AQE skew join handling or a broadcast join",
+  "If that is not enough, salt the hot keys or handle them separately",
+]
+uses = ["A join on customer_id where one test customer has 40% of rows", "A groupBy on country where most traffic is one country"]
+picture = "Like a supermarket where one checkout lane has the whole football team while the other lanes are empty."
+body = """Fixes, in the order to try them:
+- **Broadcast the small side** if it fits: no shuffle, so no skewed partition.
+- **AQE skew join** (`spark.sql.adaptive.skewJoin.enabled`, on by default): splits oversized partitions of a sort-merge join into smaller tasks and replicates the matching part of the other side.
+- **Filter junk keys**: NULL or placeholder keys (`-1`, `unknown`) are often the hot key and can be filtered or handled separately.
+- **Salting**: add a random number 0..N-1 to the key on the big side, and explode the small side N times with every salt value; join on (key, salt). For aggregations, aggregate by (key, salt) first, then by key.
+```
+big   = big.withColumn("salt", (F.rand() * 8).cast("int"))
+small = small.withColumn("salt", F.explode(F.array([F.lit(i) for i in range(8)])))
+big.join(small, ["key", "salt"])
+```
+- **Split hot keys**: process the few hot keys with a broadcast join and the rest normally, then union.
+
+Salting costs extra rows on the small side and a second aggregation step, so salt only the hot keys if you can."""
+
+[[sections]]
+id = "join-strategies"
+group = "Spark Performance"
+title = "Join Strategies & Broadcast Joins"
+plain = "Spark picks how to join based on table sizes: copy a small table to every executor, or shuffle both sides by the join key."
+how = [
+  "Broadcast hash join: small side is collected and sent to every executor; big side is not shuffled",
+  "Sort-merge join: both sides shuffled and sorted by key, then merged; the default for two large tables",
+  "Shuffle hash join: both sides shuffled, a hash table built per partition",
+]
+uses = ["Joining a 2 TB fact table to a 5 MB country dimension", "Forcing a broadcast with a hint when statistics are missing"]
+picture = "Instead of everyone walking to one phone book, you hand every desk its own copy of the small phone book."
+body = """Spark broadcasts automatically when it estimates a side under `spark.sql.autoBroadcastJoinThreshold` (10 MB by default). AQE can also switch to broadcast at runtime once it sees real sizes. Force it with `F.broadcast(df)` or the SQL hint `/*+ BROADCAST(d) */`.
+
+Limits of broadcasting:
+- The small table is collected to the driver first, then copied to every executor, so it must fit comfortably in driver and executor memory. Broadcasting a few GB invites OOM and timeouts.
+- For outer joins, Spark can only broadcast the side that is not preserved (in a left join, the right side).
+
+Check the physical plan (`explain`) for `BroadcastHashJoin` vs `SortMergeJoin`. Keep table statistics fresh (`ANALYZE TABLE ... COMPUTE STATISTICS`) so the optimizer estimates sizes correctly."""
+
+[[sections]]
+id = "memory-oom-spill"
+group = "Spark Performance"
+title = "OOM, Spill & Reading the Spark UI"
+plain = "When a task's data does not fit in memory Spark spills to disk (slow) or fails with out-of-memory; the Spark UI tells you which and where."
+how = [
+  "Jobs tab: find the slow or failed job",
+  "Stages tab: compare max vs median task duration, shuffle read, and spill",
+  "Executors tab: GC time, failed tasks, memory use",
+  "SQL tab: the plan with row counts per operator, join types, and scan stats",
+]
+uses = ["Triage of a job that got 10x slower", "Telling skew apart from undersized executors"]
+picture = "The Spark UI is the flight recorder; you read it to find which engine (stage) overheated and why."
+body = """**Driver OOM** causes: `collect()` / `toPandas()` on big data, broadcasting a large table, huge numbers of files or partitions to plan, too many tiny tasks' metadata. Fix: do not pull big data to the driver, write it out instead; raise driver memory only after that.
+
+**Executor OOM** causes: skewed partitions, too few partitions (each too big), huge rows or exploded arrays, large broadcast, Python UDF memory outside the JVM (overhead). Fixes: more shuffle partitions, fix skew, avoid broadcasting large tables, raise `spark.executor.memoryOverhead` for Python-heavy work, use bigger memory per core.
+
+**Spill**: shown as "Spill (Memory)" and "Spill (Disk)" in stage metrics. It is not a failure but a sign partitions are too large for execution memory. Usual fix: more, smaller partitions (or fix skew).
+
+Unified memory: execution (shuffles, joins, sorts) and storage (cache) share one pool and can borrow from each other; execution can evict cached blocks.
+
+Triage checklist for "the job got slow": did input size change? Did a join flip from broadcast to sort-merge? Is one task an outlier (skew)? Is there spill? Are there thousands of tiny files to list (small files)? Did a filter stop pruning partitions?"""
+
+[[sections]]
+id = "udfs"
+group = "Spark Performance"
+title = "UDFs vs pandas UDFs vs Built-ins"
+plain = "Built-in functions run inside Spark's optimized engine; Python UDFs move every row out to Python and back, which is much slower."
+how = [
+  "Built-ins (pyspark.sql.functions, SQL): run in the JVM, optimized by Catalyst, code-generated",
+  "Python UDF: rows serialized to a Python worker one at a time, a black box to the optimizer",
+  "pandas UDF (vectorized): batches moved with Apache Arrow and processed as pandas Series",
+]
+uses = ["Replacing a regex UDF with regexp_extract", "Using a pandas UDF to apply a scikit-learn model in batches"]
+picture = "A built-in is a machine on the assembly line; a Python UDF is shipping each part to another building and back."
+body = """Order of preference: **built-in functions** > **pandas UDF** > **plain Python UDF**.
+
+Why UDFs hurt:
+- Catalyst cannot see inside them, so no predicate pushdown through them and no codegen.
+- Plain Python UDFs pay per-row serialization between JVM and Python.
+- Python workers use memory outside the JVM heap, which can cause container OOM kills (raise memory overhead).
+
+pandas UDFs use Arrow to move column batches, so they are often many times faster than row UDFs. Scala/Java UDFs avoid the Python hop but are still opaque to the optimizer. Newer Spark versions also add Arrow-optimized Python UDFs, but built-ins still win when one exists."""
+
+# ---------------------------------------------------------------- Delta Lake
+
+[[sections]]
+id = "delta-transaction-log"
+group = "Delta Lake"
+title = "Delta ACID & the Transaction Log"
+plain = "A Delta table is Parquet files plus a log that says which files make up each version; a write only counts once its log entry is committed."
+how = [
+  "A writer writes new Parquet files; readers cannot see them yet",
+  "It then tries to create the next numbered JSON commit in _delta_log atomically",
+  "If that commit succeeds, the new version exists; if the job dies first, the files are orphans",
+  "Every so often (by default every 10 commits) a Parquet checkpoint summarizes the log",
+]
+uses = ["Explaining why a crashed append leaves no partial data", "Two jobs writing the same table safely"]
+picture = "Like a ledger in a bank: money only moves when the line is written in the ledger, no matter what is sitting on the counter."
+body = """**Atomicity**: a commit is all or nothing. A job that dies at 600k of 1M rows has written some Parquet files but no commit, so readers still see the previous version. The orphan files are ignored and later removed by VACUUM.
+
+**Durability**: once the commit file exists in cloud storage, the change is permanent even if the cluster crashes a second later.
+
+**Isolation via optimistic concurrency**: each writer reads a snapshot (version N), does its work, then tries to commit N+1.
+- If another writer already committed N+1, Delta checks whether the two changes logically conflict.
+- **No conflict** (for example two blind appends): Delta retries the commit automatically as N+2.
+- **Conflict** (for example both updated or deleted rows in the same files or partition): the second writer fails with a concurrent modification exception (such as `ConcurrentAppendException` or `ConcurrentDeleteReadException`). Your job must retry; Delta does not redo the work for you.
+
+Reduce conflicts by having writers touch disjoint partitions and putting the partition filter explicitly in the MERGE condition. On Databricks, deletion vectors and row-level concurrency reduce conflicts further.
+
+```
+_delta_log/00000000000000000000.json   add file a, b
+_delta_log/00000000000000000001.json   add c; remove a
+_delta_log/00000000000000000010.checkpoint.parquet
+```"""
+diagram = """flowchart LR
+  W[Writer] --> F[Write Parquet files]
+  F --> C{Commit next version}
+  C -->|success| V[New version visible]
+  C -->|crash before commit| O[Orphan files ignored]"""
+
+[[sections]]
+id = "schema-enforcement-evolution"
+group = "Delta Lake"
+title = "Schema Enforcement & Evolution"
+plain = "Delta rejects writes whose schema does not match the table, unless you explicitly allow the schema to change."
+how = [
+  "Enforcement: extra columns or incompatible types make the whole write fail",
+  "mergeSchema=true: add new columns (and allowed type widening) to the table schema",
+  "overwriteSchema=true with mode overwrite: replace the schema entirely",
+]
+uses = ["Blocking an upstream string sneaking into an int column", "Adding a new optional column from a source"]
+picture = "A bouncer checking the guest list: new names only get in if you tell the bouncer the list changed."
+body = """```
+df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable("t")
+df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("t")
+```
+- **mergeSchema**: additive. New columns are added; old rows read them as NULL. Missing columns in the incoming data are filled with NULL.
+- **overwriteSchema**: replaces the schema, for renames, drops, or type changes. Needs overwrite mode, and rewrites the table data.
+- Column **rename and drop** without rewriting data use column mapping (`delta.columnMapping.mode = 'name'`).
+- **Type widening** (for example int to bigint) is supported on newer Delta/Databricks versions as a table feature; other type changes need a rewrite.
+- For MERGE, schema evolution is enabled with `WITH SCHEMA EVOLUTION` in SQL or the auto-merge setting.
+
+Because a write is atomic, one bad row type means the whole write fails, not just that row. Validate or cast before writing and send rejects to a quarantine table."""
+
+[[sections]]
+id = "time-travel-vacuum"
+group = "Delta Lake"
+title = "Time Travel, RESTORE & VACUUM"
+plain = "Every Delta version can be queried until VACUUM physically deletes the old files it needs."
+how = [
+  "Query an old version with VERSION AS OF or TIMESTAMP AS OF",
+  "RESTORE TABLE rolls the table back to an older version as a new commit",
+  "VACUUM deletes data files no longer referenced and older than the retention threshold",
+]
+uses = ["Undoing a bad overwrite", "Reproducing a report as of last Friday"]
+picture = "The log is a photo album of the table; VACUUM throws out the old prints, so you can no longer go back to those pages."
+body = """```
+SELECT * FROM sales VERSION AS OF 42;
+SELECT * FROM sales TIMESTAMP AS OF '2026-10-01';
+RESTORE TABLE sales TO VERSION AS OF 42;
+DESCRIBE HISTORY sales;
+VACUUM sales;                      -- default retention 7 days
+```
+Two separate retention settings:
+- `delta.deletedFileRetentionDuration` (default 7 days): how long removed data files are kept before VACUUM may delete them. This bounds time travel in practice.
+- `delta.logRetentionDuration` (default 30 days): how long log history is kept.
+
+VACUUM with a retention shorter than 7 days is blocked by a safety check unless you disable it. Short retention can break long-running readers and streams that still need old files.
+
+**After VACUUM, deleted files are gone from the table.** Databricks has no built-in fail-safe period for this ("fail-safe" is a Snowflake concept). Recovery then depends on cloud storage features you set up yourself, such as bucket versioning or soft delete, or on backups/deep clones."""
+
+[[sections]]
+id = "small-files-optimize"
+group = "Delta Lake"
+title = "Small Files, OPTIMIZE & Z-Order"
+plain = "Many tiny files make every query slow; OPTIMIZE compacts them, and Z-ordering co-locates related values so queries skip files."
+how = [
+  "Small files come from streaming, frequent appends, and over-partitioning",
+  "OPTIMIZE bin-packs small files into large ones (hundreds of MB to about 1 GB)",
+  "ZORDER BY sorts data across files by several columns so min/max stats let queries skip files",
+]
+uses = ["Nightly OPTIMIZE on a table fed by a streaming job", "Z-ordering by customer_id for point lookups"]
+picture = "Like merging a drawer of sticky notes into a few labelled folders sorted by topic."
+body = """Why small files hurt: every file means a listing call, a footer read and a task, so planning and scheduling overhead dominates.
+
+```
+OPTIMIZE events;                                  -- compaction
+OPTIMIZE events WHERE dt >= '2026-10-01';         -- only recent partitions
+OPTIMIZE events ZORDER BY (customer_id, sku);
+```
+On Databricks, **optimized writes** and **auto compaction** reduce small files at write time, and **predictive optimization** can run OPTIMIZE and VACUUM automatically on Unity Catalog managed tables.
+
+**Data skipping**: Delta stores min/max and null counts per file (first 32 columns by default). A filter only skips files when the column's values are clustered, which is what Z-order and liquid clustering achieve.
+
+Z-order limits: not incremental (re-running rewrites the data it reorders), effectiveness drops with each extra column, and it cannot be combined with liquid clustering. For new tables, prefer liquid clustering."""
+
+[[sections]]
+id = "liquid-clustering"
+group = "Delta Lake"
+title = "Liquid Clustering & CLUSTER BY AUTO"
+plain = "Liquid clustering replaces partitioning and Z-order with clustering keys you can change later, applied incrementally as data arrives."
+how = [
+  "Declare keys with CLUSTER BY on create or ALTER TABLE",
+  "OPTIMIZE (or predictive optimization) clusters new and unclustered data incrementally",
+  "Already well-clustered data is not rewritten on every run",
+  "Changing keys applies to new clustering work; OPTIMIZE FULL reclusters everything",
+]
+uses = ["A table filtered by high-cardinality customer_id and by date", "Tables whose query patterns change over time"]
+picture = "Like a librarian who shelves new books near their neighbours every night instead of reorganizing the whole library."
+body = """```
+CREATE TABLE events (...) CLUSTER BY (customer_id, event_date);
+ALTER TABLE events CLUSTER BY (event_type);
+ALTER TABLE events CLUSTER BY AUTO;
+OPTIMIZE events;          -- incremental clustering
+OPTIMIZE events FULL;     -- recluster all data, e.g. after changing keys
+```
+Key facts:
+- Works well with **high-cardinality** filter columns, where Hive-style partitioning would explode into tiny files.
+- Not compatible with partitioning or ZORDER on the same table.
+- Clustering is not free: it happens when OPTIMIZE runs (manually, on a schedule, or via predictive optimization), and that rewrites the files being clustered. What it avoids is rewriting data that is already clustered.
+- **CLUSTER BY AUTO** (Databricks, Unity Catalog managed tables with predictive optimization): Databricks picks and adjusts keys from the observed query workload.
+- Good default for new Delta tables on Databricks; keep the key list short (a few columns)."""
+
+[[sections]]
+id = "deletion-vectors-clone"
+group = "Delta Lake"
+title = "Deletion Vectors & Deep vs Shallow Clone"
+plain = "Deletion vectors mark rows as deleted instead of rewriting whole files; clones copy a table's metadata, and optionally its data."
+how = [
+  "DELETE/UPDATE/MERGE writes a small bitmap of removed row positions per file",
+  "Readers skip the marked rows (merge-on-read)",
+  "OPTIMIZE or REORG TABLE ... APPLY (PURGE) later rewrites files to drop them physically",
+]
+uses = ["Fast GDPR deletes of a few rows across large files", "A zero-copy dev copy of a prod table with shallow clone"]
+picture = "Crossing out lines in a printed book instead of reprinting the whole book; reprint later when it is convenient."
+body = """Without deletion vectors, deleting one row rewrites the entire Parquet file that holds it (copy-on-write). With them, writes are much cheaper and reads pay a small cost. They are enabled by default for new tables on recent Databricks runtimes, and readers must support the table feature.
+
+For true erasure (GDPR), soft-deleted rows still exist in the old files: run `REORG TABLE t APPLY (PURGE)` and then VACUUM after retention so the bytes are actually removed.
+
+```
+CREATE TABLE dev.sales DEEP CLONE prod.sales;      -- copies data files + metadata
+CREATE TABLE dev.sales SHALLOW CLONE prod.sales;   -- metadata only, points at source files
+```
+- **Deep clone**: independent copy, good for backups, migration, and archiving. Re-running it copies only changes.
+- **Shallow clone**: instant and cheap, good for testing. It references the source's files, so if VACUUM on the source deletes them, the clone breaks.
+- Both clones have their own history; writes to the clone do not affect the source."""
+
+[[sections]]
+id = "cdf-merge"
+group = "Delta Lake"
+title = "MERGE & Change Data Feed"
+plain = "MERGE upserts a batch of changes into a table by key; Change Data Feed lets downstream jobs read only the rows that changed."
+how = [
+  "MERGE matches source rows to target rows on a key",
+  "WHEN MATCHED update or delete, WHEN NOT MATCHED insert, WHEN NOT MATCHED BY SOURCE handle missing rows",
+  "With CDF enabled, each commit also records row-level inserts, updates, and deletes",
+]
+uses = ["Applying CDC from Postgres into silver", "Incrementally updating gold aggregates from silver changes"]
+picture = "MERGE is reconciling a statement against your ledger; CDF is the list of edits you send to everyone who copied your ledger."
+body = """```
+MERGE INTO silver.customers t
+USING updates s ON t.id = s.id
+WHEN MATCHED AND s.op = 'd' THEN DELETE
+WHEN MATCHED THEN UPDATE SET *
+WHEN NOT MATCHED AND s.op != 'd' THEN INSERT *;
+```
+MERGE pitfalls:
+- **Multiple source rows matching one target row** make MERGE fail. Deduplicate the source to the latest change per key first.
+- Put partition or clustering filters in the ON condition so MERGE scans less and conflicts less with other writers.
+- A MERGE is one atomic commit: if it commits and then the cluster crashes, the change is durable.
+
+**Change Data Feed**:
+```
+ALTER TABLE silver.customers SET TBLPROPERTIES (delta.enableChangeDataFeed = true);
+SELECT * FROM table_changes('silver.customers', 10, 15);
+spark.readStream.option("readChangeFeed", "true").table("silver.customers")
+```
+Extra columns: `_change_type` (`insert`, `update_preimage`, `update_postimage`, `delete`), `_commit_version`, `_commit_timestamp`. Change data is only available from when CDF was enabled and is subject to VACUUM retention."""
+
+[[sections]]
+id = "table-formats"
+group = "Delta Lake"
+title = "Delta vs Iceberg vs Hudi & UniForm"
+plain = "Three open table formats that add transactions, schema evolution and time travel on top of Parquet files in object storage."
+how = [
+  "All three keep data in Parquet and track which files form each snapshot in metadata",
+  "They differ in metadata design, write optimizations, and which engines support them best",
+  "UniForm lets one Delta table also expose Iceberg metadata so Iceberg readers can use it",
+]
+uses = ["Choosing a format for a multi-engine lake (Spark, Trino, Snowflake)", "Serving one copy of data to both Databricks and Iceberg-based tools"]
+picture = "Three different card catalogs for the same kind of library shelves."
+body = """```
+Delta    ordered JSON commit log + checkpoints; deep Spark/Databricks integration,
+         liquid clustering, deletion vectors, CDF
+Iceberg  metadata file -> manifest list -> manifests; hidden partitioning and
+         partition evolution; very broad engine support; REST catalogs
+Hudi     built for frequent record-level upserts; record index; copy-on-write and
+         merge-on-read table types; incremental pulls
+```
+**Delta UniForm**: writes Iceberg metadata alongside the Delta log, sharing the same Parquet data files, so Iceberg clients can read the table without a second copy. Writes still go through Delta.
+
+How to answer "which one?": it depends on the engines that must read and write, the catalog you run, the upsert pattern, and the platform. On Databricks, Delta (with UniForm when Iceberg readers exist) is the natural default; in a multi-engine shop with a strong Iceberg catalog, Iceberg is common."""
+
+# ---------------------------------------------------------------- Databricks
+
+[[sections]]
+id = "unity-catalog"
+group = "Databricks"
+title = "Unity Catalog vs Hive Metastore"
+plain = "Unity Catalog is Databricks' central governance layer: one place for tables, files, permissions, lineage and audit across workspaces."
+how = [
+  "Three-level names: catalog.schema.table (also views, volumes, functions, models)",
+  "Storage credentials + external locations govern access to cloud paths",
+  "GRANT privileges to groups; USE CATALOG and USE SCHEMA are needed to reach objects",
+  "Lineage and audit logs are captured automatically and exposed in system tables",
+]
+uses = ["Granting analysts SELECT on gold only", "Tracing which jobs read a PII column"]
+picture = "One building security desk for every office floor, instead of each floor keeping its own key box."
+body = """```
+GRANT USE CATALOG ON CATALOG prod TO `analysts`;
+GRANT USE SCHEMA ON SCHEMA prod.gold TO `analysts`;
+GRANT SELECT ON TABLE prod.gold.daily_revenue TO `analysts`;
+```
+- **Managed tables**: UC controls the storage location and lifecycle; they get features like predictive optimization. **External tables**: data lives in a path you register via an external location.
+- **Volumes** (`/Volumes/catalog/schema/volume/path`) govern non-tabular files such as raw CSVs, images, and libraries. They replace `dbutils.fs.mount` mounts, which are legacy and not governed by UC.
+- Fine-grained controls: row filters, column masks, attribute-based policies with tags.
+- **Legacy Hive metastore**: per workspace, appears as the `hive_metastore` catalog, permissions via older table ACLs, no cross-workspace lineage. Migrate with tools such as `SYNC` or UCX, or by recreating tables in UC.
+- System tables like `system.access.audit` and `system.billing.usage` give audit and cost data."""
+diagram = """flowchart TD
+  M[Metastore] --> C[Catalog]
+  C --> S[Schema]
+  S --> T[Tables and views]
+  S --> V[Volumes]
+  S --> F[Functions and models]"""
+
+[[sections]]
+id = "compute-and-cost"
+group = "Databricks"
+title = "Compute Types, Access Modes & Cost Control"
+plain = "Use cheap, short-lived job compute for production, interactive compute for development, and policies to stop surprise bills."
+how = [
+  "All-purpose compute: interactive notebooks, shared by people, priced higher",
+  "Jobs compute: created for a job run and terminated after, cheaper per DBU",
+  "Serverless: Databricks-managed compute for notebooks, jobs, pipelines and SQL; starts fast, no cluster tuning",
+  "SQL warehouses: for SQL and BI workloads",
+]
+uses = ["Moving scheduled notebooks off an always-on all-purpose cluster", "Enforcing auto-termination with a policy"]
+picture = "All-purpose is a hotel room you pay for while it sits empty; jobs compute is a taxi that leaves when the trip ends."
+body = """**Access modes** (Unity Catalog):
+```
+Standard (formerly Shared)       many users share it, user isolation enforced
+Dedicated (formerly Single user) assigned to one user or group
+No isolation shared              legacy, not UC-secure
+```
+High Concurrency clusters are the legacy name for shared clusters; do not design new setups around them.
+
+**Cost levers**:
+- Run production on jobs compute or serverless, not all-purpose clusters.
+- Auto-termination on interactive clusters; autoscaling with a sensible max.
+- **Cluster policies** to cap node types, max workers, and require tags and auto-termination.
+- Spot or preemptible instances for workers on fault-tolerant batch.
+- Right-size: check utilization; fix skew and small files instead of throwing nodes at them.
+- Photon for SQL-heavy workloads where it pays off.
+- Monitor with `system.billing.usage` joined to tags, plus budgets and alerts.
+- Turn off continuous streaming or pipelines that only need hourly freshness; use `availableNow` triggers on a schedule."""
+
+[[sections]]
+id = "auto-loader"
+group = "Databricks"
+title = "Auto Loader"
+plain = "Auto Loader incrementally ingests new files from cloud storage exactly once, remembering which files it already processed in the stream checkpoint."
+how = [
+  "Discovers new files by directory listing or file notifications (file events)",
+  "Records each discovered file in a key-value store (RocksDB) inside the checkpoint",
+  "Processes files in micro-batches and commits offsets only after the batch is written",
+  "Infers the schema and stores its versions under cloudFiles.schemaLocation",
+]
+uses = ["Landing JSON drops from vendors into bronze", "Ingesting millions of files without re-listing them each run"]
+picture = "A mailroom clerk with a logbook: every envelope that arrives is written down, so it is never opened twice."
+body = """```
+(spark.readStream.format("cloudFiles")
+  .option("cloudFiles.format", "json")
+  .option("cloudFiles.schemaLocation", "/Volumes/raw/meta/schemas/orders")
+  .load("/Volumes/raw/landing/orders")
+  .writeStream
+  .option("checkpointLocation", "/Volumes/raw/meta/checkpoints/orders")
+  .trigger(availableNow=True)
+  .toTable("bronze.orders"))
+```
+**Unit of tracking is the file, not byte offsets.** If a batch fails halfway through a 1 TB file, nothing from that batch is committed, and the whole file is processed again on restart. Mitigations: ask producers to split files into smaller pieces; use splittable formats (a single gzip file is one task); `cloudFiles.maxFilesPerTrigger` / `maxBytesPerTrigger` limit batch size (a single file bigger than the byte limit is still read whole).
+
+**Schema**: inference samples files (strings by default for JSON/CSV unless `cloudFiles.inferColumnTypes` is true). `cloudFiles.schemaEvolutionMode`:
+```
+addNewColumns (default)  stream stops on a new column, schema updated, restart continues
+rescue                   schema fixed, unexpected fields go to _rescued_data
+failOnNewColumns         stop until you change the schema yourself
+none                     ignore new columns
+```
+Data that does not fit the schema lands in `_rescued_data` instead of being lost.
+
+**Reprocessing**: the schema location does not control which files are reprocessed; the checkpoint does.
+- A file already recorded is skipped, even if you re-upload it with the same name, unless `cloudFiles.allowOverwrites` is true (then changed files are picked up again, which can produce duplicates).
+- To reprocess one file, copy it in under a new path or name so it is discovered as new.
+- To reprocess everything, start with a new checkpoint location, and make the target idempotent (overwrite or MERGE) to avoid duplicates."""
+
+[[sections]]
+id = "lakeflow-pipelines"
+group = "Databricks"
+title = "Lakeflow Declarative Pipelines & Expectations"
+plain = "You declare the tables you want and how they are derived; the pipeline engine figures out order, incremental processing, retries and data quality checks."
+how = [
+  "Define streaming tables (incremental, append-style sources) and materialized views (derived results)",
+  "The engine builds the dependency graph and runs it in triggered or continuous mode",
+  "Expectations check each row and warn, drop, or fail the update",
+  "Quality metrics land in the pipeline event log",
+]
+uses = ["Bronze to silver to gold with built-in quality rules", "CDC with AUTO CDC (formerly APPLY CHANGES) for SCD1 or SCD2"]
+picture = "Like giving a contractor the finished floor plan instead of a list of which wall to build first."
+body = """Formerly called **Delta Live Tables (DLT)**.
+
+```
+CREATE OR REFRESH STREAMING TABLE silver_orders (
+  CONSTRAINT valid_id EXPECT (order_id IS NOT NULL) ON VIOLATION DROP ROW,
+  CONSTRAINT positive_amount EXPECT (amount > 0)
+) AS SELECT * FROM STREAM(bronze_orders);
+```
+Python (decorators on functions that return DataFrames):
+```
+import dlt
+
+@dlt.table
+@dlt.expect_or_drop("valid_id", "order_id IS NOT NULL")
+def silver_orders():
+    return spark.readStream.table("bronze_orders")
+```
+```
+expect          keep the row, record the violation (warn)
+expect_or_drop  drop the row, record it
+expect_or_fail  stop the update
+```
+Expectations do not quarantine for you: to keep bad rows, write a second table with the inverted condition. Newer releases also expose the Python API as `pyspark.pipelines`. Use development mode while iterating and production mode for retries and cluster reuse."""
+
+[[sections]]
+id = "jobs-bundles-secrets"
+group = "Databricks"
+title = "Lakeflow Jobs, Asset Bundles & Secrets"
+plain = "Jobs orchestrate tasks on Databricks; Asset Bundles keep those jobs and pipelines as code you deploy through CI/CD; secrets keep credentials out of code."
+how = [
+  "A job is a DAG of tasks (notebook, Python wheel, SQL, pipeline, dbt, for-each, if/else)",
+  "Triggers: schedule, file arrival, table update, continuous",
+  "A bundle (databricks.yml) defines resources plus targets such as dev and prod",
+  "CI runs databricks bundle validate and deploy as a service principal",
+]
+uses = ["Promoting the same pipeline from dev to prod with different catalogs", "Repairing a failed run by rerunning only failed tasks"]
+picture = "The job is the run sheet for the day; the bundle is the version-controlled template that prints the run sheet for each environment."
+body = """Lakeflow Jobs were formerly called **Databricks Workflows**.
+
+Job features to mention: task dependencies, job and task parameters, task values to pass small results between tasks, per-task retries and timeouts, **repair run**, notifications, and running on job compute or serverless.
+
+```
+databricks bundle validate -t prod
+databricks bundle deploy   -t prod
+databricks bundle run      -t prod nightly_job
+```
+Good CI/CD: code in Git, PR checks run unit tests and `bundle validate`, deploy to a dev/staging target, then prod deploys from main as a service principal. Parameterize catalog names per target instead of hard-coding them.
+
+**Secrets**: store in a secret scope (Databricks-backed or backed by a cloud key vault) and read with `dbutils.secrets.get(scope, key)`; values are redacted in notebook output. Better still, avoid secrets entirely for cloud storage by using Unity Catalog storage credentials and service credentials. Never put keys in notebooks, job parameters or Git."""
+
+# ---------------------------------------------------------------- Streaming
+
+[[sections]]
+id = "structured-streaming"
+group = "Streaming"
+title = "Structured Streaming, Triggers & Checkpoints"
+plain = "Structured Streaming treats a stream as a table that keeps growing and runs your query on the new rows in small batches."
+how = [
+  "Each micro-batch reads new offsets from the source and records them in the checkpoint",
+  "The query runs on that batch, updating any state",
+  "Results go to the sink, then the batch is marked committed",
+  "On restart, the query resumes from the checkpoint",
+]
+uses = ["Kafka to Delta bronze ingestion", "Running an incremental job once an hour with availableNow"]
+picture = "A conveyor belt where a worker grabs whatever has arrived every few seconds and notes in a logbook how far they got."
+body = """The older DStream API (Spark Streaming) is legacy; use Structured Streaming.
+
+**Triggers**:
+```
+default                    next micro-batch as soon as the previous one ends
+processingTime='1 minute'  micro-batch on a fixed interval
+availableNow=True          process everything available now in batches, then stop
+continuous                 experimental low-latency mode, limited operations
+```
+`availableNow` replaced `Trigger.Once` (which forced one giant batch) and is the standard way to run streaming code as a scheduled incremental batch job.
+
+**Checkpoint** (`checkpointLocation`) holds source offsets, commit log, state store, and metadata. One checkpoint per query; never share it between queries. Deleting it means the query starts over (from `startingOffsets` or the start of the source), which can duplicate or skip data. Some query changes (for example changing stateful operations) are incompatible with an existing checkpoint.
+
+**Output modes**:
+```
+append    only new final rows; with aggregations, needs a watermark
+update    only rows that changed in this batch
+complete  the whole result table every batch; aggregations only
+```
+**Exactly-once** end to end needs: a replayable source (Kafka, files), offsets tracked in the checkpoint, and an idempotent or transactional sink. The Delta sink is transactional per batch. With `foreachBatch`, make the write idempotent yourself (MERGE on a key, or Delta's `txnAppId` / `txnVersion` options), because a failed batch can be re-run."""
+
+[[sections]]
+id = "watermarks-late-data"
+group = "Streaming"
+title = "Watermarks, Late Data & Streaming Joins"
+plain = "A watermark tells Spark how late data may arrive, so it can finalize old windows and drop their state instead of keeping it forever."
+how = [
+  "Spark tracks the maximum event time seen",
+  "Watermark = max event time minus the allowed delay",
+  "Windows that end before the watermark are finalized and their state dropped",
+  "Rows older than the watermark may be dropped",
+]
+uses = ["10-minute event-time windows on mobile events that arrive up to an hour late", "Joining ad impressions to clicks within 30 minutes"]
+picture = "A teacher who accepts late homework until one hour after the deadline, then closes the folder for good."
+body = """```
+(events.withWatermark("event_time", "1 hour")
+   .groupBy(F.window("event_time", "10 minutes"), "page")
+   .count())
+```
+- Larger delay: more late data accepted, more state, later results (in append mode a window is emitted only after the watermark passes its end).
+- Smaller delay: less state, faster results, more late data dropped.
+- The drop is not guaranteed to happen at exactly the threshold; data just older than the watermark might still be processed.
+- Late data beyond the watermark is lost to that query. If it matters (revenue), also land raw data in bronze and run a batch correction.
+
+**Stream-static join**: the static side (e.g. a Delta dimension) is re-read each micro-batch, so it picks up the latest version; no watermark needed. Stateless.
+
+**Stream-stream join**: both sides buffer state. Put watermarks on both sides plus an event-time range condition so Spark knows when to drop old rows:
+```
+impressions.join(clicks, F.expr(
+  "click_ad_id = ad_id AND click_time BETWEEN imp_time AND imp_time + interval 30 minutes"))
+```
+Outer stream-stream joins require watermarks, and unmatched rows are emitted only after the watermark passes."""
+
+[[sections]]
+id = "kafka-basics"
+group = "Streaming"
+title = "Kafka Basics"
+plain = "Kafka is a durable, partitioned log: producers append messages to topics, and consumers read them at their own pace by offset."
+how = [
+  "A topic is split into partitions; each partition is an ordered, append-only log",
+  "The message key decides the partition, so one key's messages stay in order",
+  "In a consumer group each partition is read by exactly one consumer",
+  "Consumers track their position as offsets; data is kept for a retention period",
+]
+uses = ["Buffering clickstream events between apps and the lakehouse", "Carrying CDC events from Debezium"]
+picture = "A set of numbered notebooks: each reader keeps a bookmark, and many readers can read the same notebooks independently."
+body = """- **Ordering** is guaranteed only within a partition, not across a topic.
+- **Parallelism**: max useful consumers in one group = number of partitions.
+- **Retention**: by time or size (messages deleted regardless of being read), or **log compaction** (keep the latest message per key; tombstones mark deletes).
+- **Delivery**: at-least-once is the common default, so consumers must handle duplicates. Kafka offers idempotent producers and transactions for exactly-once between Kafka topics.
+- **Consumer lag**: how far behind the latest offset a consumer is. Growing lag means consumers are too slow or stuck. If lag outgrows retention, unread data is deleted.
+
+Spark's Kafka source stores offsets in its own checkpoint, not in the consumer group's committed offsets. `startingOffsets` (earliest/latest) only applies when there is no checkpoint. `maxOffsetsPerTrigger` caps batch size."""
+
+[[sections]]
+id = "cdc-debezium"
+group = "Streaming"
+title = "CDC with Debezium"
+plain = "Change data capture streams every insert, update and delete from a database's transaction log, instead of re-querying whole tables."
+how = [
+  "Debezium takes an initial snapshot of the table",
+  "It then reads the database log (Postgres WAL through a logical replication slot)",
+  "Each change becomes an event with before, after, op and source metadata, published to Kafka",
+  "Downstream, changes are deduplicated and MERGEd into the lakehouse",
+]
+uses = ["Replicating an orders table from Postgres into Delta within minutes", "Feeding SCD2 history from source changes"]
+picture = "Instead of photocopying the whole ledger every night, you get a copy of each new ledger line as it is written."
+body = """Event fields: `op` (`c` create, `u` update, `d` delete, `r` snapshot read), `before`, `after`, and `source` with the log position (LSN for Postgres) and commit timestamp.
+
+Why log-based beats query-based CDC (polling `updated_at`): it captures deletes, every intermediate change, and does not load the source with big queries.
+
+Operational gotchas:
+- A Postgres **replication slot** holds WAL until the consumer confirms it. If the connector is down for long, WAL piles up and can fill the source disk. Monitor slot lag.
+- Updates to a primary key and **tombstones** after deletes need handling.
+- Order is per key (Kafka partition by primary key). Apply changes using the log position to pick the latest, not arrival time.
+- Schema changes upstream flow through as new fields; plan for schema evolution.
+
+Apply in Spark: per micro-batch, keep the latest event per key (ROW_NUMBER by LSN desc), then MERGE with delete, update, insert branches. On Databricks, AUTO CDC in Lakeflow Declarative Pipelines does this ordering for you."""
+
+# ---------------------------------------------------------------- Modeling & SQL
+
+[[sections]]
+id = "dimensional-modeling"
+group = "Modeling & SQL"
+title = "Star Schema, Grain, Facts & Dimensions"
+plain = "A star schema puts measurable events in a central fact table and descriptive context in dimension tables around it."
+how = [
+  "Pick the business process (orders, shipments)",
+  "Declare the grain: exactly what one fact row means",
+  "Choose dimensions (who, what, where, when)",
+  "Choose facts (numeric measures) consistent with the grain",
+]
+uses = ["Sales mart for BI dashboards", "Consistent metrics across teams via conformed dimensions"]
+picture = "The fact table is the receipt; the dimensions are the store, product and customer cards it points to."
+body = """**Star vs snowflake**: in a star, dimensions are denormalized (one `dim_product` with category columns). In a snowflake, dimensions are normalized into sub-tables (`product -> category -> department`). Star means fewer joins and simpler BI; snowflake saves some storage and eases maintenance of hierarchies but adds joins. Columnar warehouses make star the usual choice.
+
+**Grain** first: "one row per order line" is different from "one row per order". Mixing grains in one fact table causes double counting.
+
+Fact types:
+```
+additive       sum over all dimensions            sales_amount, quantity
+semi-additive  sum over some, not time            account balance, inventory level
+non-additive   never sum; recompute from parts    ratios, percentages, unit price
+factless       no measure, just records an event  student attended class, promo coverage
+```
+Fact table types: transaction, periodic snapshot (daily balance), accumulating snapshot (order lifecycle with milestone dates).
+
+Dimension types:
+```
+conformed     shared, same meaning across facts   dim_date, dim_customer
+degenerate    key kept in the fact, no dim table  order_number, invoice_id
+junk          bundle of low-cardinality flags     is_gift, payment_type, channel
+role-playing  one dim used in several roles       dim_date as order_date, ship_date
+```
+Use **surrogate keys** in dimensions (needed for SCD2) and keep the natural key as an attribute."""
+
+[[sections]]
+id = "scd-types"
+group = "Modeling & SQL"
+title = "Slowly Changing Dimensions"
+plain = "SCD types are the standard choices for what happens to history when a dimension attribute changes, like a customer moving city."
+how = [
+  "Decide per attribute whether history matters",
+  "Type 1 overwrites, Type 2 adds a new versioned row",
+  "Facts join to the dimension row valid at the event time",
+]
+uses = ["Reporting sales by the region a customer lived in at purchase time", "Fixing a typo without creating history (Type 1)"]
+picture = "Type 1 is erasing and rewriting an address in pencil; Type 2 is adding a new dated line to the address book."
+body = """```
+Type 0  keep the original value forever (date of birth, original signup channel)
+Type 1  overwrite, no history
+Type 2  new row per change: surrogate key, valid_from, valid_to, is_current
+Type 3  extra column for the previous value (current_city, previous_city)
+Type 4  current table plus a separate history table (Kimball: mini-dimension for
+        fast-changing attributes)
+Type 6  1+2+3 hybrid: Type 2 rows plus a current_value column overwritten on all rows
+```
+**SCD2 with Delta MERGE**: one MERGE must both close the old row and insert the new one. Common trick: stage the changes twice, once keyed by the business key (to close the current row) and once with a NULL merge key (so it falls into NOT MATCHED and inserts the new version).
+```
+MERGE INTO dim_customer t
+USING (
+  SELECT s.id AS merge_key, s.* FROM staged s
+  UNION ALL
+  SELECT NULL AS merge_key, s.* FROM staged s
+  JOIN dim_customer d ON d.id = s.id AND d.is_current AND d.city <> s.city
+) u
+ON t.id = u.merge_key AND t.is_current
+WHEN MATCHED AND t.city <> u.city THEN
+  UPDATE SET is_current = false, valid_to = u.effective_ts
+WHEN NOT MATCHED THEN
+  INSERT (id, city, valid_from, valid_to, is_current)
+  VALUES (u.id, u.city, u.effective_ts, NULL, true);
+```
+Deduplicate staged changes first. Out-of-order changes need a rebuild of that key's history, not a simple MERGE. dbt snapshots and Lakeflow AUTO CDC can produce SCD2 for you."""
+
+[[sections]]
+id = "medallion"
+group = "Modeling & SQL"
+title = "Medallion Architecture"
+plain = "Organize the lakehouse in layers: raw data as it arrived (bronze), cleaned and conformed data (silver), and business-ready aggregates and marts (gold)."
+how = [
+  "Bronze: append raw data with ingest metadata, minimal transformation",
+  "Silver: deduplicate, type, validate, conform keys, apply CDC",
+  "Gold: dimensional models, aggregates and features for consumers",
+]
+uses = ["Replaying silver after a bug fix from untouched bronze", "Giving BI users only gold"]
+picture = "Bronze is the unwashed harvest, silver is washed and sorted produce, gold is the plated meal."
+body = """Why keep bronze raw: it is your replay source. When a transformation bug is found, you fix silver logic and rebuild from bronze without asking the source to resend.
+
+Bronze tips: store the raw payload or all columns as delivered, plus `_ingested_at`, source file name (`_metadata.file_path` in Spark), and source offsets. Use rescued data columns rather than dropping unexpected fields.
+
+Silver: enforce types and constraints, quarantine bad rows, one row per entity version.
+
+Gold: model for questions (star schemas, metrics). Many gold tables can be materialized views.
+
+Medallion is a convention, not a law: some teams add a staging or platinum layer, and small sources might skip straight to silver."""
+
+[[sections]]
+id = "oltp-olap-normalization"
+group = "Modeling & SQL"
+title = "OLTP vs OLAP, Normalization & Data Vault"
+plain = "OLTP systems run the business with many small, fast writes; OLAP systems analyze it with big scans, so they are modeled differently."
+how = [
+  "OLTP: row-oriented, normalized (3NF), indexes, many small transactions",
+  "OLAP: columnar, denormalized (star), big scans and aggregations",
+  "Pipelines move data from OLTP sources into OLAP models",
+]
+uses = ["Not running heavy analytics on the production Postgres", "Choosing a star schema for the warehouse"]
+picture = "OLTP is the shop's till recording each sale; OLAP is the accountant's spreadsheet summarizing the year."
+body = """**Normalization**: split data so each fact is stored once.
+- 1NF: atomic values, no repeating groups.
+- 2NF: no attribute depends on part of a composite key.
+- 3NF: no attribute depends on another non-key attribute.
+Normalization avoids update anomalies (good for OLTP writes). Denormalization trades redundancy for fewer joins and faster reads (good for analytics).
+
+**Data Vault** (brief): a modeling style for an integrated, auditable history layer.
+```
+Hubs        unique business keys
+Links       relationships between hubs
+Satellites  descriptive attributes with load timestamps (history)
+```
+Strengths: insert-only, absorbs source changes and new sources well, full audit trail. Weaknesses: many tables and joins, so you still build star schemas on top for reporting."""
+
+[[sections]]
+id = "window-functions"
+group = "Modeling & SQL"
+title = "Window Functions, Dedup & Gaps and Islands"
+plain = "Window functions compute a value for each row using related rows (its window) without collapsing rows like GROUP BY does."
+how = [
+  "PARTITION BY defines the groups",
+  "ORDER BY defines the order inside each group",
+  "An optional frame (ROWS or RANGE BETWEEN) limits which rows are included",
+]
+uses = ["Keeping the latest record per key", "Running totals and 7-day moving averages", "Finding streaks of consecutive days"]
+picture = "Each row looks at its neighbours in the same queue without anyone leaving the queue."
+body = """```
+ROW_NUMBER  1,2,3,4  always unique
+RANK        1,2,2,4  ties share, gaps after
+DENSE_RANK  1,2,2,3  ties share, no gaps
+LAG / LEAD  previous / next row's value
+```
+**Dedup, latest per key** (add a tie-breaker so reruns are deterministic):
+```
+SELECT * FROM (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY order_id ORDER BY updated_at DESC, ingest_offset DESC) AS rn
+  FROM bronze_orders) x
+WHERE rn = 1;
+```
+Databricks SQL also supports `QUALIFY rn = 1`.
+
+**Frames**: with ORDER BY and no frame, the default is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`, which treats ties as peers. Use `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW` for a 7-row moving window.
+
+**Gaps and islands** (consecutive days of activity): subtract a row number from the date; consecutive dates share the same difference.
+```
+SELECT user_id, MIN(d) AS start_d, MAX(d) AS end_d, COUNT(*) AS days
+FROM (
+  SELECT user_id, d,
+         date_sub(d, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY d)) AS grp
+  FROM (SELECT DISTINCT user_id, activity_date AS d FROM activity) a
+) t
+GROUP BY user_id, grp;
+```
+Deduplicate dates first, or duplicates break the trick."""
+
+[[sections]]
+id = "sql-nulls-merge"
+group = "Modeling & SQL"
+title = "NULL Semantics, Incremental Loads & MERGE"
+plain = "NULL means unknown, so comparisons with it are neither true nor false; incremental loads pick up only new or changed rows and upsert them."
+how = [
+  "Any comparison with NULL (=, <>, >) is unknown, and WHERE keeps only true",
+  "Use IS NULL, IS NOT NULL, or null-safe equality (<=> or IS NOT DISTINCT FROM)",
+  "Incremental: read rows past a stored high-water mark, then MERGE on the key",
+]
+uses = ["Joining on nullable keys", "Hourly loads of only changed orders"]
+picture = "NULL is a sealed envelope: you cannot say it equals anything, not even another sealed envelope."
+body = """NULL gotchas:
+- `NOT IN (subquery)` returns no rows if the subquery contains a NULL. Use `NOT EXISTS` or a left anti join.
+- `COUNT(*)` counts rows; `COUNT(col)` skips NULLs. `AVG` ignores NULLs.
+- `SUM` of all NULLs is NULL; wrap in `COALESCE(SUM(x), 0)` if needed.
+- Joins on NULL keys never match; GROUP BY puts all NULLs in one group.
+- `col <> 'x'` drops rows where col is NULL.
+
+**Incremental loads**:
+- High-water mark: store the max `updated_at` (or log position) processed; next run reads `> mark`. Risk: late commits with older timestamps and clock skew, so use a small overlap window and dedupe with MERGE.
+- Prefer CDC, Change Data Feed, or Auto Loader when available; they track progress for you.
+- Write with MERGE on the primary key, or overwrite affected partitions, so reruns are idempotent.
+
+MERGE rules: the source must have at most one row per key (dedupe first), and the match condition should include partition or cluster filters to limit the scan."""
+
+[[sections]]
+id = "query-tuning"
+group = "Modeling & SQL"
+title = "Query Tuning: Pruning, Skipping, Join Order"
+plain = "Fast queries read less data: skip partitions and files that cannot match, read only needed columns, and join small results early."
+how = [
+  "Partition pruning: a filter on the partition column skips whole folders",
+  "File skipping: min/max stats per file skip files whose range cannot match",
+  "Column pruning: columnar formats read only selected columns",
+  "Join order and strategy: filter early, broadcast small sides",
+]
+uses = ["Turning a 40-minute scan into 2 minutes by fixing a filter", "Diagnosing why a dashboard query reads the full table"]
+picture = "Looking up a word using the dictionary's letter tabs instead of reading every page."
+body = """Filters that break pruning or skipping:
+- Wrapping the column in a function: `WHERE date(event_ts) = '2026-10-01'` on a table partitioned by `event_date` does not prune; filter on `event_date` directly or use a range on `event_ts`.
+- Casting the column or comparing mismatched types.
+- Filters that only apply after a join on a non-pushed column.
+- Data not clustered by the filter column, so every file's min/max range covers the value.
+
+Checklist:
+- `EXPLAIN` / query profile: look for `PartitionFilters`, files read vs total, and bytes scanned.
+- `SELECT` only needed columns; avoid `SELECT *` on wide tables.
+- Filter and aggregate before joining; join the most selective tables first (the optimizer does this better with fresh statistics).
+- Broadcast small dimensions; avoid exploding joins (check join keys are unique where you expect).
+- Avoid `DISTINCT` to hide duplicate joins; fix the join.
+- Compact small files and cluster by common filter columns."""
+
+# ---------------------------------------------------------------- Pipelines & Quality
+
+[[sections]]
+id = "idempotency-backfills"
+group = "Pipelines & Quality"
+title = "Idempotency & Backfills"
+plain = "Every pipeline gets rerun, so make each run with the same input produce the same output, no matter how many times it runs."
+how = [
+  "Parameterize the job by its logical date or interval, never the wall clock",
+  "Write by overwriting that slice (replaceWhere, partition overwrite) or MERGE on a key",
+  "Backfill by running the same job for past intervals",
+]
+uses = ["Safe Airflow retries", "Reprocessing six months after a logic fix"]
+picture = "Pressing an elevator button twice still takes you to the same floor once."
+body = """```
+(df.write.format("delta").mode("overwrite")
+   .option("replaceWhere", "dt = '2026-10-01'")
+   .saveAsTable("gold.daily_sales"))
+```
+- Avoid blind appends for anything that can retry; a retry duplicates the day.
+- Derive IDs from content (hash of business keys), not random UUIDs.
+- Deterministic tie-breaking in dedup windows.
+
+**Backfill plan**:
+- Fix the logic and test it on one interval; compare with the old output.
+- Run intervals in bounded parallel batches so you do not starve production or hit API limits.
+- Write to the same table with slice overwrite, or to a new table version and swap.
+- Watch downstream: dependent models and aggregates must be recomputed too; CDF consumers will see the rewrites as changes.
+- Communicate: tell consumers numbers will change and why."""
+
+[[sections]]
+id = "etl-elt-batch-streaming"
+group = "Pipelines & Quality"
+title = "ETL vs ELT, Batch vs Streaming"
+plain = "ETL transforms data before loading it; ELT loads raw data first and transforms inside the warehouse or lakehouse. Batch processes data on a schedule; streaming processes it continuously."
+how = [
+  "ETL: extract, transform in a separate engine, load the result",
+  "ELT: extract, load raw, transform with SQL or Spark in the platform",
+  "Pick latency first: batch for hours, micro-batch for minutes, true streaming for seconds",
+]
+uses = ["ELT with dbt on a lakehouse", "Streaming only the fraud features that need seconds"]
+picture = "ETL is cooking at home and bringing the dish; ELT is bringing groceries and cooking in the venue's big kitchen."
+body = """ELT is the common modern default because storage is cheap, compute scales in the platform, and keeping raw data enables replay. ETL still fits when data must be masked or reduced before landing (privacy), or the target cannot transform cheaply.
+
+Batch vs streaming decision:
+```
+batch      simpler, cheaper, easy backfills; latency = schedule
+streaming  fresher; needs state, watermarks, always-on cost, harder debugging
+```
+Ask: what decision uses this data, and how stale can it be? Many "real-time" asks are fine with 15-minute or hourly freshness. Structured Streaming with `availableNow` lets one codebase run as scheduled batch now and continuously later."""
+
+[[sections]]
+id = "dbt"
+group = "Pipelines & Quality"
+title = "dbt: Models, Tests, Incremental, Snapshots"
+plain = "dbt turns SELECT statements into tables and views in dependency order, with tests and documentation, so SQL transformations become versioned software."
+how = [
+  "Each model is a SELECT in a .sql file; ref() links models and builds the DAG",
+  "Materializations: view, table, incremental, ephemeral, materialized view",
+  "Tests check assumptions after building; snapshots capture SCD2 history",
+]
+uses = ["Silver to gold transformations in a lakehouse", "Blocking a deploy when a primary key stops being unique"]
+picture = "Like a recipe book where each recipe lists the others it needs, and a tester tastes each dish before it leaves the kitchen."
+body = """**Tests**: generic `unique`, `not_null`, `accepted_values`, `relationships` in YAML; singular tests are SQL queries that should return zero rows; unit tests check model logic on mock inputs; source freshness checks warn when sources stop updating.
+
+**Incremental models**:
+```
+{{ config(materialized='incremental', unique_key='order_id',
+          incremental_strategy='merge') }}
+select * from {{ ref('stg_orders') }}
+{% if is_incremental() %}
+  where updated_at > (select max(updated_at) from {{ this }})
+{% endif %}
+```
+Strategies vary by adapter: append, merge, delete+insert, insert_overwrite, microbatch. Use `--full-refresh` to rebuild. Pitfalls: late-arriving rows below the max timestamp (use a lookback window), and schema changes (`on_schema_change`).
+
+**Snapshots**: SCD2 for mutable sources, using a `timestamp` strategy (an updated_at column) or a `check` strategy (compare listed columns). They add `dbt_valid_from` and `dbt_valid_to`. Run them on a schedule; they cannot recover changes that happened between runs."""
+
+[[sections]]
+id = "airflow"
+group = "Pipelines & Quality"
+title = "Airflow: DAGs, Intervals, Retries, Sensors"
+plain = "Airflow schedules and monitors workflows defined as Python DAGs of tasks, each run tied to a data interval."
+how = [
+  "A DAG defines tasks (operators) and their dependencies",
+  "The scheduler creates a run per interval; tasks get data_interval_start and data_interval_end",
+  "Failed tasks retry per retries and retry_delay",
+  "Sensors wait for a condition such as a file or an upstream table",
+]
+uses = ["Orchestrating Spark jobs, dbt runs and quality checks", "Backfilling a month of daily runs"]
+picture = "A train timetable: each run is a numbered train for a specific day, and the conductor retries if a door sticks."
+body = """**Data intervals**: a daily run for 2026-10-01 covers [2026-10-01, 2026-10-02) and starts after that interval ends. Tasks should read `data_interval_start` / `data_interval_end` (or `ds`), not `now()`. `logical_date` replaced the old `execution_date` name.
+
+**Idempotent tasks**: each task overwrites or MERGEs its interval's output, so retries and backfills are safe. Keep heavy compute out of the Airflow workers; trigger Spark, Databricks or dbt.
+
+**Retries**: `retries`, `retry_delay`, exponential backoff; set `execution_timeout` so hung tasks fail.
+
+**Catchup and backfill**: catchup creates runs for missed past intervals; backfills run a range explicitly. Control load with `max_active_runs`.
+
+**Sensors**: `poke` mode holds a worker slot while waiting; `reschedule` mode frees it between checks; deferrable operators wait in the triggerer, cheapest at scale. Always set a timeout.
+
+Data-aware scheduling: Airflow can trigger DAGs when upstream datasets update (called Assets in Airflow 3)."""
+
+[[sections]]
+id = "data-quality-contracts"
+group = "Pipelines & Quality"
+title = "Data Quality Checks & Data Contracts"
+plain = "Quality checks test data against rules on every run; a data contract is an agreement with the producer about schema, meaning and quality so problems are caught at the source."
+how = [
+  "Define checks per table: nulls, uniqueness, referential integrity, ranges, freshness, volume",
+  "Run them in the pipeline; block, quarantine or alert based on severity",
+  "Track distributions over time to catch drift",
+  "Agree contracts with producers and enforce them in CI and at ingestion",
+]
+uses = ["Failing the gold build when order_id is duplicated", "Alerting when yesterday's row count drops 40%"]
+picture = "Quality checks are the inspector on the line; the contract is the spec sheet signed with the supplier."
+body = """```
+null          required columns are not NULL
+uniqueness    primary key has no duplicates
+referential   every fact.customer_id exists in dim_customer
+range/values  amount >= 0, status in an accepted set
+freshness     max(updated_at) within the SLA
+volume        row count within an expected band vs history
+drift         distribution or null rate shifts beyond a threshold
+```
+Severity: **block** (fail the run, do not publish), **quarantine** (route bad rows aside, continue), **warn** (alert only). Put blocking checks before publishing to gold so consumers never see bad data; write-audit-publish (stage, check, then swap or commit) does this.
+
+Tools: dbt tests, Lakeflow expectations, Great Expectations, Soda, Lakehouse Monitoring.
+
+**Data contracts**: schema with types, nullability and meaning, the primary key, freshness SLA, quality rules, ownership, and the process for changes (versioning, notice period). Enforce them in the producer's CI (break the build on incompatible changes) and validate at ingestion. They turn silent upstream breakage into a visible, owned failure."""
+
+[[sections]]
+id = "bad-records-schema-drift"
+group = "Pipelines & Quality"
+title = "Malformed Records & Schema Drift"
+plain = "Decide up front what happens to rows that do not parse or columns that change, so one bad record neither kills the pipeline nor vanishes silently."
+how = [
+  "PERMISSIVE (default): bad fields become NULL, the raw row can go to a corrupt record column",
+  "DROPMALFORMED: silently drop bad rows",
+  "FAILFAST: throw on the first bad row",
+  "badRecordsPath (Databricks): write bad records and exception details to a path",
+]
+uses = ["CSV vendor feeds with occasional broken lines", "Detecting an upstream rename before it nulls out a column"]
+picture = "A sorting machine that can stop the line, toss the odd parcel in the bin, or set it aside in a labelled crate for review."
+body = """```
+spark.read.option("mode", "PERMISSIVE")
+  .option("columnNameOfCorruptRecord", "_corrupt_record")
+  .schema(schema_with_corrupt_col).csv(path)
+```
+- With PERMISSIVE, include `_corrupt_record` in the schema to keep the raw text; then split good rows and rows where `_corrupt_record IS NOT NULL` into a quarantine table.
+- DROPMALFORMED loses data without a trace; count dropped rows if you use it.
+- FAILFAST is right when any bad row means the file is wrong.
+- Auto Loader adds `_rescued_data` for fields that do not match the schema.
+
+**Schema drift** types: new columns, removed columns, renamed columns (look like a drop plus an add, often silently NULLing a column), type changes, and semantic changes (same name, new meaning or units).
+
+Handling: explicit schemas for critical sources, schema evolution only for additive changes, alerts when columns appear or disappear or null rates jump, contracts with producers, and keeping raw bronze so you can replay after fixing."""
+
+# ---------------------------------------------------------------- Interview Craft
+
+[[sections]]
+id = "system-design-framework"
+group = "Interview Craft"
+title = "Data System Design Framework"
+plain = "Answer design questions in a fixed order: requirements, data and scale, architecture, storage and modeling, failure handling, then trade-offs."
+how = [
+  "Clarify: consumers, freshness SLA, volume, correctness needs, retention, compliance",
+  "Sketch ingestion, storage layers, processing, serving, orchestration",
+  "Explain modeling, partitioning or clustering, and idempotent writes",
+  "Cover failure, late data, backfills, quality checks, monitoring, cost",
+]
+uses = ["CDC to lakehouse", "Clickstream analytics", "GDPR deletion"]
+picture = "Like an architect asking how many people will live in the house before drawing walls."
+body = """Questions to ask first:
+- Who consumes it and how fresh must it be (seconds, minutes, daily)?
+- Volume and growth: events per second, GB per day, number of tables.
+- Correctness: are duplicates or late data acceptable? Is this money?
+- History: do we need point-in-time or SCD2?
+- Compliance: PII, deletion requests, access control.
+
+A strong answer always says how it handles:
+- **Reruns** (idempotent writes keyed by interval or primary key).
+- **Late and out-of-order data** (watermarks, event-time ordering, correction jobs).
+- **Bad data** (quarantine, expectations, alerts).
+- **Schema changes** (evolution policy, contracts).
+- **Backfills** (replay from bronze or the source log).
+- **Monitoring** (freshness, volume, lag, cost).
+
+Close with trade-offs you chose and what you would change at 10x scale."""
+
+[[sections]]
+id = "behavioral-star"
+group = "Interview Craft"
+title = "Behavioral Answers with STAR"
+plain = "Tell a real story in four parts: Situation, Task, Action, Result, and finish with what you learned."
+how = [
+  "Situation: one or two sentences of context",
+  "Task: what you specifically owned",
+  "Action: the steps you took, using I, not we",
+  "Result: a measurable outcome, then a reflection",
+]
+uses = ["Tell me about a pipeline failure you owned", "Tell me about reducing cost or a disagreement"]
+picture = "A short movie trailer: setting, mission, the key scenes, the ending, and the moral."
+body = """Data engineering stories interviewers like:
+- An incident: detection, mitigation (stop the bleeding, communicate), root cause, permanent fix, prevention (tests, alerts, runbooks).
+- A performance or cost win with numbers (runtime from 3 h to 25 min, cost down 40%).
+- A data quality catch before it reached executives.
+- Pushing back on a requirement with data, and the compromise reached.
+
+Tips: prepare 4-5 stories that can flex to many questions; quantify; own mistakes without blaming; end with what you changed in the process, not just the code. Keep it to about two minutes."""

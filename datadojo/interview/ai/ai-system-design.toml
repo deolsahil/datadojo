@@ -1,0 +1,157 @@
+title = "AI System Design & Behavioral"
+order = 8
+desc = "Design RAG assistants, refund agents, eval pipelines and semantic caches, plus behavioral stories."
+
+[[questions]]
+id = "ai-design-faq-bot"
+q = "Design a simple chatbot that answers customer questions from your company's 200 help-center articles."
+level = "entry"
+kind = "design"
+rubric = [
+  "Uses RAG: chunk and embed the articles into a vector index, retrieve relevant chunks per question, and generate a grounded answer",
+  "Instructs the model to answer only from the retrieved articles, link or cite the source, and say it doesn't know otherwise",
+  "Keeps the index fresh by re-indexing when articles change",
+  "Offers a fallback or handoff to a human agent when it can't answer",
+  "Measures quality with a small eval set of real customer questions and collects user feedback",
+]
+answer = """- **Indexing:** split each article on its headings, embed the chunks and store them with title and URL in a vector index (at this size, a database extension like pgvector is plenty). Re-index an article whenever it's edited.
+- **Query:** embed the question, retrieve the top few chunks (add keyword search if users type product names or codes), and pass them to the model.
+- **Prompt:** answer only from the provided articles, link the source, and say 'I don't know' when the answer isn't there.
+- **Fallback:** offer a handoff to a human agent when it can't answer or the user asks.
+- **Quality:** build an eval set of 30-50 real customer questions with expected articles, rerun it on every change, and collect thumbs up/down linked to traces."""
+study = "rag"
+
+[[questions]]
+id = "ai-design-rag-assistant"
+q = "Design a RAG assistant over 50,000 internal documents (wikis, PDFs, policies) for 10,000 employees. Cover ingestion, retrieval, freshness, access control and how you'd know it works."
+level = "mid"
+kind = "design"
+rubric = [
+  "Ingestion: parse varied formats, chunk on structure with metadata (source, section, date, region, ACLs), embed, and index incrementally on change",
+  "Retrieval: hybrid search (BM25 plus vectors) with a reranker and metadata filters, sending a few top chunks to the model",
+  "Access control enforced as a permission pre-filter in retrieval using the user's identity, never through the prompt",
+  "Generation grounded in context with citations and an explicit 'I don't know' path",
+  "Evals (retrieval recall and answer faithfulness on real questions), tracing with versions, feedback loop, and caching scoped by permissions",
+]
+answer = """- **Ingestion:** connectors pull from wiki, drive and policy systems; parse PDFs and tables carefully; chunk on headings with title prefixes; store metadata (source, section, updated date, region, ACL groups). Re-index incrementally on change events and remove deleted docs.
+- **Retrieval:** hybrid BM25 + vector search, fused, then a cross-encoder reranker; filter by region or version when known; send ~5 chunks.
+- **Access control:** resolve the user's groups from SSO and apply a permission pre-filter in search, so unauthorized chunks never reach the model.
+- **Generation:** answer only from context, cite each source, and say when the docs don't cover it.
+- **Quality:** an eval set of real employee questions measuring retrieval recall@k and answer faithfulness, run in CI; traces with prompt, model and index versions; thumbs feedback feeding new evals.
+- **Cost:** cache embeddings by content hash and responses scoped by permissions."""
+study = "ai-system-design"
+
+[[questions]]
+id = "ai-design-refund-agent"
+q = "Design a customer-support agent that can look up orders and issue refunds autonomously. How do you keep it safe and know it works?"
+level = "senior"
+kind = "design"
+rubric = [
+  "Tools with least privilege: read order, check eligibility, propose or issue refund, escalate; executed with the customer's scope",
+  "Business rules enforced in code: eligibility, refund limits, rate limits, idempotency; over-limit or unusual cases go to human approval (model proposes, application enforces)",
+  "Input and output guardrails: authentication, injection defense, PII handling, policy checks on replies",
+  "Eval suite with should-refund and should-not-refund tasks, grading the actual outcome (refund records), with pass^k for consistency, run in CI",
+  "Observability and operations: traces of every tool call, audit log, step and cost limits, monitoring refund rate anomalies, feedback into new evals",
+]
+answer = """- **Tools:** get_order, check_refund_eligibility, issue_refund, escalate_to_human. Each runs with the authenticated customer's scope, so it can only touch their orders.
+- **Enforcement in code:** issue_refund checks eligibility, amount against the automation limit, per-customer rate limits and an idempotency key. Over the limit or unusual means human approval. The model proposes; the application enforces.
+- **Guardrails:** treat emails and order notes as untrusted data (injection), redact PII from logs, validate replies against policy (no promises outside policy).
+- **Agent limits:** max steps, timeouts, cost budget, clean escalation when stuck.
+- **Evals:** 20-50 tasks from real tickets, both should-refund and should-not-refund (ineligible, over limit, manipulative), graded on the refund records, several trials each judged by pass^k, run in CI.
+- **Operations:** trace every tool call, keep an audit log, alert on refund-rate or amount anomalies, and turn incidents into new eval tasks."""
+study = "guardrails"
+
+[[questions]]
+id = "ai-design-coding-agent-evals"
+q = "Design an evaluation pipeline for a coding agent that takes a GitHub-style issue and produces a code change."
+level = "senior"
+kind = "design"
+rubric = [
+  "Tasks: real issues with a repository snapshot and success criteria, typically hidden tests that fail before and pass after a correct fix",
+  "Harness: runs each trial in an isolated, reproducible sandbox and captures the full transcript (commands, edits, tool calls)",
+  "Graders: code-based outcome checks (tests pass, builds, no regressions in existing tests) first, model or human graders for code quality",
+  "Runs multiple trials per task and reports pass@k and pass^k, plus cost, steps and time per task",
+  "Separates capability and regression suites, grades outcomes not exact paths, runs in CI on agent or model changes vs baseline, and adds real failures as tasks",
+]
+answer = """- **Tasks:** real issues from your repos, each with a pinned repository snapshot and hidden tests that fail before a correct fix and pass after. Include should-not cases: no unrelated file changes, no deleting tests.
+- **Harness:** each trial runs in a fresh, isolated container with no network beyond what's needed, deterministic dependencies, and a captured transcript of every command, edit and tool call.
+- **Graders:** code first: hidden tests pass, the existing test suite still passes, it builds and lints. Then an LLM judge or human review for readability and scope, calibrated against human labels.
+- **Grade the outcome**, the final repo state, not a specific sequence of steps.
+- **Metrics:** several trials per task; report pass@k and pass^k, plus tokens, cost, steps and wall time.
+- **Suites:** a capability suite of hard tasks and a regression suite of solved ones; run in CI on every agent, prompt or model change, compare with the baseline, and add production failures as tasks."""
+study = "eval-suite-design"
+
+[[questions]]
+id = "ai-design-semantic-cache"
+q = "Design a semantic cache for a high-traffic customer chatbot that gets many repeated questions."
+level = "senior"
+kind = "design"
+rubric = [
+  "Mechanism: embed the incoming question, search a vector index of past questions, return the cached answer if similarity exceeds a threshold",
+  "Threshold tuned on labelled pairs of same and different questions, since too loose answers the wrong question; may add a verification step",
+  "Scope: only cache non-personalized answers; partition or key by tenant, locale and permissions",
+  "Invalidation: TTLs, event-based purges when source content changes, version keys for model, prompt and index",
+  "Layered with an exact-match cache first; monitored for hit rate, latency saved and wrong-hit rate via sampled evals and feedback",
+]
+answer = """- **Flow:** normalize the question, check an exact-match cache first, then embed it and search a vector index of cached questions. Above the similarity threshold, return the stored answer; otherwise call the full pipeline and store the result.
+- **Threshold:** tune on labelled pairs of 'same intent' and 'different intent' questions ('cancel my order' vs 'cancel my subscription'). Start strict; optionally have a small model confirm the match.
+- **Scope:** cache only generic answers; never personalized ones (order status, account data). Partition by tenant, locale and product, and include permission scope in the key.
+- **Invalidation:** TTL per content type, event-based purge when the source article or policy changes, and model, prompt and index versions in the key so deploys don't serve old behaviour.
+- **Monitoring:** hit rate, latency and cost saved, and wrong-hit rate from sampled judge reviews and feedback on cached answers; loosen the threshold only when evals allow."""
+study = "caching"
+
+[[questions]]
+id = "ai-behavioral-learned-fast"
+q = "Tell me about a time you had to learn a new AI tool or concept quickly to deliver something."
+level = "entry"
+kind = "behavioral"
+rubric = [
+  "Describes a specific situation and why learning quickly was necessary",
+  "Explains concrete learning actions (docs, small experiments, asking experts) rather than vague 'I read about it'",
+  "Shows how they applied it to deliver a result, ideally with something measurable",
+  "Reflects on what they learned or would do differently",
+]
+answer = """- **Situation:** our team needed a document search feature in three weeks and I had never built with embeddings or a vector database.
+- **Task:** I owned the retrieval part: get relevant results from about 5,000 support articles.
+- **Action:** I read the embedding model's docs, built a tiny prototype on 100 articles in two days, and wrote 30 real test questions with the expected article so I could measure instead of guess. I asked a senior engineer to review my chunking approach.
+- **Result:** we shipped on time; the correct article appeared in the top 5 for 26 of 30 test questions, and adding keyword search fixed most of the misses involving product codes.
+- **Reflection:** building the small eval set first was what made fast learning safe; I now start every AI feature that way."""
+study = "behavioral-stories"
+
+[[questions]]
+id = "ai-behavioral-failed-feature"
+q = "Tell me about an AI feature that failed or misbehaved in production. What happened and what did you do?"
+level = "mid"
+kind = "behavioral"
+rubric = [
+  "Describes a specific production failure and its impact on users or the business",
+  "Explains how they found the root cause (traces, failing stage, what changed), not just the symptom",
+  "Describes the fix and the prevention: new eval cases, CI gate, monitoring or guardrail",
+  "Gives a measurable result after the fix",
+  "Reflects honestly on what they would do differently",
+]
+answer = """- **Situation:** our support assistant started quoting an outdated return window; complaints rose and escalations went up about 15% in a week.
+- **Task:** I was on call for the assistant and owned the investigation.
+- **Action:** traces showed the right policy was never retrieved; a re-indexing job had silently failed after a document format change, so retrieval returned the old policy. I fixed the parser, re-indexed, and added an alert on index freshness and job failures. I added 25 policy questions to the regression eval suite that now runs on every index build.
+- **Result:** escalations returned to baseline within days, and the freshness alert caught a similar failure two months later before users noticed.
+- **Reflection:** we had evals for prompt changes but not for data changes; I now treat the index as a deployable artifact with its own checks."""
+study = "behavioral-stories"
+
+[[questions]]
+id = "ai-behavioral-pushback"
+q = "Tell me about a time you pushed back on a stakeholder's AI plan, for example a launch date, an agent, or a fine-tuning project, because you thought it was the wrong approach."
+level = "senior"
+kind = "behavioral"
+rubric = [
+  "Describes the stakeholder's proposal and the specific risk or flaw they saw",
+  "Used evidence rather than opinion: a quick experiment, eval results, cost estimate or prototype",
+  "Proposed an alternative and found common ground on the stakeholder's real goal",
+  "States the measurable outcome of the decision",
+  "Reflects on the relationship and what they learned about influencing decisions",
+]
+answer = """- **Situation:** a director wanted to fine-tune a model on our product catalogue so the sales assistant 'knows our products', with a quarter-long budget.
+- **Task:** as tech lead I had to recommend the approach; I believed the catalogue changed too often for fine-tuning.
+- **Action:** rather than argue, I built a one-week RAG prototype over the catalogue and an eval set of 50 real sales questions. I showed results side by side with a small fine-tuning trial, plus cost and how each handled a price change.
+- **Result:** RAG answered 44 of 50 correctly versus 31 for the fine-tune, and updated instantly. We shipped RAG in six weeks; later we used a small fine-tune only for tone, which the director championed.
+- **Reflection:** framing it around their goal (accurate answers fast) and letting the eval decide kept it from becoming a personal disagreement."""
+study = "behavioral-stories"

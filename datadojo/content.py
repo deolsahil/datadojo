@@ -1,6 +1,7 @@
 """Non-coding content: the Data System Design course and the brain games.
 
 design/<id>.toml   one lesson or case study (format: see README "Data System Design")
+interview/         interview tracks: rubric-graded questions and a cheatsheet per track
 games/*.toml       curated rounds for spot-the-bug and big-o
 Generated games (guess-output, join-size) build their rounds here by running DuckDB,
 so every answer is computed, never hand-written.
@@ -9,7 +10,7 @@ import json, random, sys, tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-DESIGN, GAMES = ROOT / "design", ROOT / "games"
+DESIGN, GAMES, INTERVIEW = ROOT / "design", ROOT / "games", ROOT / "interview"
 LANGS = ("sql", "python", "pyspark")
 COMPLEXITIES = ("O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n²)", "O(2ⁿ)")
 
@@ -50,6 +51,64 @@ def load_design():
             continue
         out[d["id"]] = d
     return cat, dict(sorted(out.items(), key=lambda kv: ([s["id"] for s in cat["sections"]].index(kv[1]["section"]), kv[1]["order"])))
+
+
+LEVELS = ("entry", "mid", "senior")
+KINDS = ("concept", "scenario", "design", "behavioral")
+
+
+def parse_topic(text, stem, sheet_ids):
+    """interview/<track>/<topic>.toml: title, order, desc, [[questions]] with id, q, level, kind, rubric, answer (+ study)."""
+    d = tomllib.loads(text)
+    missing = {"title", "order", "questions"} - d.keys()
+    if missing:
+        raise ValueError(f"missing keys: {sorted(missing)}")
+    for q in d["questions"]:
+        where = q.get("id", "?")
+        if not all(isinstance(q.get(k), str) and q[k].strip() for k in ("id", "q", "answer")):
+            raise ValueError(f"{where}: needs id, q and answer")
+        if q.get("level") not in LEVELS or q.get("kind") not in KINDS:
+            raise ValueError(f"{where}: level must be {LEVELS}, kind must be {KINDS}")
+        if not (isinstance(q.get("rubric"), list) and 3 <= len(q["rubric"]) <= 7 and all(isinstance(r, str) and r for r in q["rubric"])):
+            raise ValueError(f"{where}: rubric needs 3-7 points")
+        if q.get("study") and q["study"] not in sheet_ids:
+            raise ValueError(f"{where}: study {q['study']!r} is not a cheatsheet section id")
+        q.update(topic=stem)
+    return d
+
+
+def load_interview():
+    """{track_id: {**meta, topics: [...], questions: {qid: q}, sheet: [sections]}} in catalog order."""
+    out = {}
+    for t in tomllib.loads((INTERVIEW / "catalog.toml").read_text())["tracks"]:
+        folder, track = INTERVIEW / t["id"], dict(t, topics=[], questions={}, sheet=[])
+        try:
+            track["sheet"] = tomllib.loads((folder / "cheatsheet.toml").read_text())["sections"] if (folder / "cheatsheet.toml").exists() else []
+            for s in track["sheet"]:
+                if not (s.get("id") and s.get("title") and s.get("group") and (s.get("plain") or s.get("body"))):
+                    raise ValueError(f"cheatsheet section {s.get('id')!r} needs id, group, title and plain or body")
+        except (ValueError, tomllib.TOMLDecodeError) as e:
+            print(f"skipping interview/{t['id']}/cheatsheet.toml: {e}", file=sys.stderr)
+            track["sheet"] = []
+        ids = {s["id"] for s in track["sheet"]}
+        for f in sorted(folder.glob("*.toml")) if folder.exists() else []:
+            if f.name == "cheatsheet.toml":
+                continue
+            try:
+                d = parse_topic(f.read_text(), f.stem, ids)
+            except (ValueError, KeyError, TypeError, AttributeError, tomllib.TOMLDecodeError) as e:
+                print(f"skipping interview/{t['id']}/{f.name}: {e}", file=sys.stderr)
+                continue
+            dup = [q["id"] for q in d["questions"] if q["id"] in track["questions"]]
+            if dup:
+                print(f"skipping interview/{t['id']}/{f.name}: duplicate question ids {dup}", file=sys.stderr)
+                continue
+            track["topics"].append({"id": f.stem, "title": d["title"], "order": d["order"], "desc": d.get("desc", ""),
+                                    "count": len(d["questions"])})
+            track["questions"].update({q["id"]: dict(q, track=t["id"]) for q in d["questions"]})
+        track["topics"].sort(key=lambda x: x["order"])
+        out[t["id"]] = track
+    return out
 
 
 def _check_item(game, it):
@@ -205,6 +264,12 @@ def check():
         print(f"  {s['id']:22} {sum(d['section'] == s['id'] for d in lessons.values())}")
     for g in ("spot-bug", "big-o"):
         print(f"games/{g}: {len(load_game_items(g))} items")
+    for tid, t in load_interview().items():
+        qs = list(t["questions"].values())
+        mix = {lv: {k: sum(q["level"] == lv and q["kind"] == k for q in qs) for k in KINDS} for lv in LEVELS}
+        print(f"interview/{tid}: {len(qs)} questions in {len(t['topics'])} topics, cheatsheet {len(t['sheet'])} sections")
+        for lv in LEVELS:
+            print(f"  {lv:7} " + "  ".join(f"{k} {n}" for k, n in mix[lv].items()))
     for fn in (guess_rounds, join_rounds):
         rs = fn(40, seed=1)
         assert all(len(set(r["options"])) == 4 and 0 <= r["answer"] < 4 for r in rs), fn.__name__

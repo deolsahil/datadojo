@@ -1,0 +1,62 @@
+title = "Product Sense"
+order = 5
+desc = "Open-ended cases: diagnosing drops, measuring feature success, prioritizing and structuring an answer."
+
+[[questions]]
+id = "ps-signups-drop"
+q = "Signups dropped 15 percent yesterday compared to the day before. Walk me through what you would do."
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Clarifies the metric definition and compares to the right baseline (same weekday last week, normal daily variance)",
+  "Checks data quality first: tracking or logging changes, pipeline delays, partial data for yesterday",
+  "Checks internal changes (app release, signup form change, marketing campaign paused) and external events (holiday, outage, competitor)",
+  "Segments by platform, channel, country and funnel step to find where the drop is concentrated",
+  "Ends with sizing the impact and a next step or owner",
+]
+answer = """- Clarify and compare fairly: is yesterday a Sunday compared to a Saturday? Compare to the same weekday last week and to normal daily swings; a 15 percent day-to-day move may be routine.
+- Check the data: is yesterday's data complete, did a tracking event change in a release, did a pipeline run late?
+- Check what changed: app or web releases, signup form edits, experiments ramping, a paused ad campaign or email send. Externally: holiday, outage, app store issue, competitor promotion.
+- Segment: iOS vs Android vs web, acquisition channel, country, and the signup funnel steps (landing, form start, submit, verify). One platform or one step dropping usually means a bug.
+- Size it (15 percent of a typical day's signups) and hand the cause to the owning team, or confirm it was noise and keep monitoring."""
+study = "product-case-framework"
+
+[[questions]]
+id = "ps-feature-success"
+q = "Your shopping app is launching a 'save for later' button in the cart. How would you measure whether it is successful?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "States the goal of the feature in user and business terms (reduce cart clutter, recover purchases later)",
+  "Defines adoption metrics (share of cart users who save an item)",
+  "Defines engagement and outcome metrics (saved items revisited and purchased, repeat purchase rate, overall revenue per user)",
+  "Names guardrails or cannibalization risk: users saving instead of buying now, lower checkout conversion",
+  "Proposes an A/B test with a single primary metric and an appropriate time horizon",
+]
+answer = """- Goal: let shoppers park items without deleting them, so more of them come back and buy later; the business goal is more total purchases, not more saves.
+- Adoption: share of users with a cart who save at least one item.
+- Engagement: items saved per user, share of saved items viewed again within 14 days.
+- Outcome: purchase rate of saved items, and overall purchases per user and 30-day repeat purchase rate.
+- Guardrails: checkout conversion today (people may save instead of buying, which is cannibalization), cart abandonment, page latency.
+- Measure with an A/B test randomized by user, primary metric purchases per user over 30 days, since saved items may be bought weeks later. A popular button that lowers total purchases is a failure."""
+study = "success-metrics"
+
+[[questions]]
+id = "ps-prioritize-requests"
+q = "You are the only analyst for a product area. This week you have: a VP's request for a new dashboard, a PM's question about why retention dipped last month, a bug report that the signup metric double-counts, and an experiment readout due Friday. How do you prioritize?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Prioritizes by the decision each request informs, its impact and urgency, and effort",
+  "Puts the double-counting signup metric early because wrong data undermines other work and decisions",
+  "Treats the experiment readout as time-bound because a ship decision depends on it",
+  "Clarifies scope and deadline of the dashboard and retention question with stakeholders rather than doing them blindly",
+  "Communicates the plan and trade-offs explicitly to stakeholders, including what is delayed and why",
+]
+answer = """- Rank by what decision each request feeds, how costly delay is, and effort.
+- First, the signup double-count: a wrong core metric poisons dashboards, the retention analysis and possibly the experiment. Scope it fast, fix or flag it, and tell metric consumers.
+- Second, the experiment readout: a ship decision is waiting on a fixed date. Check it does not depend on the broken metric.
+- Third, the retention dip: ask the PM what decision it informs and how big the dip is versus normal variation. A quick segment cut may answer it in an hour; a deep dive can wait.
+- Last, the VP dashboard: clarify the decisions it supports and the deadline. Often an existing dashboard with a filter covers most of it in the short term.
+- Send everyone the order and expected dates, so the VP can escalate if they disagree."""
+study = "prioritization"

@@ -1,0 +1,119 @@
+title = "Statistics"
+order = 3
+desc = "Distributions, mean vs median, variance and sampling, confidence intervals, p-values, causation."
+
+[[questions]]
+id = "stats-mean-median"
+q = "When would you report the median instead of the mean? Use an example from product or business data."
+level = "entry"
+kind = "concept"
+rubric = [
+  "Mean is pulled by extreme values; median is the middle value and is robust to outliers",
+  "Recommends the median for skewed data such as income, order value, session length or delivery time",
+  "In right-skewed data the mean is greater than the median",
+  "Notes the mean is still needed when totals matter (total revenue = users x mean)",
+  "Suggests showing percentiles (p90) or a histogram alongside",
+]
+answer = """- The mean is the balancing point and gets pulled by extreme values; the median is the middle value and barely moves when a few outliers appear.
+- Use the median for skewed data where you want the typical case: delivery time, session length, house prices, salaries. A few 3-hour deliveries can make the mean look much worse than the typical experience.
+- In right-skewed data the mean sits above the median; a big gap between them is itself a signal of skew.
+- Use the mean when totals matter: forecasting revenue needs mean revenue per user times users, even if the median user spends nothing.
+- Best practice: show a histogram or percentiles (p50, p90, p99) so readers see the shape, not one number."""
+study = "distributions-mean-median"
+
+[[questions]]
+id = "stats-p-value"
+q = "In plain English, what is a p-value? What are common misinterpretations?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Defines it as the probability of seeing a result at least as extreme as observed, assuming the null hypothesis (no effect) is true",
+  "States it is NOT the probability that the null hypothesis is true or that the result is due to chance",
+  "States a p-value does not measure effect size or importance",
+  "States a large p-value does not prove there is no effect (could be low power)",
+  "Mentions comparing to a significance level (alpha, often 0.05) chosen in advance",
+]
+answer = """- A p-value answers: if there were truly no effect, how likely is a result at least this extreme? Small p means the data would be surprising under 'no effect', so we reject that assumption.
+- We compare it to alpha, set before the test (often 0.05); below alpha we call the result statistically significant.
+- It is **not** the probability that the null is true, and not 'the chance the result is a fluke'.
+- It is **not** a measure of size: with huge samples a trivial effect gets a tiny p-value. Look at the effect and its confidence interval.
+- A large p-value does **not** prove no effect; the test may have been underpowered.
+- p = 0.049 and 0.051 are nearly the same evidence; do not treat 0.05 as a cliff."""
+study = "p-values-significance"
+
+[[questions]]
+id = "stats-correlation-causation"
+q = "Users who create a saved list retain at twice the rate of users who do not. A PM wants to force every new user to create a list during onboarding. What do you say?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Points out this is correlation, not proof that lists cause retention",
+  "Names confounding: already-engaged or high-intent users both make lists and retain",
+  "Names reverse causality or selection: users who stay longer have more time to create lists",
+  "Recommends an A/B test of the onboarding change (or a quasi-experiment) to measure the causal effect",
+  "Mentions a risk of forcing it: added friction could lower onboarding completion",
+]
+answer = """- The 2x is a correlation; it does not show that making a list causes retention.
+- Confounding: highly motivated users both create lists and stick around; forcing unmotivated users to make a list will not give them that motivation.
+- Reverse causality: users who stay longer simply have more time to discover and create lists.
+- Forcing a step also adds friction, which could lower onboarding completion and hurt the very metric we want.
+- Recommend an A/B test: randomize new users into the list-prompt onboarding vs current, with week-4 retention as the primary metric and onboarding completion as a guardrail. Maybe test a soft prompt rather than a forced one.
+- Meanwhile, compare similar users (same signup channel, same early activity) with and without lists to get a rough, caveated read."""
+study = "correlation-causation"
+
+[[questions]]
+id = "stats-confidence-interval"
+q = "An A/B test report says: lift +2.1 percent, 95 percent CI from -0.4 to +4.6 percent. How do you interpret it, and how would you explain it to a product manager?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Correctly states the interval contains zero, so the result is not statistically significant at the 5 percent level",
+  "Explains the interval as the range of effects consistent with the data, from a procedure that captures the true value 95 percent of the time",
+  "Notes that not significant is not the same as no effect: the data is consistent with a small loss or a meaningful gain",
+  "Mentions that more data (or variance reduction) would narrow the interval; width shrinks with the square root of sample size",
+  "Explains it in plain language and links the decision to the MDE or cost of the change",
+]
+answer = """- The best estimate is +2.1 percent, but the 95 percent interval runs from a small loss (-0.4) to a solid gain (+4.6). Because it includes zero, it is not significant at the 5 percent level.
+- Technically: if we repeated the experiment many times, 95 percent of intervals built this way would contain the true lift.
+- Not significant does not mean no effect; it means we cannot yet tell a small negative from a useful positive.
+- To the PM: 'The change probably helps, but we are not sure enough yet. The real effect is likely somewhere between slightly negative and about 4.6 percent.'
+- Options: if the planned sample was reached, decide on risk (cheap, reversible change may ship); otherwise run to the planned size. A narrower interval needs more data; halving the width takes about 4x the users, or use CUPED."""
+study = "confidence-intervals"
+
+[[questions]]
+id = "stats-practical-significance"
+q = "A test on 20 million users shows a statistically significant 0.05 percent increase in click-through rate, with p below 0.001. Engineering says the feature adds latency and maintenance cost. Should you ship?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Distinguishes statistical significance from practical significance: huge samples make tiny effects significant",
+  "Compares the effect (and its confidence interval) to a pre-agreed minimum effect worth shipping",
+  "Weighs costs: latency, maintenance, and guardrail metrics such as latency and downstream conversion",
+  "Asks whether click-through translates to the outcome that matters (purchases, retention) rather than a proxy",
+  "Makes a clear recommendation conditional on those checks",
+]
+answer = """- Significance only says the effect is probably not zero. With 20 million users even a trivial effect gets p below 0.001.
+- Practical significance: is +0.05 percent CTR worth it? Compare the effect and its confidence interval to the minimum lift we agreed was worth shipping.
+- Translate to business value: does CTR lead to purchases or retention? Check those outcomes in the same test; if they did not move, the CTR gain may be meaningless.
+- Weigh costs: added latency can hurt conversion in the long run (check latency and conversion guardrails), plus ongoing maintenance and complexity.
+- Recommendation: unless downstream metrics also improved and guardrails held, do not ship. Report it as 'real but too small to matter', and set an MDE before the next test."""
+study = "p-values-significance"
+
+[[questions]]
+id = "stats-heavy-tailed-metrics"
+q = "You are analysing revenue per user in an experiment, and a handful of users spend 1,000 times the median. What problems does this cause and how would you handle it?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Explains heavy tails inflate variance, making the mean noisy and tests underpowered",
+  "Notes a few extreme users landing in one arm can flip the result",
+  "Proposes winsorizing or capping at a high percentile (for example p99 or p99.9), decided before analysis",
+  "Mentions alternatives: log transform, bootstrap confidence intervals, conversion-plus-spend decomposition, or variance reduction such as CUPED",
+  "Notes trade-offs: capping changes the estimand, and the business still cares about total revenue; check results are robust across methods",
+]
+answer = """- Heavy tails blow up variance, so the mean is noisy, confidence intervals are wide, and the test needs far more users to detect a real effect.
+- A few whales landing in one arm can create or erase a 'significant' lift by chance.
+- Winsorize or cap at a high percentile (p99 or p99.9), chosen before looking at results; this cuts variance a lot.
+- Other tools: decompose into conversion rate x revenue per payer; use a bootstrap for intervals; use CUPED with pre-period spend as a covariate; log-transform for a test on typical spend.
+- Trade-off: capping or logs change the question from 'total revenue' to 'revenue without extremes'. Report the capped primary result and the uncapped mean as a sensitivity check, and look at whether the whales split evenly between arms."""
+study = "distributions-mean-median"

@@ -1,0 +1,184 @@
+title = "Spark Internals"
+order = 1
+desc = "Driver and executors, lazy evaluation, stages, Catalyst, AQE, caching and serialization."
+
+[[questions]]
+id = "spark-architecture"
+q = "Walk me through Spark's architecture. What do the driver, executors and cluster manager each do?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Driver runs the user program, holds the SparkSession, builds the plan and schedules tasks",
+  "Executors are processes on worker nodes that run tasks and hold cached data and shuffle files",
+  "Cluster manager (YARN, Kubernetes, Standalone or Databricks) allocates resources for executors",
+  "One task processes one partition; a stage's tasks run in parallel across executor cores",
+  "Notes the driver is a single machine, so pulling large data to it (collect) can crash it",
+]
+answer = """- The **driver** runs my program and owns the `SparkSession`. It turns my code into a plan, splits it into jobs, stages and tasks, and schedules those tasks.
+- The **cluster manager** (YARN, Kubernetes, Standalone, or Databricks' own) gives the application executor resources.
+- **Executors** are JVM processes on worker nodes. They run tasks, keep cached partitions, and write shuffle files.
+- Each **task** handles one partition, so parallelism is roughly the number of executor cores, limited by partition count.
+- The driver is one machine: `collect()` or `toPandas()` on a large dataset can run it out of memory, so big results should be written out, not pulled back."""
+study = "spark-architecture"
+
+[[questions]]
+id = "spark-lazy-evaluation"
+q = "What is lazy evaluation in Spark? Give examples of transformations and actions, and explain why Spark works this way."
+level = "entry"
+kind = "concept"
+rubric = [
+  "Transformations only build a plan (DAG); nothing runs until an action",
+  "Names correct transformations (select, filter, join, groupBy) and actions (count, collect, show, write)",
+  "Benefit: Spark sees the whole plan and can optimize it (predicate pushdown, column pruning, pipelining)",
+  "Consequence: errors in a transformation only appear when an action runs",
+  "Each action recomputes the plan unless data is cached",
+]
+answer = """- Transformations like `select`, `filter`, `withColumn`, `join`, `groupBy` only add steps to a logical plan; no data is read yet.
+- Actions like `count`, `collect`, `show`, and `write` trigger a job that executes the plan.
+- Because Spark sees the whole plan first, Catalyst can push filters down to the file scan, read only needed columns, and pipeline narrow steps into one stage.
+- A side effect: a bad column or cast in a transformation only fails when an action runs, so errors can look delayed.
+- Every action re-runs the whole lineage from the source unless I cache an intermediate result I reuse."""
+study = "lazy-evaluation-dag"
+
+[[questions]]
+id = "spark-rdd-dataframe-dataset"
+q = "What is the difference between an RDD, a DataFrame and a Dataset? Which would you use in PySpark today?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "RDD is the low-level distributed collection of objects with no schema and no Catalyst optimization",
+  "DataFrame has a schema (named, typed columns) and is optimized by Catalyst and Tungsten",
+  "Dataset is a typed DataFrame available only in Scala and Java",
+  "Recommends DataFrames (or SQL) in PySpark, RDDs only for rare low-level needs",
+]
+answer = """- An **RDD** is a distributed collection of arbitrary objects. Spark cannot see inside the objects or the lambdas, so it cannot optimize much, and Python RDDs pay serialization costs.
+- A **DataFrame** is a distributed table with a schema. Because Spark knows the columns and operations, Catalyst optimizes the plan and Tungsten runs it in a compact binary format.
+- A **Dataset** adds compile-time types on top of DataFrames, but only in Scala and Java. In Scala, `DataFrame` is just `Dataset[Row]`.
+- In PySpark I use DataFrames or Spark SQL by default. I drop to RDDs only for unusual low-level work, such as custom partitioning logic that DataFrames cannot express."""
+study = "spark-architecture"
+
+[[questions]]
+id = "spark-narrow-wide"
+q = "What are narrow and wide transformations, and how do they relate to stages?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Narrow: each output partition depends on one input partition (map, filter, select)",
+  "Wide: output partitions need data from many input partitions (groupBy, join, distinct, orderBy)",
+  "Wide transformations require a shuffle, which creates a stage boundary",
+  "Narrow transformations are pipelined within a single stage without moving data",
+]
+answer = """- **Narrow** transformations, like `filter`, `select`, `withColumn` and `map`, compute each output partition from a single input partition. No data crosses the network.
+- **Wide** transformations, like `groupBy`, `join` (unless broadcast), `distinct` and `orderBy`, need rows with the same key from many partitions, so Spark **shuffles** data.
+- Spark cuts the job into **stages** at each shuffle. Within a stage, consecutive narrow steps are pipelined so each task runs them back to back on its partition.
+- So the number of stages is roughly the number of shuffles plus one, and reducing wide operations is the main way to speed up a job."""
+study = "lazy-evaluation-dag"
+
+[[questions]]
+id = "spark-map-vs-flatmap"
+q = "What is the difference between map and flatMap? What is the DataFrame equivalent of flatMap?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "map produces exactly one output element per input element",
+  "flatMap produces zero or more outputs per input and flattens them into one collection",
+  "Gives an example such as splitting lines into words",
+  "DataFrame equivalent is explode (on an array column, e.g. from split)",
+]
+answer = """- `map` applies a function to each element and returns exactly one output per input, so the count is unchanged.
+- `flatMap` applies a function that returns a list per input, then flattens the lists. One input can become zero, one, or many outputs.
+- Example: for lines of text, `map(lambda l: l.split(" "))` gives a list per line, while `flatMap(lambda l: l.split(" "))` gives one element per word.
+- With DataFrames, I use `explode`: `df.select(F.explode(F.split("line", " ")).alias("word"))`. Both are narrow transformations."""
+study = "lazy-evaluation-dag"
+
+[[questions]]
+id = "spark-collect-driver-oom"
+q = "A teammate runs df.collect() on a 300 GB table to loop over the rows in Python, and the notebook crashes. What happened and what should they do instead?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "collect brings all rows to the driver, which is a single machine with limited memory, causing driver OOM",
+  "Python looping over rows also loses all parallelism",
+  "Fix: express the logic as DataFrame transformations so executors do the work in parallel",
+  "Write large results to a table or files instead of collecting; use take, limit or show to inspect samples",
+]
+answer = """- `collect()` copies every row from the executors into the driver. The driver is one machine, so 300 GB of rows overflows its memory and the driver crashes.
+- Even if it fit, a Python `for` loop over rows runs single-threaded on the driver, throwing away Spark's parallelism.
+- Instead, rewrite the loop as DataFrame operations (`withColumn`, `when`, joins, aggregations, window functions) so executors process partitions in parallel.
+- If the output is large, write it to a Delta table or files.
+- To inspect data, use `show()`, `take(n)`, or `limit(n)`; if per-row Python is truly needed, use a pandas UDF or `mapInPandas` so it still runs on executors."""
+study = "spark-architecture"
+
+[[questions]]
+id = "spark-catalyst-tungsten"
+q = "What do the Catalyst optimizer and Tungsten do? Name some concrete optimizations."
+level = "mid"
+kind = "concept"
+rubric = [
+  "Catalyst turns a query into an analyzed logical plan, optimizes it with rules, and picks a physical plan",
+  "Names concrete rules: predicate pushdown, column pruning, constant folding, join reordering or join strategy selection",
+  "Tungsten handles execution efficiency: compact binary row format, off-heap memory, less garbage collection",
+  "Tungsten uses whole-stage code generation to fuse operators into compiled code",
+  "Mentions viewing plans with explain",
+]
+answer = """- **Catalyst** is the query optimizer. It parses the query, resolves names against the catalog, applies rule-based (and some cost-based) optimizations to the logical plan, then chooses a physical plan, such as broadcast vs sort-merge join.
+- Typical rules: **predicate pushdown** (filter at the Parquet/Delta scan), **column pruning** (read only needed columns), **constant folding**, combining filters, and reordering joins using statistics.
+- **Tungsten** is the execution engine work: rows live in a compact binary format, often off-heap, which cuts memory use and GC pauses.
+- **Whole-stage codegen** fuses a chain of operators into one generated function, avoiding per-row virtual calls.
+- I check results with `df.explain("formatted")`, looking for `PushedFilters` and the join type."""
+study = "catalyst-aqe"
+
+[[questions]]
+id = "spark-aqe"
+q = "What is Adaptive Query Execution, and which problems does it solve automatically?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "AQE re-optimizes the query at runtime using actual statistics from completed shuffle stages",
+  "Coalesces small post-shuffle partitions into fewer, larger ones",
+  "Converts sort-merge joins to broadcast joins when one side turns out small",
+  "Splits skewed partitions in sort-merge joins (skew join optimization)",
+  "Notes it is on by default since Spark 3.2 and only acts at shuffle boundaries",
+]
+answer = """- AQE re-plans the rest of a query while it runs, using real sizes measured from finished shuffle stages instead of estimates.
+- **Partition coalescing**: if 200 shuffle partitions turn out tiny, it merges them into fewer reasonable ones, so I do not have to tune `spark.sql.shuffle.partitions` perfectly.
+- **Dynamic join switching**: if a filter makes one side small, it switches a sort-merge join to a broadcast hash join.
+- **Skew join handling**: it detects partitions much larger than the median and splits them into several tasks, replicating the matching rows from the other side.
+- It is on by default since Spark 3.2. It only works at shuffle boundaries, so it cannot fix a bad scan or skew in a plan without a shuffle, and extreme skew may still need salting."""
+study = "catalyst-aqe"
+
+[[questions]]
+id = "spark-cache-default"
+q = "You call df.cache() and then look at the Storage tab, but it is empty. A colleague also says cache() keeps data in memory only. What is going on?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "cache is lazy: data is only materialized when an action runs on the cached DataFrame",
+  "DataFrame cache() default storage level is MEMORY_AND_DISK, not MEMORY_ONLY",
+  "MEMORY_ONLY is the default for RDD cache()",
+  "Cache only data reused several times and unpersist it when done, since it competes with execution memory",
+]
+answer = """- `cache()` is lazy. It only marks the DataFrame; partitions are stored the first time an action such as `count()` or a write runs on it. That is why the Storage tab is empty.
+- The colleague is mixing up APIs: `DataFrame.cache()` defaults to **MEMORY_AND_DISK**, so partitions that do not fit in memory spill to local disk. **MEMORY_ONLY** is the default for `RDD.cache()`, where evicted partitions are recomputed.
+- Use `persist(StorageLevel.X)` to pick another level explicitly.
+- I cache only when the same DataFrame feeds several actions, and call `unpersist()` afterwards, because cached blocks take memory that joins and sorts could use."""
+study = "caching-serialization"
+
+[[questions]]
+id = "spark-serialization-compression"
+q = "When does Kryo serialization matter in Spark, and how would you choose between snappy and zstd compression for a table?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Kryo is faster and more compact than Java serialization, mainly for RDDs and custom objects in shuffles or caching",
+  "DataFrames use Tungsten's binary format and encoders, so Kryo matters much less there",
+  "snappy is fast with moderate compression and is the common Parquet default",
+  "zstd gives better compression ratios for somewhat more CPU, good for storage- or IO-bound tables",
+  "Mentions gzip text files are not splittable",
+]
+answer = """- Spark serializes data for shuffles, caching, and sending to executors. Java serialization is slow and bulky; **Kryo** is faster and smaller, and helps most with RDD code and custom objects (register classes for best results).
+- With DataFrames, rows are already in Tungsten's binary format with encoders, so switching to Kryo rarely changes much.
+- For table files: **snappy** compresses and decompresses very fast with a moderate ratio and is the usual Parquet default.
+- **zstd** compresses noticeably better for a bit more CPU. I would choose it for large, mostly-read tables where storage and IO dominate.
+- Avoid plain gzip for large text inputs: a gzip file is not splittable, so one task reads it all."""
+study = "caching-serialization"

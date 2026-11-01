@@ -5,7 +5,7 @@
   datadojo --no-browser         don't open a browser tab
   datadojo check [SEL...]       verify problems (SEL = problem id, pattern id or lang)
   datadojo check sql --engine postgres   which reference solutions also run on another engine
-  datadojo content              validate design lessons and game items
+  datadojo content              validate design lessons, interview tracks and game items
 """
 import argparse, socket, sys, threading, webbrowser
 from http.server import ThreadingHTTPServer

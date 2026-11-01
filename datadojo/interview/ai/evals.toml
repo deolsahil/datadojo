@@ -1,0 +1,177 @@
+title = "Evals"
+order = 5
+desc = "Tasks, trials, transcripts, graders and outcomes; pass@k vs pass^k; LLM-as-judge; offline vs online; evals in CI/CD."
+
+[[questions]]
+id = "ai-evals-vocabulary"
+q = "Why can't you test an LLM application with ordinary unit tests alone, and what are the parts of an eval?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "LLM outputs vary between runs and many different answers can be correct, so asserting one exact output doesn't work",
+  "A task is a test case with inputs and success criteria; a trial is one execution of it, run several times",
+  "A transcript captures what happened: prompts, outputs, tool calls, retrieved documents",
+  "A grader decides success; the outcome is the actual end state (e.g. database row), not what the model said it did",
+  "The evaluation harness runs tasks and graders; an evaluation suite is a set of tasks for one capability",
+]
+answer = """- Unit tests assert one exact output, but an LLM can answer differently every run, many answers can be acceptable, and agents take multi-step paths. Quality has to be measured across many cases.
+- **Task:** one test case with inputs and success criteria. **Trial:** one run of it; because of non-determinism you run several.
+- **Transcript:** the full record of a trial: prompts, model outputs, tool calls, retrieved documents.
+- **Outcome:** the real end state, e.g. the refund row in the database, not the model's claim that it refunded. **Grader:** code, model or human check that judges the outcome, transcript or both.
+- The **evaluation harness** runs tasks, captures transcripts and applies graders; an **evaluation suite** groups tasks for one capability, like 'refund handling'.
+- Ordinary unit tests still cover the deterministic code around the model."""
+study = "evals-vocabulary"
+
+[[questions]]
+id = "ai-capability-vs-regression"
+q = "What is the difference between capability evals and regression evals?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Capability evals ask what the system can do, using hard tasks where a low pass rate is expected",
+  "Regression evals check that things that worked before still work, and should pass at a very high rate",
+  "Any drop in regression score is a signal to investigate before shipping",
+  "Tasks that become reliably solved are promoted from the capability suite to the regression suite",
+]
+answer = """- **Capability evals** answer 'what can the system do?'. They use challenging tasks with room to improve, so a low pass rate is expected and useful for tracking progress.
+- **Regression evals** answer 'did something that used to work break?'. They should pass at close to 100%.
+- Any drop in the regression score after a prompt, model or retrieval change is a signal to investigate before deploying.
+- When a capability task becomes reliably solved, promote it into the regression suite so it stays protected.
+- You need both: capability evals show progress, regression evals stop old behaviour silently breaking."""
+study = "capability-regression"
+
+[[questions]]
+id = "ai-first-eval-suite"
+q = "Your team shipped an internal Q&A bot with no evals. Your manager asks, 'How good is it, and will next week's prompt change make it worse?' Where do you start?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Starts small: 20-50 realistic tasks, preferably drawn from real user questions and known failures",
+  "Defines clear success criteria for each task",
+  "Includes should and should-not cases, e.g. questions it should refuse or say it doesn't know",
+  "Picks graders: code checks where possible, an LLM judge or human review for open-ended answers",
+  "Records a baseline and reruns the suite on every prompt or model change, comparing with that baseline",
+]
+answer = """- Start small: collect 20-50 real questions from logs and user complaints, especially ones it got wrong. Real failures beat a thousand synthetic questions.
+- For each, write success criteria: the key facts the answer must contain and the source it should cite.
+- Add should-not cases: questions outside its scope or with no answer in the docs, where the right behaviour is to say it doesn't know.
+- Grade with code where possible (cited the right document? valid format?) and an LLM judge with a clear rubric for answer correctness, spot-checked by a human.
+- Run each task a few times, record the current score as the baseline, and rerun the suite on every prompt or model change. That answers both of the manager's questions."""
+study = "eval-suite-design"
+
+[[questions]]
+id = "ai-pass-at-k"
+q = "Explain pass@k versus pass^k. If an agent succeeds on a task 80% of the time per trial, what are pass@5 and pass^5, and which matters for a customer-facing agent?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "pass@k: at least one of k trials succeeds; measures whether the system can solve the task",
+  "pass^k: all k trials succeed; measures consistency",
+  "Computes pass@5 = 1 - 0.2^5, about 99.97%",
+  "Computes pass^5 = 0.8^5, about 32.8%",
+  "A customer-facing agent that must work every time should be judged by pass^k; pass@k suits cases where a human picks the best of several attempts",
+]
+answer = """- LLMs are non-deterministic, so each task is run k times.
+- **pass@k** = at least one of the k trials succeeds: can the system solve it at all?
+- **pass^k** = all k trials succeed: does it solve it every time?
+- With 80% per trial: pass@5 = 1 - 0.2^5 = 1 - 0.00032, about **99.97%**; pass^5 = 0.8^5, about **32.8%**.
+- The same agent looks nearly perfect on one measure and fails two times in three on the other.
+- A customer-facing agent gets one shot per customer, so judge it on pass^k (consistency). pass@k fits workflows where a human or a verifier picks the best of several attempts, like generating drafts or code with tests."""
+study = "pass-at-k"
+
+[[questions]]
+id = "ai-grader-types"
+q = "Compare code-based, model-based and human graders. When would you use each?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Code-based graders are deterministic checks (exact match, regex, schema, database state): fast, cheap, reproducible but rigid for subjective tasks",
+  "Model-based graders (LLM judge) use rubrics, assertions or pairwise comparison: flexible but inconsistent and biased",
+  "Human graders give expert judgment on hard or subjective cases but are slow, expensive and hard to scale",
+  "Use code wherever the outcome is checkable, models where judgment is needed, humans to calibrate both",
+  "Notes graders are complementary: one task can combine a code check and a model check",
+]
+answer = """- **Code-based:** exact match, regex, JSON schema, database or API state. Fast, cheap, reproducible; too rigid for open-ended text. Use them whenever the outcome is checkable, e.g. 'was a refund of the correct amount written?'
+- **Model-based (LLM judge):** rubric scoring, natural-language assertions ('the reply apologizes and gives a timeline'), pairwise A vs B, comparison to a reference answer. Flexible, but inconsistent and biased toward position, length or its own style.
+- **Human:** experts for subjective or high-stakes cases and for building gold labels. Most trusted, but slow and expensive.
+- Rule: code where possible, model where judgment is needed, humans to calibrate both.
+- They combine: one refund task can check the database row with code and the reply's tone with a judge."""
+study = "graders"
+
+[[questions]]
+id = "ai-should-not-refund"
+q = "Your refund agent scores 100% on its eval suite, but in production it issued refunds to customers who weren't eligible. What was wrong with the suite?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "The suite likely only had should-refund tasks, so an agent that refunds everyone scores perfectly (over-triggering is rewarded)",
+  "Adds should-not tasks: ineligible customers, amounts over the limit, missing information, ambiguous requests",
+  "Grades the actual outcome (refund records in the system), not what the agent said",
+  "Builds new tasks from the real production failures",
+  "Notes the fix also needs eligibility rules and limits enforced in code, not only better evals",
+]
+answer = """- The suite almost certainly tested only 'should refund' cases. An agent that refunds everyone passes all of them, so over-triggering was rewarded.
+- Add should-not tasks: ineligible orders, expired windows, amounts over the automation limit, requests missing an order number, and tricky or manipulative wording.
+- Grade the **outcome**: check the refund table or payment API state, not the agent's message saying what it did.
+- Turn each real production incident into a task so that exact failure is covered permanently.
+- Run several trials per task and require consistency (pass^k), since an agent that refunds wrongly 1 time in 10 is still a problem.
+- Evals detect the issue; prevention also needs eligibility checks and refund limits enforced in application code."""
+study = "eval-suite-design"
+
+[[questions]]
+id = "ai-llm-judge"
+q = "You want to use an LLM as a judge to score your assistant's answers. What are its failure modes, and how do you make it trustworthy?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Names biases: position bias, verbosity bias, self-preference for its own style or model family",
+  "Names inconsistency or leniency, especially with vague rubrics or 1-10 scales",
+  "Uses specific, ideally binary criteria and a structured verdict, with brief reasoning before the verdict",
+  "Calibrates against human labels: label a sample by hand, measure agreement, iterate on the rubric, re-check periodically",
+  "Mitigates position bias by swapping order in pairwise comparisons, supplies reference answers or context, and pins the judge model and prompt version",
+]
+answer = """- Failure modes: **position bias** (favouring the first or second answer), **verbosity bias** (longer looks better), **self-preference** (rating its own style or model family higher), and **noise and leniency** with vague rubrics or 1-10 scales.
+- Write specific criteria, ideally binary assertions ('cites the correct policy section', 'does not promise a delivery date'), and ask for brief reasoning before a structured verdict.
+- Give the judge what it needs: the reference answer or the retrieved context when judging correctness or faithfulness.
+- In pairwise comparisons, run both orders and count only consistent wins.
+- **Calibrate**: hand-label a sample, measure judge-human agreement, refine the rubric until agreement is acceptable, and re-check periodically and after changes.
+- Pin the judge model and prompt version; changing the judge shifts every score."""
+study = "llm-as-judge"
+
+[[questions]]
+id = "ai-offline-online"
+q = "What is the difference between offline and online evaluation for an LLM product, and how do they work together?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Offline evaluation runs a curated, fixed eval suite before deployment (e.g. in CI); reproducible and comparable",
+  "Online evaluation measures quality on real production traffic after deployment",
+  "Names online methods: sampled LLM-judge scoring of traces, explicit and implicit user feedback, A/B tests, canary or shadow deployments",
+  "Offline only covers what you anticipated; online finds unknown failures but is noisy, delayed and lacks labels",
+  "Closes the loop: failures found online become new offline eval tasks",
+]
+answer = """- **Offline:** run the eval suite on a curated, fixed dataset before deploying, typically in CI. Reproducible, comparable across versions, and able to block regressions, but it only covers what you thought to test.
+- **Online:** measure quality on real traffic after deploying: LLM-judge scoring on a sample of traces, thumbs and corrections, implicit signals (retries, escalations, abandonment), task completion, A/B tests on business metrics, canaries or shadow deployments.
+- Online reflects the real distribution and finds unknown failures, but it is noisy, delayed, mostly unlabelled, and users experience the failures first.
+- They form a loop: offline gates each change; online catches what slipped through; each confirmed online failure becomes a new offline task, so the suite grows from reality."""
+study = "online-evaluation"
+
+[[questions]]
+id = "ai-prompt-change-ci"
+q = "Last month a 'small' prompt tweak improved one use case but quietly broke another, and nobody noticed for two weeks. How do you stop this from happening again?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Versions prompts, models and retrieval settings like code, so every change goes through review",
+  "Runs the eval suite (regression plus capability tasks across all use cases) automatically in CI on every change",
+  "Compares results against a baseline and blocks the deploy when regression scores drop beyond a threshold",
+  "Runs multiple trials per task to separate real regressions from non-determinism noise",
+  "Adds online monitoring segmented by use case and prompt version, and turns the missed failure into new eval tasks",
+]
+answer = """- Treat prompts as code: version them in the repo with model and retrieval settings, so a change gets a diff, a review and a version id on every trace.
+- Run the eval suite in CI on every change, covering all use cases, not just the one being improved. Regression tasks protect existing behaviour.
+- Compare with the baseline from main and block the merge or deploy if any suite drops beyond a threshold; investigate before shipping.
+- Run several trials per task so a real regression isn't confused with non-deterministic noise.
+- After deploy, monitor online quality signals segmented by use case and prompt version, so a slice-level drop shows in days, not weeks.
+- Add the broken use case's examples to the regression suite."""
+study = "eval-suite-design"

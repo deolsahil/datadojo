@@ -1,0 +1,172 @@
+title = "SQL for Analysis"
+order = 1
+desc = "Joins and row counts, GROUP BY vs windows, ranking, dedup, cohorts, funnels and NULL traps."
+
+[[questions]]
+id = "sql-join-row-explosion"
+q = "You join an orders table to a customer_addresses table to add the shipping country, and total revenue jumps from 1.2M to 1.9M. What happened and how do you fix it?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Identifies fan-out: the join key is not unique on the addresses side (customers with several addresses), so order rows are duplicated",
+  "Says to verify by checking row counts before and after the join, or by grouping addresses by customer_id with HAVING COUNT(*) > 1",
+  "Fixes it by reducing the addresses table to one row per customer before joining (for example the current or default address, via ROW_NUMBER or a flag)",
+  "Mentions comparing the revenue total after the fix to the original 1.2M as a check",
+]
+answer = """- The join fanned out: some customers have more than one address row, so each of their orders appears once per address and revenue is summed several times.
+- Confirm it: compare `COUNT(*)` before and after the join, and run `SELECT customer_id, COUNT(*) FROM customer_addresses GROUP BY 1 HAVING COUNT(*) > 1`.
+- Fix it by getting the addresses side to one row per customer first: filter `is_default = true`, or keep the latest with `ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY updated_at DESC) = 1`. Better still, use the address stored on the order itself, since that was the real ship-to.
+- Re-run and check revenue is back to 1.2M and the row count matches the orders table.
+- Habit: know each table's grain before joining, and reconcile totals after every join."""
+study = "join-row-counts"
+
+[[questions]]
+id = "sql-groupby-vs-window"
+q = "What is the difference between GROUP BY and a window function? Give an example where you need a window function."
+level = "entry"
+kind = "concept"
+rubric = [
+  "GROUP BY collapses rows into one row per group; a window function computes across related rows but keeps every row",
+  "Describes OVER with PARTITION BY (and optionally ORDER BY) as defining the set of rows each row sees",
+  "Gives a valid window example such as each order's share of customer total, running total, rank within a group, or previous value with LAG",
+  "Notes window functions cannot be used directly in WHERE; filter in an outer query or with QUALIFY",
+]
+answer = """- `GROUP BY` collapses rows: one output row per group, and every non-grouped column must be aggregated.
+- A window function (`SUM(...) OVER (PARTITION BY ... ORDER BY ...)`) computes across a set of related rows but keeps each original row, attaching the result to it.
+- Example: show every order with its customer's total and share of it:
+```sql
+SELECT order_id, customer_id, amount,
+  amount / SUM(amount) OVER (PARTITION BY customer_id) AS share
+FROM orders;
+```
+- Other window uses: ranking within a group, running totals, moving averages, `LAG` for day-over-day change.
+- Windows run after `WHERE` and `GROUP BY`, so to filter on one (for example rank = 1) wrap it in a CTE or use `QUALIFY` where supported."""
+study = "group-by-vs-window"
+
+[[questions]]
+id = "sql-rank-functions"
+q = "Explain the difference between ROW_NUMBER, RANK and DENSE_RANK. Which would you use to get the top 3 products by sales in each category?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "ROW_NUMBER gives unique consecutive numbers even for ties",
+  "RANK gives ties the same number and leaves gaps (1, 1, 3)",
+  "DENSE_RANK gives ties the same number without gaps (1, 1, 2)",
+  "Uses PARTITION BY category ORDER BY sales DESC and filters rank <= 3 in an outer query",
+  "Explains the choice depends on ties: ROW_NUMBER for exactly 3 rows, RANK or DENSE_RANK to include tied products",
+]
+answer = """- `ROW_NUMBER`: 1, 2, 3 with no ties; tied rows get arbitrary order unless you add a tiebreaker.
+- `RANK`: ties share a number and the next rank is skipped: 1, 1, 3.
+- `DENSE_RANK`: ties share a number with no gap: 1, 1, 2.
+- Top 3 per category:
+```sql
+WITH r AS (
+  SELECT category, product, sales,
+    RANK() OVER (PARTITION BY category ORDER BY sales DESC) AS rk
+  FROM product_sales)
+SELECT * FROM r WHERE rk <= 3;
+```
+- Choice depends on ties: `ROW_NUMBER` (with a tiebreaker like product_id) if the report must show exactly 3 rows; `RANK` if a tie for 3rd should include both; `DENSE_RANK` if you want the top 3 distinct sales values."""
+study = "ranking-dedup"
+
+[[questions]]
+id = "sql-null-pitfalls"
+q = "A colleague's query uses WHERE customer_id NOT IN (SELECT customer_id FROM churned) and returns zero rows, though you know many customers have not churned. Why, and what other NULL traps should an analyst watch for?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Explains that if the subquery contains a NULL, NOT IN compares against NULL, the result is unknown for every row, so nothing is returned",
+  "Fixes with NOT EXISTS or a LEFT JOIN anti-join (WHERE right key IS NULL), or by filtering NULLs from the subquery",
+  "Names COUNT(*) vs COUNT(col), and that AVG/SUM ignore NULLs (with COALESCE changing the meaning)",
+  "Names the LEFT JOIN trap: a WHERE filter on the right table removes the NULL rows and turns it into an inner join",
+  "Mentions that = NULL is never true; use IS NULL / IS NOT NULL",
+]
+answer = """- `x NOT IN (a, b, NULL)` means `x <> a AND x <> b AND x <> NULL`. The last part is unknown, so the whole condition is never true and no rows come back.
+- Fix: `WHERE NOT EXISTS (SELECT 1 FROM churned c WHERE c.customer_id = o.customer_id)`, or a LEFT JOIN with `WHERE c.customer_id IS NULL`.
+- Other traps:
+- `col = NULL` is never true; use `IS NULL`. `status <> 'void'` also drops rows where status is NULL.
+- `COUNT(*)` counts rows, `COUNT(col)` skips NULLs; `AVG` averages only non-NULL values, while `AVG(COALESCE(x, 0))` answers a different question.
+- After a LEFT JOIN, filtering the right table in `WHERE` removes unmatched rows; put that filter in `ON`.
+- `SUM` over no rows returns NULL, not 0; wrap with `COALESCE` in reports."""
+study = "null-date-pitfalls"
+
+[[questions]]
+id = "sql-dedup-latest"
+q = "A subscriptions table receives a new row every time a user's plan changes, and sometimes the same event arrives twice. Write the approach to get each user's current plan."
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Uses ROW_NUMBER partitioned by user_id ordered by the change timestamp descending and keeps row number 1",
+  "Adds a deterministic tiebreaker (event id or ingestion time) for rows with the same timestamp",
+  "Explains why ROW_NUMBER, not RANK, is the right choice when exact duplicates exist",
+  "Mentions checking the result has exactly one row per user and handling cancelled or ended plans if 'current' means active",
+]
+answer = """- Rank each user's rows newest first and keep the top one:
+```sql
+WITH r AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY user_id
+    ORDER BY changed_at DESC, event_id DESC) AS rn
+  FROM subscriptions)
+SELECT * FROM r WHERE rn = 1;
+```
+- Use `ROW_NUMBER`, not `RANK`: duplicate events share the same timestamp, and `RANK` would give both rank 1 and keep two rows.
+- The tiebreaker (`event_id` or ingestion time) makes the result deterministic, so reruns pick the same row.
+- Check: `COUNT(*) = COUNT(DISTINCT user_id)` on the output.
+- Clarify what 'current' means: if the latest row is a cancellation, the user may have no active plan and should be excluded or flagged."""
+study = "ranking-dedup"
+
+[[questions]]
+id = "sql-cohort-retention"
+q = "How would you write a query for monthly cohort retention: of users who signed up in each month, what share were active 1, 2 and 3 months later?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Assigns each user a cohort month from their signup date (DATE_TRUNC to month)",
+  "Joins activity to users and computes months since cohort for each active month",
+  "Counts distinct active users per cohort and month offset, divided by cohort size",
+  "Defines what 'active' means and whether retention is classic (active in exactly month N) or unbounded",
+  "Notes that recent cohorts have incomplete months that should be blank, not zero",
+]
+answer = """- Cohort: `DATE_TRUNC('month', signup_date)` per user; cohort size = users in that cohort.
+- Activity: distinct (user, activity month) pairs; month offset = months between cohort month and activity month.
+```sql
+SELECT u.cohort, a.offset_m,
+  COUNT(DISTINCT a.user_id) * 1.0 / MAX(c.size) AS retention
+FROM users u
+JOIN activity_months a ON a.user_id = u.user_id
+JOIN cohort_sizes c ON c.cohort = u.cohort
+GROUP BY 1, 2;
+```
+- Define 'active' up front (login vs key action vs purchase); it drives the numbers.
+- This is classic retention (active in month N). Unbounded retention counts users active in month N or later; say which one you report.
+- Cohorts that have not reached month 3 yet must show blank cells, not 0 percent, or recent cohorts look terrible."""
+study = "cohort-retention-sql"
+
+[[questions]]
+id = "sql-funnel-query"
+q = "Product asks for conversion through view product, add to cart and purchase over the last 30 days. Your first query shows more purchases than add-to-carts. What went wrong and how would you build the funnel correctly?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Identifies counting events instead of distinct users, and not enforcing step order, as likely causes",
+  "Notes users can purchase without the tracked add-to-cart (buy now button, reorders, missing tracking)",
+  "Builds per-user first timestamps per step and requires each step to occur after the previous one",
+  "Reports both step-to-step conversion and overall conversion",
+  "Defines a conversion window (for example purchase within 7 days of view)",
+]
+answer = """- Likely causes: counting events rather than distinct users (one user, many purchases), no ordering between steps, and real paths that skip the cart (buy-now, reorder) or a tracking gap on the cart event.
+- Build it per user: first time each step happened, then require order and a window.
+```sql
+WITH s AS (SELECT user_id,
+  MIN(CASE WHEN event='view' THEN ts END) AS v,
+  MIN(CASE WHEN event='cart' THEN ts END) AS c,
+  MIN(CASE WHEN event='purchase' THEN ts END) AS p
+  FROM events WHERE ts >= CURRENT_DATE - 30 GROUP BY user_id)
+SELECT COUNT(v), COUNT(CASE WHEN c > v THEN 1 END),
+  COUNT(CASE WHEN p > c AND c > v AND p <= v + INTERVAL '7 days' THEN 1 END)
+FROM s;
+```
+- Report step conversion (cart to purchase) to locate the leak and overall view-to-purchase for impact.
+- Report the skip-the-cart purchases separately rather than dropping them silently."""
+study = "funnel-sql"

@@ -1,0 +1,59 @@
+title = "Caching: Making AI Faster and Cheaper"
+section = "ai-systems"
+order = 6
+kind = "lesson"
+difficulty = "medium"
+big_idea = "LLM calls are slow and expensive, so cache repeated work at every layer, and design invalidation first, because a stale or wrongly scoped cache is a correctness and security bug."
+summary = """Every LLM call costs money and seconds, and a RAG request may also embed the query, search an index and call external APIs. Much of that work repeats: the same documents are re-embedded, popular questions are asked hundreds of times, tool results don't change minute to minute.
+
+**Caching** avoids repeating that work, and it can cut latency and cost dramatically. The hard part isn't *"can we cache this?"* but *"when does the cached value become invalid?"*"""
+diagram = """flowchart TD
+  C[Cache] --> E[Embeddings] & R[Retrieval] & S[Responses]
+  S --> A[API results]"""
+
+[[blocks]]
+heading = "Different caching layers"
+body = """- **Exact caching:** same request → reuse the response. Key on a hash of everything that affects the output: prompt, model, parameters, retrieved context, user permissions.
+- **Semantic caching:** different wording, same intent ("reset my password" / "how do I change my password?") → potentially reuse the response, found by embedding similarity above a threshold. Powerful, but a too-loose threshold returns the wrong answer.
+- **Embedding caching:** don't regenerate embeddings for unchanged documents; key by content hash.
+- **Retrieval caching:** reuse retrieved documents for repeated queries, until the index changes.
+- **API caching:** reuse external results when freshness allows it (exchange rates for an hour, a product description for a day).
+- **Provider prompt caching:** many LLM APIs cache a long, repeated prompt prefix (system prompt, documents), making repeated calls cheaper and faster. Put stable content first and variable content last."""
+
+[[blocks]]
+heading = "The hard part: invalidation"
+body = """- **Time-based (TTL):** simple, but serves stale data until it expires.
+- **Event-based:** invalidate when the source changes (document re-indexed, price updated).
+- **Version keys:** include model, prompt and index versions in the key, so a deploy automatically misses old entries.
+
+Stale or incorrectly **scoped** caches create correctness and even **security** problems: if the key doesn't include the user or tenant, one user can be served another user's personalized or confidential answer."""
+
+key_points = [
+  "Cache embeddings, retrieval, responses and API results; each layer saves different cost.",
+  "Exact cache = same request; semantic cache = same intent (needs a careful similarity threshold).",
+  "The key question is invalidation: TTL, event-based, or version keys.",
+  "Scope cache keys by user/tenant/permissions, or you leak data.",
+]
+common_mistakes = [
+  "Semantic cache threshold too loose, returning answers to a different question.",
+  "Cache key missing the user or tenant, leaking personalized answers.",
+  "Not including prompt/model version in the key, serving old behavior after a deploy.",
+  "Caching time-sensitive answers without a TTL.",
+]
+interview_questions = [
+  "Where would you add caching to a RAG chatbot, and how would you invalidate each layer?",
+  "What are the risks of semantic caching?",
+  "How can a cache become a security problem in a multi-tenant AI app?",
+]
+
+[[quiz]]
+q = "What is the main risk of a semantic cache with a low similarity threshold?"
+options = ["Higher cost", "Answering a different question with a cached answer", "Slower embeddings", "More tokens"]
+answer = 1
+why = "Queries that look similar but mean different things get the wrong cached response."
+
+[[quiz]]
+q = "In a multi-tenant app, what must the response-cache key include?"
+options = ["Only the prompt text", "The tenant/user scope and permissions", "The timestamp", "Nothing, hashing is enough"]
+answer = 1
+why = "Without tenant/user scope, one customer can be served another's cached answer."

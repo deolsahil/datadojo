@@ -1,0 +1,143 @@
+title = "ML Fundamentals"
+order = 1
+desc = "Bias-variance, regularization, splits and cross-validation, class imbalance, gradient descent and scaling."
+
+[[questions]]
+id = "ml-bias-variance"
+q = "Explain the bias-variance trade-off. How would you tell which one is hurting your model?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Defines bias as error from a model too simple to capture the pattern (underfitting)",
+  "Defines variance as error from a model too sensitive to the training data (overfitting)",
+  "Diagnoses by comparing training and validation error: both high means bias, low train but high validation means variance",
+  "Gives a fix for each: more capacity or features for bias; more data, regularization or a simpler model for variance",
+  "Mentions that more complexity usually lowers bias but raises variance, so you look for the best balance",
+]
+answer = """- **Bias**: the model is too simple to capture the real pattern, so it is wrong in a consistent way (underfitting).
+- **Variance**: the model is so flexible it fits noise in the training data, so predictions change a lot with different training samples (overfitting).
+- Adding complexity lowers bias and raises variance; the goal is the complexity with the lowest validation error.
+- **Diagnose** with train vs validation error: both high means high bias; low train error with much higher validation error means high variance.
+- **Fix bias**: bigger model, better features, less regularization.
+- **Fix variance**: more data, regularization, early stopping, simpler model, feature selection. A learning curve shows whether more data would still help."""
+study = "bias-variance"
+
+[[questions]]
+id = "ml-l1-vs-l2"
+q = "What is the difference between L1 and L2 regularization, and when would you choose each?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "L1 adds the sum of absolute weights to the loss; L2 adds the sum of squared weights",
+  "L1 drives many weights to exactly zero, so it performs feature selection",
+  "L2 shrinks weights smoothly toward zero without zeroing them and handles correlated features more gracefully",
+  "The penalty strength is a hyperparameter tuned on validation data",
+  "Notes features should be scaled first, or mentions Elastic Net as a mix of both",
+]
+answer = """- Both add a penalty on weight size to the loss so the model prefers simpler solutions and overfits less.
+- **L1 (Lasso)** adds lambda x sum of absolute weights. It pushes many weights to exactly zero, so it acts as feature selection. Pick it when you suspect only a few of many features matter.
+- **L2 (Ridge, weight decay)** adds lambda x sum of squared weights. It shrinks all weights smoothly but rarely to zero, and spreads weight across correlated features instead of picking one arbitrarily. A good default.
+- **Elastic Net** combines both when you want sparsity with correlated features.
+- Tune lambda on validation data or with cross-validation.
+- Standardize features first: the penalty treats all weights equally, so unscaled features get penalized unfairly."""
+study = "regularization"
+
+[[questions]]
+id = "ml-overfit-gbm"
+q = "Your gradient-boosted model has 0.99 AUC on training data and 0.71 on validation. Walk me through what you would check and change."
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Identifies overfitting (high variance) from the large train-validation gap",
+  "First rules out problems with the split itself, such as leakage into training or different distributions between train and validation",
+  "Proposes tree-specific regularization: shallower trees, fewer trees or lower learning rate, min samples per leaf, row and column subsampling",
+  "Uses early stopping on the validation set to pick the number of trees",
+  "Considers more data or removing noisy or ID-like high-cardinality features the model can memorize",
+]
+answer = """- A 0.99 vs 0.71 gap is classic **overfitting**: the trees memorize training rows.
+- First sanity-check the split: are train and validation from the same distribution, is it time-based if it should be, does the same user appear in both, does any feature exist only in training?
+- Look at feature importance for **ID-like or high-cardinality features** (user_id, timestamps, free-text hashes) that let trees memorize; drop or aggregate them.
+- Regularize the boosting: lower `max_depth` (e.g. 4-6), raise `min_child_weight` or `min_data_in_leaf`, add `subsample` and `colsample_bytree` around 0.7-0.8, lower learning rate.
+- Use **early stopping** on validation (e.g. stop after 50 rounds without improvement) instead of a fixed large tree count.
+- If it still overfits, get more labeled data or simplify features, then confirm the fix on an untouched test set."""
+study = "bias-variance"
+
+[[questions]]
+id = "ml-train-val-test"
+q = "Why do we split data into train, validation and test sets? What goes wrong if you only use two?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Train set is for fitting weights, validation for choosing hyperparameters and features, test for a final unbiased estimate",
+  "Explains that tuning on a set leaks information into the model choice, so that set's score becomes optimistic",
+  "States the test set should be used once at the end, not repeatedly",
+  "Mentions cross-validation as an alternative when data is small",
+  "Notes splits must respect time or entity grouping when relevant",
+]
+answer = """- **Train**: the model learns its weights here.
+- **Validation**: you compare models, hyperparameters and feature sets here.
+- **Test**: held back and used once at the end to estimate how the chosen model does on new data.
+- With only train and test, you tune on the test set. Each choice you make by looking at it leaks a little information, so the final number is **optimistically biased** and you no longer have an honest estimate.
+- If data is small, use **k-fold cross-validation** on the training data for tuning and still keep a final test set.
+- The split must match reality: split **by time** if you predict the future, and **by entity** (user, patient) so the same entity is not in train and test."""
+study = "data-splits"
+
+[[questions]]
+id = "ml-time-series-cv"
+q = "You are building a weekly demand forecast. A colleague used random 5-fold cross-validation and reports great results. What is the problem and what would you do instead?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Random folds put future rows in training while validating on past rows, which leaks future information",
+  "Lag and rolling features computed across the boundary also leak, making scores optimistic",
+  "Proposes a time-based scheme: forward-chaining or rolling-origin validation where training always precedes validation",
+  "Mentions a gap between train and validation windows to match the forecast horizon or label delay",
+  "Expects the honest score to be lower and closer to production performance",
+]
+answer = """- Random folds mix weeks, so the model trains on week 30 and is validated on week 20. It effectively sees the future, and neighbouring weeks are highly correlated, so the score is **inflated**.
+- Lag and rolling-window features computed over the whole series also leak across fold boundaries.
+- Use **forward-chaining (rolling-origin) validation**: train on weeks 1-40, validate on 41-44; train on 1-44, validate on 45-48; and so on. Training always comes before validation.
+- Leave a **gap** equal to the real forecast horizon (if you forecast 2 weeks ahead, skip 2 weeks), and compute features only from data available at each cutoff.
+- Report the average and spread across folds, and compare to a naive baseline such as same week last year.
+- Expect a lower but honest number that matches what production will see."""
+study = "data-splits"
+
+[[questions]]
+id = "ml-class-imbalance"
+q = "Your fraud model reports 99.9 percent accuracy, but fraud is only 0.1 percent of transactions. What is going on, and how would you handle the imbalance?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Points out that predicting 'not fraud' for everything already gets 99.9 percent accuracy, so accuracy is meaningless here",
+  "Switches to precision, recall, F1 or PR-AUC",
+  "Suggests class weights or resampling (undersample majority, oversample or SMOTE minority) on the training data only",
+  "Keeps validation and test sets at the real class ratio",
+  "Chooses the decision threshold based on business cost rather than 0.5",
+]
+answer = """- A model that always says 'not fraud' scores 99.9 percent accuracy and catches nothing, so accuracy tells us nothing here.
+- Measure with the **confusion matrix, precision, recall and PR-AUC**, and report recall at the false-positive rate the business can tolerate.
+- Make errors on the rare class cost more: **class weights** (`scale_pos_weight` in XGBoost) are the cheapest first step.
+- Or **resample** the training split: undersample legitimate transactions or oversample fraud (SMOTE). Never resample validation or test; they must keep the real 0.1 percent ratio.
+- Weighting and resampling distort probabilities, so recalibrate if scores feed cost calculations.
+- Pick the threshold from costs and review capacity, not 0.5."""
+study = "class-imbalance"
+
+[[questions]]
+id = "ml-feature-scaling"
+q = "Why do we scale features, and which models need it and which do not?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Scaling puts features on comparable ranges, such as standardization (zero mean, unit variance) or min-max",
+  "Gradient-based models converge faster and more stably with scaled features",
+  "Distance-based models (kNN, k-means, SVM) and regularized linear models need it so large-range features do not dominate",
+  "Tree-based models do not need scaling because splits depend only on value order",
+  "Fit the scaler on training data only and reuse it at serving to avoid leakage and skew",
+]
+answer = """- Scaling puts features on similar ranges: **standardization** (subtract mean, divide by standard deviation) or **min-max** to 0-1.
+- **Gradient descent** converges faster and more stably: unscaled features make the loss surface a long narrow valley, forcing a tiny learning rate.
+- **Distance-based models** (kNN, k-means, SVM) need it, otherwise income in dollars swamps age in years.
+- **Regularized linear models** need it so the penalty treats each weight fairly.
+- **Tree models** (random forest, XGBoost, LightGBM) do not: a split on a scaled feature lands in the same place.
+- Fit the scaler on **training data only**, save it with the model and apply the same one at serving; fitting on all data leaks test statistics, and refitting at serving causes skew."""
+study = "gradient-descent"

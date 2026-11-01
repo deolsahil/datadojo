@@ -8,7 +8,7 @@ Linux  -> dist/release/DataDojo-Linux-x64.tar.gz    (extract, run ./DataDojo/Dat
 PySpark is deliberately not bundled (~320 MB); the app installs it on first use.
 Unsigned: see README for the one-time "Open Anyway" / "Run anyway" step.
 """
-import platform, shutil, subprocess, sys
+import platform, plistlib, shutil, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,13 +28,25 @@ def pyinstaller():
         "--collect-submodules", "sqlglot", "--collect-all", "psycopg_binary",
         "--hidden-import", "duckdb", "--hidden-import", "psycopg",
         "--add-data", f"{ROOT / 'datadojo' / 'runner.py'}{sep}datadojo",
+        "--add-data", f"{ROOT / 'datadojo' / 'whisper_worker.py'}{sep}datadojo",  # run by the whisper env, not imported
         "--exclude-module", "pyspark", "--exclude-module", "py4j", "--exclude-module", "tkinter",
         str(ROOT / "packaging" / "launch.py"),
     ]
     subprocess.run(args, check=True)
 
 
+def mac_mic_permission():
+    """Interview answers can be spoken: macOS only shows the microphone prompt if Info.plist says why."""
+    app = DIST / "DataDojo.app"
+    info = app / "Contents" / "Info.plist"
+    d = plistlib.loads(info.read_bytes())
+    d["NSMicrophoneUsageDescription"] = "DataDojo records your spoken interview answers and transcribes them on this computer."
+    info.write_bytes(plistlib.dumps(d))
+    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)  # editing Info.plist breaks the ad-hoc signature
+
+
 def mac_dmg():
+    mac_mic_permission()
     arch = "arm64" if platform.machine() == "arm64" else "x64"
     stage = BUILD / "dmg"
     shutil.rmtree(stage, ignore_errors=True)

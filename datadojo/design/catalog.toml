@@ -1,6 +1,12 @@
 # Data System Design course: sections in display order. Every lesson's `section` must be one of these ids.
 
 [[sections]]
+id = "ai-systems"
+group = "AI Systems"
+title = "AI System Design"
+desc = "Production GenAI: RAG, fine-tuning, evals, observability, caching, feedback loops and guardrails"
+
+[[sections]]
 id = "ds-foundations"
 group = "Foundations"
 title = "Data Engineering Fundamentals"

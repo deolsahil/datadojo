@@ -1,0 +1,158 @@
+title = "Experimentation"
+order = 4
+desc = "A/B test design, randomization units, power and MDE, peeking, novelty, multiple testing, SRM, quasi-experiments."
+
+[[questions]]
+id = "exp-ab-basics"
+q = "What is an A/B test and why is randomization so important? What do you decide before launching one?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Users are randomly split into control (current) and treatment (change) and outcomes are compared",
+  "Randomization makes the groups comparable on everything else, so the difference can be attributed to the change (causation, not just correlation)",
+  "Before launch: a hypothesis and one primary metric, plus guardrail metrics",
+  "Before launch: sample size or duration from a minimum detectable effect, run for full weeks",
+  "Mentions not stopping early when results look good, or deciding the analysis plan in advance",
+]
+answer = """- An A/B test randomly assigns users to control (current experience) or treatment (the change) and compares a metric between them.
+- Randomization balances everything else (device, intent, season, motivation) across groups, so a difference in outcome is caused by the change, not by who ended up in each group.
+- Before launch, write the hypothesis ('a shorter form will raise signup completion because fewer fields means less effort'), one primary metric, and guardrails (signup quality, error rate).
+- Compute sample size from the baseline rate and the smallest effect worth detecting, and run at least one or two full weeks.
+- Fix the analysis plan in advance and do not stop the moment it looks significant."""
+study = "ab-test-design"
+
+[[questions]]
+id = "exp-sample-size"
+q = "A PM wants to A/B test a new checkout page. Baseline conversion is 10 percent. What determines how many users you need, and roughly how many is it to detect a 1 percentage point lift?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Names the inputs: significance level (alpha), power, baseline rate or variance, and minimum detectable effect",
+  "Uses a reasonable calculation: about 16 x p(1-p) / MDE squared per group, roughly 14,000 to 15,000 users per group for this case",
+  "Explains smaller MDEs need much more data (halving MDE needs about 4x the users)",
+  "Converts sample size to duration using eligible traffic, rounding up to full weeks",
+  "Mentions low power consequences (missed effects, exaggerated winners) or ways to reduce required size (CUPED, more sensitive metric)",
+]
+answer = """- Inputs: alpha (false positive rate, usually 0.05), power (chance of catching a true effect, usually 0.8), the metric's variance (for a rate, p(1-p)), and the MDE, the smallest lift worth detecting.
+- Rule of thumb for alpha 0.05 and power 0.8: n per group is about 16 x variance / MDE squared.
+- Here: 16 x 0.1 x 0.9 / 0.01^2 = 14,400 users per group, roughly 29,000 total.
+- MDE drives it hard: detecting 0.5 points instead needs about 4x the users.
+- Duration: divide by eligible checkout visitors per day and round up to full weeks to cover weekday cycles.
+- Underpowered tests miss real effects and overstate the ones they find. To need fewer users: CUPED, a more sensitive metric, or analysing only users who reached checkout."""
+study = "sample-size-power-mde"
+
+[[questions]]
+id = "exp-peeking"
+q = "Three days into a planned two-week test, the PM sees p = 0.03 on the dashboard and wants to ship now. What do you tell them?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Explains peeking: checking repeatedly and stopping at the first significant result inflates the false positive rate well above 5 percent",
+  "Notes early results are noisy and effects often shrink (regression to the mean, novelty)",
+  "Notes three days misses a full weekly cycle so the sample is not representative",
+  "Recommends running to the planned sample size, or using a sequential testing method designed for early stopping",
+  "Distinguishes stopping early for harm (guardrail breach) as acceptable",
+]
+answer = """- p = 0.03 on day 3 is not the same as p = 0.03 at the planned end. A fixed-horizon test assumes one look; checking daily and stopping on the first significant result can push the real false positive rate several times above 5 percent.
+- Early effects are noisy and tend to shrink: lucky streaks regress, and novelty boosts fade.
+- Three days misses weekend behaviour, so the users so far are not representative of a full week.
+- Recommendation: run to the planned two weeks and decide then. If the team needs early decisions routinely, set up sequential testing (group sequential bounds or always-valid p-values) before the test starts.
+- Stopping early is fine for harm: if a guardrail like crash rate or revenue breaks, kill it."""
+study = "peeking-novelty"
+
+[[questions]]
+id = "exp-novelty-effect"
+q = "A redesigned home feed showed a 6 percent engagement lift in week one, 3 percent in week two and 1 percent in week three. How do you interpret this and what would you recommend?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Identifies a likely novelty effect: users engage with something because it is new, and it fades",
+  "Proposes checking returning vs new users: novelty should affect existing users, while new users show the steady-state effect",
+  "Suggests plotting the daily treatment effect and running longer until it stabilizes",
+  "Mentions alternatives to rule out: a seasonal event early on, an underpowered early estimate, or primacy/learning effects",
+  "Recommends deciding on the stable long-run effect (later weeks or a long-term holdout), not the average including week one",
+]
+answer = """- A shrinking lift looks like a **novelty effect**: existing users click around the new feed because it is new, then return to their habits.
+- Test the idea: split by new vs returning users. New users have no old habit, so their lift approximates the long-run effect. If returning users drive the decay, it is novelty.
+- Plot the daily effect and keep running until it flattens; judge on the stable later weeks, not the blended three-week average that week one inflates.
+- Rule out other causes: a holiday or campaign in week one, or simply noisy early estimates.
+- The opposite pattern (starts negative, recovers) would be change aversion.
+- If the steady effect is about 1 percent and still positive with guardrails fine, ship but size expectations to 1 percent; keep a small long-term holdout to confirm months later."""
+study = "peeking-novelty"
+
+[[questions]]
+id = "exp-srm"
+q = "Your 50/50 experiment has 1,000,000 users: 505,000 in control and 495,000 in treatment. The treatment shows a significant lift. Do you trust it?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Identifies sample ratio mismatch: the split is far outside chance (about 10 standard deviations; chi-square p-value tiny)",
+  "States the results cannot be trusted until SRM is explained, because the missing users are probably not random",
+  "Lists plausible causes: treatment crashes or loads slower so fewer users are logged, bot filtering, redirect loss, assignment bugs, trigger conditions",
+  "Describes investigating by segment (platform, browser, day) to find where the imbalance appears",
+  "Says to fix the root cause and rerun, rather than reweighting the groups",
+]
+answer = """- No. This is a sample ratio mismatch. With 1M users at 50/50, the standard deviation of the control count is sqrt(1,000,000 x 0.25) = 500; being 5,000 off is about 10 standard deviations, and a chi-square test gives a vanishingly small p-value.
+- SRM means users went missing unevenly, and they are rarely random: if the treatment crashes on old Android phones, the least engaged users drop out of treatment and the lift is inflated.
+- Likely causes: the treatment page is slower or crashes before the logging event fires, bots filtered differently, redirect-based variants losing users, assignment or ramp bugs, triggers that depend on the treatment.
+- Investigate by slicing the ratio by platform, browser, app version, country and day to see where the gap appears.
+- Fix the cause and rerun. Reweighting does not remove the bias, because the missing users differ in unknown ways."""
+study = "sample-ratio-mismatch"
+
+[[questions]]
+id = "exp-multiple-testing"
+q = "An experiment scorecard tracks 25 metrics across 6 segments. Two metrics in one segment are significant at p below 0.05. How do you treat that result?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Explains that with many comparisons some false positives are expected (with 20 tests at 0.05, about a 64 percent chance of at least one)",
+  "Says the decision should rest on the pre-registered primary metric, not post-hoc segment wins",
+  "Names a correction: Bonferroni (alpha / m) for family-wise error or Benjamini-Hochberg for false discovery rate",
+  "Treats the segment finding as a hypothesis to confirm in a follow-up test",
+  "Notes Bonferroni is conservative and reduces power",
+]
+answer = """- 25 metrics x 6 segments is 150 comparisons. At alpha 0.05 you expect about 7 false positives with no real effect at all, so two hits in one segment is consistent with noise.
+- The ship decision should rest on the primary metric named before the test (plus guardrails), not on whatever looks good afterwards.
+- If you want to read many metrics, correct for it: Bonferroni (alpha / number of tests) controls the chance of any false positive but is very strict and costs power; Benjamini-Hochberg controls the false discovery rate and suits exploratory scorecards.
+- Treat the segment result as a hypothesis: is there a plausible reason this segment would react differently? If so, run a confirmatory test targeting it with that metric as primary.
+- Prevent it next time: pre-register metrics and planned segments."""
+study = "multiple-testing"
+
+[[questions]]
+id = "exp-randomization-unit"
+q = "You are testing a new pricing algorithm on a ride-sharing marketplace. Why might randomizing by user give a misleading answer, and what would you do instead?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Explains interference: treatment and control share the same drivers (supply), violating independence (SUTVA)",
+  "Gives the direction of bias: treated riders taking or freeing up drivers changes control's experience, so the measured difference is inflated or distorted",
+  "Proposes cluster randomization by city or region, or switchback tests alternating treatment over time windows within a market",
+  "Notes the cost: fewer, larger units mean lower power and wider intervals",
+  "Mentions the analysis unit must match the randomization unit (or correct variance with delta method / clustered errors)",
+]
+answer = """- User-level randomization assumes one user's outcome does not depend on others' assignment. In a marketplace, treatment and control riders compete for the same drivers.
+- If lower treatment prices make treated riders book more, they absorb drivers, so control riders see longer waits and book less. The gap between arms overstates what would happen if everyone got the new pricing.
+- Instead randomize at a level where the interference is contained: whole cities or regions (geo experiments), or **switchbacks**, flipping a market between control and treatment in time windows (for example every 30 to 60 minutes) and comparing windows.
+- Cost: far fewer units, so power drops; you need more time, careful matching of regions, and buffer periods between switchback windows.
+- Analyse at the randomization unit (city-hour, region), or use clustered standard errors."""
+study = "randomization-unit"
+
+[[questions]]
+id = "exp-cant-ab-test"
+q = "Leadership launched a loyalty program in one country with no A/B test and asks you whether it increased purchases. How would you estimate the impact?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Names a quasi-experimental method, most naturally difference-in-differences against comparable countries without the program",
+  "States the key assumption (parallel trends) and checks it with pre-launch data",
+  "Mentions alternatives such as synthetic control or interrupted time series",
+  "Lists threats: other changes at the same time, spillover, seasonality differences between countries",
+  "Recommends a robustness or placebo check and communicates the result with its uncertainty and assumptions",
+]
+answer = """- With no randomization, build a comparison: **difference-in-differences**. Compare purchases per customer before and after launch in the launch country with the same change in similar countries without the program; the difference between those changes is the estimate.
+- Key assumption: parallel trends. Plot both groups for several months before launch; they should move together.
+- If no single country matches well, use **synthetic control**: a weighted blend of countries that tracks the launch country before launch.
+- Threats: other launches or promotions at the same time, currency or holiday differences, customers shifting purchases into the program window (pull-forward).
+- Robustness: placebo tests on a fake launch date or on untreated countries should show no effect.
+- Report it as an estimate with a range and stated assumptions, and suggest a holdout group for the next market."""
+study = "quasi-experiments"

@@ -2,8 +2,9 @@
 
 **Practice SQL, Python and PySpark like it's the real interview, with friendly AI coaches.**
 
-DataDojo runs entirely on your own computer: 234 coding problems graded by real engines, a
-Data System Design course with 32 lessons and case studies, brain games, streaks and a heatmap.
+DataDojo runs entirely on your own computer: 234 coding problems graded by real engines, mock interviews
+for Data Engineer, AI Engineer, ML Engineer and Data Analyst roles that you can answer out loud, a System Design
+course (data systems and production AI, 40 lessons and case studies), brain games, streaks and a heatmap.
 Coaches (Sensei, Duck, Pip and Sparky) give hints instead of answers, powered by your own API key
 (Claude, OpenAI or Gemini) or a free local model through Ollama.
 
@@ -45,6 +46,7 @@ Update later with `uv tool upgrade datadojo`.
 | PySpark problems | Java 11 or 17 | e.g. `brew install openjdk@17`, or any JDK on your `PATH` / `JAVA_HOME` |
 | Local AI coach | [Ollama](https://ollama.com/download) | setup offers Gemma 2 in 2B / 9B / 27B and downloads it for you |
 | Real PostgreSQL engine | PostgreSQL 14+ (`pg_ctl`, `initdb` on `PATH`) | DataDojo runs its own private instance; your databases are never touched |
+| Spoken interview answers | nothing | the Interview page offers a one-time ~300 MB download of local Whisper speech-to-text |
 
 SQL on DuckDB, SQLite and emulated dialects, and all Python problems, need nothing extra.
 
@@ -55,6 +57,7 @@ SQL on DuckDB, SQLite and emulated dialects, and all Python problems, need nothi
   (`~/Library/Application Support/DataDojo` on macOS, `%APPDATA%\DataDojo` on Windows,
   `~/.local/share/datadojo` on Linux; override with `DATADOJO_HOME`). The settings file is readable only by you.
 - An API key is sent only to the provider it belongs to. With Ollama, nothing leaves your machine.
+- Spoken interview answers are transcribed on your computer (Whisper); the audio is never uploaded or kept.
 - Reviews and mistake reports are saved locally; you can optionally send them to this repo as a GitHub issue.
 - The editor, fonts and diagrams load from public CDNs, so an internet connection makes things look their best.
 
@@ -65,8 +68,12 @@ SQL on DuckDB, SQLite and emulated dialects, and all Python problems, need nothi
 - **Any engine:** DuckDB, SQLite, PostgreSQL, Spark SQL, and MySQL / Snowflake / BigQuery / SQL Server /
   Oracle / Redshift syntax (translated with sqlglot); Python 3.10 to 3.15; PySpark 3.4 to 4.x.
 - **Coaching workspace:** six-stage coach chat, timer, hints, submissions, and "Report a mistake" on every problem.
-- **Data System Design:** fundamentals, modeling, reliability, building blocks and 12 full case studies, with
-  diagrams, quizzes and a coach that has read the page.
+- **Interview practice:** mock interviews and topic drills for Data Engineer, AI Engineer, ML Engineer and Data
+  Analyst at entry, mid or senior level. Speak or type; each answer is graded point by point against a rubric, with
+  what to improve, delivery feedback and a suggested answer, a report at the end, and a cheatsheet per role.
+- **System Design:** AI system design (RAG, fine-tuning, evals, observability, caching, feedback loops, guardrails),
+  plus data fundamentals, modeling, reliability, building blocks and 12 full case studies, with diagrams, quizzes
+  and a coach that has read the page.
 - **Brain games:** Guess the Output, Join Size, Spot the Bug, Big-O Sprint.
 - Midnight (dark) and Sakura (light) themes, following your system setting.
 
@@ -154,6 +161,14 @@ options = ["A", "B", "C", "D"]
 answer = 1
 why = "Why B is right."
 ```
+
+### Interview tracks
+
+`datadojo/interview/catalog.toml` lists the tracks. Each `datadojo/interview/<track>/` has one TOML file per topic
+(`title`, `order`, `desc` and `[[questions]]` with `id`, `q`, `level` entry/mid/senior, `kind`
+concept/scenario/design/behavioral, a 3-7 point `rubric`, a model `answer` and a `study` link) plus `cheatsheet.toml`
+(`[[sections]]` with `id`, `group`, `title`, `plain` and optional `how`, `uses`, `picture`, `body`, `diagram`).
+The coach model judges each rubric point; the score is computed from those verdicts.
 
 ### Brain games
 

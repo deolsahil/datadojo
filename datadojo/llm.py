@@ -62,7 +62,7 @@ def _http(url, body=None, headers=None, timeout=180):
         return json.load(r)
 
 
-def _anthropic(s, system, messages):
+def _anthropic(s, system, messages, json_mode=False):  # Claude follows "reply with only JSON" reliably
     import anthropic
     client = anthropic.Anthropic(api_key=s["api_key"] or None)  # None: SDK falls back to env / `ant auth login`
     extra = {} if s["model"].startswith("claude-haiku") else {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
@@ -73,35 +73,42 @@ def _anthropic(s, system, messages):
     return "".join(b.text for b in resp.content if b.type == "text")
 
 
-def _openai(s, system, messages):
+def _openai(s, system, messages, json_mode=False):
     r = _http("https://api.openai.com/v1/chat/completions",
-              {"model": s["model"], "messages": [{"role": "system", "content": system}] + messages},
+              {"model": s["model"], "messages": [{"role": "system", "content": system}] + messages}
+              | ({"response_format": {"type": "json_object"}} if json_mode else {}),
               {"Authorization": f"Bearer {s['api_key']}"})
     return r["choices"][0]["message"]["content"]
 
 
-def _gemini(s, system, messages):
+def _gemini(s, system, messages, json_mode=False):
     r = _http(f"https://generativelanguage.googleapis.com/v1beta/models/{s['model']}:generateContent",
               {"systemInstruction": {"parts": [{"text": system}]},
                "contents": [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
-                            for m in messages]},
+                            for m in messages]}
+              | ({"generationConfig": {"responseMimeType": "application/json"}} if json_mode else {}),
               {"x-goog-api-key": s["api_key"]})
     return "".join(p.get("text", "") for p in r["candidates"][0]["content"]["parts"])
 
 
-def _ollama(s, system, messages):
+def _ollama(s, system, messages, json_mode=False):
     r = _http(f"{OLLAMA}/api/chat", {"model": s["model"], "stream": False,
-                                     "messages": [{"role": "system", "content": system}] + messages})
+                                     "messages": [{"role": "system", "content": system}] + messages}
+              | ({"format": "json"} if json_mode else {}))
     return r["message"]["content"]
 
 
-def chat(system, messages):
+def chat(system, messages, strict=False, json_mode=False):
+    """strict=True raises instead of returning the friendly error text (for replies we cache).
+    json_mode=True asks the provider to emit valid JSON (local models otherwise break it now and then)."""
     s = load()
     messages = [m for m in messages[-12:] if m.get("content")]
     try:
         fn = {"anthropic": _anthropic, "openai": _openai, "gemini": _gemini}.get(s["provider"], _ollama)
-        return fn(s, system, messages)
+        return fn(s, system, messages, json_mode)
     except Exception as e:  # coaching is best-effort; the page tells the learner how to fix it
+        if strict:
+            raise
         where = PROVIDERS.get(s["provider"], {}).get("title", "Ollama")
         return f"I can't reach my brain right now ({where}: {_reason(e)}). Open **Coach setup** from your profile to fix it."
 

@@ -1,0 +1,232 @@
+title = "Streaming"
+order = 5
+desc = "Structured Streaming, triggers, checkpoints, watermarks, joins, exactly-once, Kafka and CDC."
+
+[[questions]]
+id = "stream-structured-microbatch"
+q = "How does Spark Structured Streaming work? What is the micro-batch model?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "A stream is treated as an unbounded table; you write the same DataFrame/SQL logic as for batch",
+  "By default the engine runs micro-batches: each one reads new data since the last offsets and processes it",
+  "Progress (offsets) and state are stored in a checkpoint so the query can resume after failure",
+  "Notes DStreams (old Spark Streaming) are legacy and Structured Streaming is the current API",
+]
+answer = """- Structured Streaming treats a stream as a table that keeps growing. I write normal DataFrame or SQL logic with `readStream` and `writeStream`, and Spark runs it incrementally.
+- In the default **micro-batch** mode, each batch finds new data since the last recorded offsets (new Kafka messages, new files), processes it, writes results to the sink, and records the batch as committed.
+- Offsets, the commit log, and any aggregation state live in the **checkpoint**, so after a crash the query resumes where it left off.
+- Latency is typically from about a second to minutes, depending on the trigger and batch size.
+- The older DStream-based Spark Streaming API is legacy; new work should use Structured Streaming."""
+study = "structured-streaming"
+
+[[questions]]
+id = "stream-checkpoint"
+q = "What is stored in a Structured Streaming checkpoint, and what rules should you follow with checkpoints?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Stores source offsets per batch, the commit log, query metadata, and the state store for stateful operations",
+  "Lets a restarted query resume exactly where it left off",
+  "Each streaming query needs its own checkpoint location; never share one between queries",
+  "Some query changes (e.g. to stateful operations) are not compatible with an existing checkpoint",
+  "Keep it on durable storage and do not delete it casually",
+]
+answer = """- The checkpoint holds the **offsets** each micro-batch planned to read, the **commit log** of finished batches, query **metadata** (like the query id), and the **state store** for aggregations, dedup and joins.
+- On restart, Spark reads it to know which batch to redo or start next, so nothing is skipped or double-processed (given an idempotent or transactional sink).
+- Each query gets its own checkpoint location on durable storage, such as a volume. Two queries must never share one.
+- Some code changes are incompatible with an existing checkpoint, such as changing aggregation keys or other stateful operations. Then you need a new checkpoint and a plan for where to restart.
+- Deleting a checkpoint makes the query start over, so treat it like production data."""
+study = "structured-streaming"
+
+[[questions]]
+id = "stream-output-modes"
+q = "Explain the append, update and complete output modes in Structured Streaming."
+level = "entry"
+kind = "concept"
+rubric = [
+  "Append (the default) writes only new rows that will never change again",
+  "With aggregations, append needs a watermark so Spark knows when a window's result is final",
+  "Update writes only rows that changed in the latest batch",
+  "Complete rewrites the entire result table every batch and only works with aggregations, so it suits small results",
+]
+answer = """- **Append** (default): each batch outputs only new rows that will never change. For plain transformations that is every new row. For aggregations it needs a **watermark**, and a window's result is emitted once the watermark passes the window's end.
+- **Update**: each batch outputs only the result rows that changed in that batch, such as running counts. It suits sinks that can upsert, often via `foreachBatch` with MERGE.
+- **Complete**: each batch outputs the whole result table. It only works with aggregations and is fine for small results like a dashboard of counts per country, but not for growing data.
+- Choosing wrong usually shows up as an error at start, such as append with an aggregation and no watermark."""
+study = "structured-streaming"
+
+[[questions]]
+id = "stream-kafka-basics"
+q = "Explain Kafka topics, partitions, consumer groups and offsets. Where is ordering guaranteed?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "A topic is split into partitions, each an ordered append-only log; ordering is only guaranteed within a partition",
+  "The message key determines the partition, so messages with the same key stay in order",
+  "In a consumer group each partition is assigned to one consumer; max parallelism equals partition count",
+  "Offsets mark each consumer's position; data is kept by retention time/size or compaction regardless of being read",
+]
+answer = """- A **topic** is split into **partitions**. Each partition is an ordered, append-only log, and every message has an increasing **offset** in it.
+- Producers choose the partition by message key (hash of the key), so all events for one key, like one order id, go to the same partition and stay in order. Across partitions there is no global order.
+- A **consumer group** shares the work: each partition is read by exactly one consumer in the group, so the number of partitions caps parallelism. Different groups read independently.
+- Consumers track their position by offset. Kafka keeps messages for a **retention** period or size, or keeps the latest per key with **log compaction**, whether or not anyone read them.
+- Spark's Kafka source stores the offsets it read in its own checkpoint."""
+study = "kafka-basics"
+
+[[questions]]
+id = "stream-triggers-availablenow"
+q = "What trigger types does Structured Streaming offer, and when would you use availableNow?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Default trigger starts the next micro-batch as soon as the previous one finishes",
+  "processingTime runs micro-batches on a fixed interval",
+  "availableNow processes all data available at start, in multiple batches respecting rate limits, then stops",
+  "availableNow replaces the deprecated Trigger.Once, which processed everything in one batch",
+  "Use availableNow to run streaming code as a scheduled incremental batch job, saving cost when low latency is not needed",
+]
+answer = """- **Default** (no trigger): start the next micro-batch as soon as the previous one ends, for the lowest micro-batch latency.
+- **processingTime** (`trigger(processingTime="5 minutes")`): run a micro-batch on a fixed interval, which reduces overhead and small files.
+- **availableNow** (`trigger(availableNow=True)`): process everything that is available when the query starts, split into several batches that respect `maxFilesPerTrigger` or `maxOffsetsPerTrigger`, then stop.
+- It replaced `Trigger.Once`, which tried to process everything in one batch and could blow up on large backlogs.
+- I use availableNow when hourly or daily freshness is enough: the job is scheduled like batch, cluster cost stops between runs, and the checkpoint still gives exactly-once incremental processing. Switching to continuous running later is a one-line change.
+- There is also an experimental continuous mode for very low latency with limited operations."""
+study = "structured-streaming"
+
+[[questions]]
+id = "stream-watermark"
+q = "What is a watermark in Structured Streaming, and how do you choose its delay?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Watermark = maximum event time seen minus a delay threshold; it tells Spark how late data can arrive",
+  "Lets Spark finalize windows and drop old state, keeping state size bounded",
+  "Data older than the watermark may be dropped from that aggregation",
+  "Trade-off: longer delay accepts more late data but keeps more state and emits results later (in append mode)",
+  "Choose the delay from measured lateness, and handle data later than that with a batch correction from raw data",
+]
+answer = """- A watermark is `max(event_time seen) - delay`, declared with `withWatermark("event_time", "1 hour")`. It tells Spark how late events are expected to arrive.
+- Windows that end before the watermark are considered final, their result can be emitted (in append mode), and their state is dropped. Without a watermark, state for an aggregation grows forever.
+- Events older than the watermark may be ignored by that aggregation.
+- The delay is a trade-off: a longer delay accepts more late data but keeps more state in memory and delays final results; a shorter one is cheaper and faster but drops more.
+- I measure actual lateness (for example the 99.9th percentile of arrival minus event time) and pick a delay above it. For money-relevant metrics, I keep raw events in bronze and run a periodic batch correction for anything later than that."""
+study = "watermarks-late-data"
+
+[[questions]]
+id = "stream-checkpoint-deleted"
+q = "A teammate deleted the checkpoint folder of a production Kafka-to-Delta stream to 'fix' an error and restarted it. What can go wrong, and how do you recover?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Without a checkpoint the query starts as new and uses startingOffsets (default latest for Kafka)",
+  "With latest, messages that arrived during the outage are skipped (data loss); with earliest, already-processed data is re-ingested (duplicates)",
+  "Any streaming state (aggregations, dedup) is lost",
+  "Recovery: restart from explicit offsets or timestamps based on what the target already contains, and dedupe the target by a key (MERGE or ROW_NUMBER)",
+  "Prevention: find the real cause of the error, protect checkpoint locations, and document the restart procedure",
+]
+answer = """- With no checkpoint, Spark treats it as a brand-new query and reads from `startingOffsets`. For Kafka that defaults to `latest`.
+- With `latest`, everything produced between the last committed batch and the restart is **skipped**, which is silent data loss. With `earliest`, everything still in Kafka is **re-ingested**, creating duplicates in an append-only target.
+- Any state, such as running aggregations or dedup, is also lost.
+- To recover: find the last offsets or event times present in the Delta table (store partition and offset columns in bronze for this), restart from explicit `startingOffsets` per partition or `startingTimestamp`, and dedupe on `(topic, partition, offset)` or a business key with MERGE.
+- Then fix the original error properly, restrict who can delete checkpoint paths, and write a runbook for safe restarts."""
+study = "structured-streaming"
+
+[[questions]]
+id = "stream-kafka-lag"
+q = "Consumer lag on the Kafka topic your Spark stream reads keeps growing during peak hours. How do you investigate and fix it?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Lag growing means the stream processes slower than the producer rate; if lag exceeds retention, data is lost",
+  "Checks streaming metrics: input rate vs processing rate and batch duration in the streaming query progress or UI",
+  "Finds the bottleneck: slow sink writes, skewed partitions, expensive state, or too few tasks",
+  "Scales parallelism: Kafka partitions limit read tasks (minPartitions can split them) and cluster size; tune maxOffsetsPerTrigger",
+  "Reduces per-batch work: optimize the sink (fewer small files, efficient MERGE), simplify state, fix skew",
+]
+answer = """- Growing lag means input rate is higher than processing rate. If it outgrows Kafka retention, unread messages are deleted and lost, so it is urgent.
+- I look at the query progress (`inputRowsPerSecond` vs `processedRowsPerSecond`, batch duration, and state size) and the Spark UI for the slowest stage.
+- Common bottlenecks: a slow sink (a MERGE scanning the whole target, many tiny files), a hot key making one partition skewed, large state, or too few tasks.
+- Parallelism: by default one Spark task reads one Kafka partition. Adding topic partitions, setting `minPartitions`, or adding executors helps when compute is the limit.
+- I tune `maxOffsetsPerTrigger` so batches are large enough to be efficient but finish on time, and make the sink cheaper: partition or cluster filters in MERGE, OPTIMIZE regularly, and simpler stateful logic."""
+study = "kafka-basics"
+
+[[questions]]
+id = "stream-stream-join"
+q = "How do stream-static and stream-stream joins differ in Structured Streaming? What do you need for a stream-stream join to stay bounded?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Stream-static join: each micro-batch joins against the static side, which for Delta is re-read so it reflects the latest version; no state needed",
+  "Stream-stream join: both sides must buffer past rows in state because a match can arrive later on either side",
+  "To bound state: watermarks on both inputs plus an event-time range condition in the join",
+  "Outer stream-stream joins require watermarks, and unmatched rows are emitted only after the watermark passes",
+  "Mentions the trade-off: the time bound decides how late matches can be found vs state size",
+]
+answer = """- **Stream-static**: each micro-batch of the stream is joined to the static DataFrame, such as a Delta dimension table. For Delta, the static side is re-read per batch, so it sees the latest version. It is stateless, so no watermark is needed, but a dimension update does not re-join old stream rows.
+- **Stream-stream**: a click may arrive before or after its impression, so Spark buffers rows from both sides in state.
+- To keep that state bounded, I add `withWatermark` on both streams and a time-range condition, for example `click_time BETWEEN imp_time AND imp_time + INTERVAL 30 MINUTES`. Then Spark knows when old rows can never match and drops them.
+- Outer joins require these watermarks, and the NULL-padded unmatched rows are only emitted after the watermark passes, which adds latency.
+- The interval is a trade-off: wider finds later matches but holds more state."""
+study = "watermarks-late-data"
+
+[[questions]]
+id = "stream-exactly-once"
+q = "What does exactly-once mean in Structured Streaming, and what does it require from sources and sinks?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Exactly-once means each input record affects the output once, even with failures and retries (effectively-once results, not single delivery)",
+  "Requires a replayable source (Kafka, files) so a failed batch can be re-read",
+  "Requires offsets and state tracked in the checkpoint, with batches committed after the sink write",
+  "Requires an idempotent or transactional sink; the Delta sink commits each batch atomically and skips replays",
+  "With foreachBatch you must make the write idempotent yourself (MERGE on a key or txnAppId/txnVersion)",
+]
+answer = """- Exactly-once means each input record affects the final output once, even when batches fail and are retried. Internally a batch may run twice; the guarantee is about the result.
+- Three pieces are needed:
+  - A **replayable source**, like Kafka or files, so a failed batch can be read again with the same offsets.
+  - The **checkpoint**, which records the offsets planned for each batch and marks the batch committed only after the sink write.
+  - An **idempotent or transactional sink**. The Delta sink records the query id and batch id in its commit, so a replayed batch is not written twice.
+- With `foreachBatch` I own idempotency: MERGE on a business key, or pass `txnAppId` and `txnVersion` (the batch id) to Delta writes. Writes to external systems like JDBC need upserts.
+- Upstream duplicates, such as a producer retry, are still duplicates; deduplicate them by an event id."""
+study = "structured-streaming"
+
+[[questions]]
+id = "stream-foreachbatch-duplicates"
+q = "A foreachBatch stream appends each batch to a Postgres table via JDBC. After a cluster restart you find duplicate rows. Why, and how do you fix it?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "foreachBatch gives at-least-once to external sinks: a batch written before the failure but not yet marked committed is replayed on restart",
+  "Plain JDBC append is not idempotent, so the replay inserts the same rows again",
+  "Fix: make the write idempotent with an upsert on a unique key (INSERT ON CONFLICT or MERGE via staging table)",
+  "Alternatively track batch_id in the target or a control table and skip batches already written, in the same transaction",
+  "Clean up existing duplicates and add a unique constraint so the database rejects future ones",
+]
+answer = """- Spark marks a micro-batch committed only after `foreachBatch` returns. If the cluster died after the rows reached Postgres but before that commit, the restart re-runs the same batch.
+- A plain JDBC append is not idempotent, so the replayed batch inserts the same rows again. foreachBatch gives at-least-once to external sinks.
+- Fix options:
+  - Write to a staging table, then `INSERT ... ON CONFLICT (event_id) DO UPDATE` (or MERGE) into the target, keyed on a unique business id.
+  - Store the `batch_id` in a control table in the same database transaction as the data, and skip any batch id already recorded.
+- Add a **unique constraint** on the key so Postgres itself rejects duplicates.
+- Finally, deduplicate the existing rows with a one-off `ROW_NUMBER` cleanup."""
+study = "structured-streaming"
+
+[[questions]]
+id = "stream-debezium-cdc"
+q = "How does Debezium capture changes from Postgres, and what operational risks does it bring?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Debezium does an initial snapshot, then reads the Postgres WAL through a logical replication slot",
+  "Each change is an event with op (c, u, d, r), before and after images, and source metadata like LSN and commit time, published to Kafka keyed by primary key",
+  "Log-based CDC captures deletes and every change without querying the source tables",
+  "Risk: the replication slot retains WAL while the connector is down or lagging, which can fill the source database disk",
+  "Other concerns: schema changes, tombstones, primary key updates, ordering by LSN rather than arrival time",
+]
+answer = """- Debezium runs as a Kafka Connect source. It first takes a **snapshot** of the tables, then streams changes by reading Postgres's **WAL** through a **logical replication slot**.
+- Each event has `op` (`c` create, `u` update, `d` delete, `r` snapshot read), `before` and `after` row images, and `source` metadata including the LSN and commit timestamp. Events go to a topic per table, keyed by primary key so a row's changes stay in order.
+- Compared with polling `updated_at`, it captures deletes and every intermediate change, with little load on the source.
+- Big risk: the slot keeps WAL until Debezium confirms it. If the connector is down for long, WAL grows and can fill the database disk. Monitor slot lag and alert.
+- Also handle schema changes, delete tombstones, primary key changes, and apply changes ordered by LSN, not by arrival time."""
+study = "cdc-debezium"

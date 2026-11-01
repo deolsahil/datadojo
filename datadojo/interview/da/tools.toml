@@ -1,0 +1,62 @@
+title = "Tools and Data Modeling"
+order = 7
+desc = "Spreadsheets vs SQL vs pandas, facts, dimensions and grain, semantic layers and BI extracts."
+
+[[questions]]
+id = "tools-excel-sql-python"
+q = "When would you use a spreadsheet, SQL, or Python with pandas for an analysis?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "SQL for filtering, joining and aggregating large data where it lives in the warehouse",
+  "Spreadsheets for small data, quick what-if models and sharing with business users who will edit it",
+  "Python/pandas for complex transformations, statistics, visualisation and automating repeatable work",
+  "Mentions limits or risks: spreadsheet size limits and manual errors, pulling too much raw data into pandas",
+  "Mentions combining them: aggregate in SQL, then analyse or present in Python or a spreadsheet",
+]
+answer = """- **SQL**: pull, join and aggregate large tables inside the warehouse; it scales to billions of rows and the query is reproducible.
+- **Spreadsheet**: small results, quick what-if or budget models, and anything business users need to edit themselves. Risks: row limits, hardcoded numbers and copy-paste errors with no history.
+- **Python / pandas**: stats tests, bootstrapping, reshaping, charts and automation of repeated analyses; notebooks document the steps.
+- Do not pull raw billion-row tables into pandas; aggregate in SQL first and bring back only what you need.
+- Typical flow: SQL to get the dataset, pandas for analysis, a chart or spreadsheet to share. Logic reused often should move into version-controlled SQL models."""
+study = "analysis-tools"
+
+[[questions]]
+id = "tools-fact-dim-grain"
+q = "What are fact and dimension tables, and what does 'grain' mean? Why does an analyst need to care?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Fact tables record events or measurements with numeric measures and keys (orders, clicks)",
+  "Dimension tables hold descriptive attributes used to filter and group (customer, product, date)",
+  "Grain is what one row represents (for example one row per order line)",
+  "Explains why it matters: mixing grains or joining at the wrong grain causes double counting",
+  "Mentions additive vs non-additive measures or slowly changing dimensions (history of attributes)",
+]
+answer = """- **Fact table**: one row per event or measurement, with numeric measures (revenue, quantity) and keys to dimensions. Example: order lines.
+- **Dimension table**: descriptive attributes you slice by: customer segment, product category, calendar and fiscal week.
+- **Grain**: what one row means, such as 'one row per order line' or 'one row per store per day'. State it before writing any query.
+- Why it matters: an order-level shipping fee repeated on every order line gets summed several times; joining a daily table to an hourly one fans out.
+- Measures behave differently: revenue is additive, account balance is not additive across time, ratios and distinct counts must be recomputed rather than summed.
+- Slowly changing dimensions (type 2) keep history so you can report a customer's segment at the time of the order, not today's."""
+study = "facts-dimensions-grain"
+
+[[questions]]
+id = "tools-semantic-layer"
+q = "Finance and Product show different revenue numbers for the same month in two BI dashboards. How would a semantic layer help, and when would you use extracts versus live connections?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Explains the root cause: each dashboard defines revenue with its own SQL (filters, refunds, currency, time zone, gross vs net)",
+  "A semantic layer defines metrics, joins and dimensions once, centrally, so every tool computes them the same way",
+  "Mentions governance: versioned and reviewed definitions with an owner",
+  "Live connections give freshness and handle huge data but cost warehouse compute and depend on its speed",
+  "Extracts give fast, cheap dashboards but can go stale; show refresh time and monitor refresh failures",
+]
+answer = """- Different numbers usually mean different definitions: gross vs net of refunds, booking vs ship date, time zone, currency conversion, test orders excluded or not.
+- First reconcile: agree one definition with Finance and Product and document it.
+- A **semantic layer** (dbt Semantic Layer, LookML, Power BI semantic models, Cube) defines metrics, joins and dimensions once; dashboards and notebooks ask for 'net revenue' by name and get the same SQL.
+- Treat definitions like code: version control, review, a named owner.
+- **Live connection**: fresh data and very large tables, but each view costs warehouse compute and speed depends on the warehouse.
+- **Extract**: a cached copy, fast and cheap to view, good for executive dashboards refreshed daily; risk is silent staleness, so show the refresh time and alert on failed refreshes."""
+study = "semantic-layer-bi"

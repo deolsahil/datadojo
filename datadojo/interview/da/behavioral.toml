@@ -1,0 +1,60 @@
+title = "Behavioral"
+order = 9
+desc = "STAR stories: ambiguous requests, owning mistakes, and challenging leadership with data."
+
+[[questions]]
+id = "beh-ambiguous-request"
+q = "Tell me about a time a stakeholder gave you a vague request. How did you figure out what they actually needed?"
+level = "entry"
+kind = "behavioral"
+rubric = [
+  "Describes a specific situation and the vague request (STAR situation and task)",
+  "Shows asking clarifying questions about the decision behind the request, the audience and the deadline",
+  "Shows confirming understanding before building, for example a quick mock-up or written summary of scope",
+  "Gives a concrete result (decision made, time saved, report adopted)",
+  "Reflects on what they learned or now do by default",
+]
+answer = """- **Situation**: a marketing manager asked me to 'pull all the data on the spring campaign' two days before a planning meeting.
+- **Task**: deliver something useful in time, without spending two days on a data dump nobody would read.
+- **Action**: I asked what decision the meeting would make. It turned out to be whether to repeat the campaign in autumn. I asked who would attend and what 'worked' meant to them, then sent a one-paragraph scope: cost per new customer and 60-day retention, campaign vs organic, by channel. I shared a rough draft chart the next morning.
+- **Result**: she cut two channels from the autumn plan, saving about 40k dollars, and the template became the standard campaign review.
+- **Reflection**: I now start every request by asking 'what will you decide with this?'"""
+study = "star-stories"
+
+[[questions]]
+id = "beh-mistake-in-analysis"
+q = "Describe a time you made a mistake in an analysis that others were already using. What did you do?"
+level = "mid"
+kind = "behavioral"
+rubric = [
+  "Names a specific mistake and owns it without blaming others",
+  "Shows quick action: assessing impact, telling affected stakeholders promptly, and correcting the numbers",
+  "Explains whether the error changed any decision",
+  "Describes a process change to prevent recurrence (checks, peer review, tests, reconciliations)",
+  "Gives a concrete outcome and reflection",
+]
+answer = """- **Situation**: I published a weekly retention dashboard that the growth team used for goal tracking.
+- **Task**: three weeks later I noticed week-4 retention looked too stable; I owned the dashboard, so it was on me to find out.
+- **Action**: I found my join to the events table excluded users with no events in week 0, inflating retention by about 3 points. I messaged the growth lead the same day, explained the error, the corrected numbers and that one goal was now behind. I fixed the query, annotated the dashboard, and backfilled history.
+- **Result**: the team re-prioritized one onboarding project; no external report had used the numbers.
+- **Reflection**: I added row-count and total reconciliation checks plus peer review for any metric used in goals. Flagging it fast kept their trust."""
+study = "star-stories"
+
+[[questions]]
+id = "beh-contradict-leadership"
+q = "Tell me about a time your analysis contradicted what leadership believed. How did you handle it?"
+level = "senior"
+kind = "behavioral"
+rubric = [
+  "Describes the belief, the contradicting finding and the stakes clearly",
+  "Shows stress-testing the analysis first (checking data, alternative explanations, peer review) before presenting",
+  "Shows how they communicated: privately first or with an ally, respecting the leader's view, leading with evidence and business impact",
+  "Gives a measurable result (decision changed, money saved, test run) even if leadership did not fully agree",
+  "Reflects on influence or what they would do differently",
+]
+answer = """- **Situation**: our VP believed a loyalty discount was our best retention lever and planned to expand it to all customers, costing about 2M dollars a year.
+- **Task**: I was asked to size the expansion; my analysis instead showed discount users retained no better than similar non-users.
+- **Action**: before sharing, I checked for selection bias by matching customers on tenure and spend, and had a peer review it. I met the VP one-on-one first, opened with what we agreed on (retention matters), showed the matched comparison, and was honest about the limits: it was observational. I proposed a 10 percent holdout test instead of a full rollout.
+- **Result**: the holdout showed no significant retention effect after three months; the expansion was cancelled and the budget moved to onboarding.
+- **Reflection**: offering a cheap test turned a disagreement into a shared experiment."""
+study = "star-stories"

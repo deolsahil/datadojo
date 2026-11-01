@@ -1,0 +1,262 @@
+title = "Delta Lake & Lakehouse"
+order = 3
+desc = "ACID via the transaction log, schema rules, time travel, file layout, MERGE, CDF and table formats."
+
+[[questions]]
+id = "delta-acid-log"
+q = "How does Delta Lake provide ACID transactions on top of plain Parquet files in object storage?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "A Delta table is Parquet data files plus a _delta_log of ordered JSON commit files",
+  "A write first writes data files, then atomically creates the next numbered commit; only committed files are visible",
+  "Readers read a consistent snapshot (a version) so they never see partial writes",
+  "Concurrent writers use optimistic concurrency control with conflict checks",
+  "Periodic Parquet checkpoints summarize the log so readers do not replay every JSON file",
+]
+answer = """- A Delta table is a folder of Parquet files plus a `_delta_log` directory of numbered JSON commits. Each commit lists files added and removed, plus metadata and schema changes.
+- A writer first writes new Parquet files, then atomically creates the next commit file. The version exists only if that commit succeeds, which gives **atomicity**.
+- Readers build a snapshot from the log at a version, so they see either all of a commit or none of it (**isolation**). Data files not in the log are ignored.
+- Concurrent writers use **optimistic concurrency**: they commit only if no conflicting commit happened since they read.
+- Every so often (by default every 10 commits) Delta writes a Parquet **checkpoint** so readers do not have to replay all JSON files."""
+study = "delta-transaction-log"
+
+[[questions]]
+id = "delta-partial-append"
+q = "Your job is appending 1 million rows to a Delta table and the cluster dies after writing about 600k. What is in the table now, and what should the retry do?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "No rows from the failed job are visible: the table is still at the previous version",
+  "Explains why: the commit to _delta_log never happened, so the written Parquet files are uncommitted orphans",
+  "Orphan files are ignored by readers and removed later by VACUUM",
+  "The retry can safely rerun the whole write; make it idempotent (MERGE, replaceWhere or txn options) in case a commit did succeed",
+]
+answer = """- The table contains **none** of the 1 million rows. Readers still see the previous version.
+- Delta writes the Parquet files first and only makes them part of the table by committing a new JSON file in `_delta_log`. The cluster died before that commit, so the roughly 600k rows sit in orphan files that no version references.
+- Readers ignore those files, and `VACUUM` deletes them after the retention period.
+- The retry just reruns the full write. To be safe against the edge case where the commit succeeded but the job was marked failed, make the write idempotent: `MERGE` on a key, overwrite the slice with `replaceWhere`, or use Delta's `txnAppId`/`txnVersion` options so a repeated batch is skipped."""
+study = "delta-transaction-log"
+
+[[questions]]
+id = "delta-schema-evolution"
+q = "What is the difference between schema enforcement and schema evolution in Delta, and between mergeSchema and overwriteSchema?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Schema enforcement rejects writes whose columns or types do not match the table, and the whole write fails",
+  "Schema evolution lets the table schema change when you explicitly allow it",
+  "mergeSchema adds new columns (additive changes) during append or overwrite",
+  "overwriteSchema replaces the schema entirely (drops, renames, type changes) and requires overwrite mode",
+]
+answer = """- **Enforcement** is the default: if a write has extra columns or incompatible types, Delta rejects the whole write. Nothing is committed, so bad data cannot quietly corrupt the table.
+- **Evolution** means letting the schema change on purpose.
+- `option("mergeSchema", "true")` merges the incoming schema into the table's: new columns are added and old rows show NULL for them. It is meant for additive changes.
+- `option("overwriteSchema", "true")` with `mode("overwrite")` replaces the schema completely, for dropping, renaming or changing column types, and rewrites the data.
+- For renames or drops without rewriting files, Delta has column mapping, and newer versions support some type widening like int to bigint."""
+study = "schema-enforcement-evolution"
+
+[[questions]]
+id = "delta-wrong-type-row"
+q = "You load a file of 1,000 rows into a Delta table. 999 are fine but one row has text in a numeric column. What happens, and how should the pipeline handle it?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Delta writes are atomic: if the write fails, none of the 1,000 rows are committed; it never commits 999 and skips one",
+  "Whether it fails depends on parsing: with an explicit schema and PERMISSIVE mode the bad value becomes NULL; with strict casting (ANSI) or a mismatched column type the write fails",
+  "Handle it by reading with an explicit schema and PERMISSIVE plus a corrupt record column, or badRecordsPath, to capture bad rows",
+  "Route bad rows to a quarantine table and write good rows, with an alert or metric on rejected count",
+]
+answer = """- A Delta write is all or nothing. If the bad value makes the write fail (for example the DataFrame column is a string but the table column is int, so schema enforcement rejects it, or an ANSI cast error is raised), **none** of the 1,000 rows land.
+- If the file is parsed with an explicit schema in the default `PERMISSIVE` mode, the bad value just becomes NULL and the write succeeds, which can hide the problem.
+- Better: read with an explicit schema, `PERMISSIVE`, and a `_corrupt_record` column (or `badRecordsPath` on Databricks, or `_rescued_data` with Auto Loader).
+- Split the data: write the 999 valid rows to silver and the bad row to a quarantine table with the error and source file.
+- Alert when the reject count exceeds a threshold, so the source gets fixed rather than ignored."""
+study = "bad-records-schema-drift"
+
+[[questions]]
+id = "delta-merge-crash"
+q = "A MERGE into a Delta table reports success, and a few seconds later the cluster crashes. Is the merged data safe? What if it crashed during the MERGE instead?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Once the MERGE commit is written to _delta_log in cloud storage, it is durable regardless of the cluster crashing",
+  "The data lives in cloud object storage, not on the cluster, so cluster loss does not affect committed data",
+  "If the crash happens before the commit, no part of the MERGE is visible; the table stays at the previous version",
+  "Rerunning the MERGE is safe because MERGE on a key is idempotent for the same input",
+]
+answer = """- Yes, it is safe. A MERGE is a single Delta commit. Once the commit file exists in `_delta_log` in cloud storage, the new version is **durable**, and `DESCRIBE HISTORY` shows it.
+- The table's files and log live in object storage, not on the cluster, so losing the cluster afterwards changes nothing.
+- If the crash happens during the MERGE, before the commit, none of its changes are visible. The table is still at the previous version, and the half-written files are orphans that VACUUM cleans up.
+- Either way the recovery is simple: rerun the MERGE. With the same deduplicated source and a key-based condition, running it again gives the same result."""
+study = "delta-transaction-log"
+
+[[questions]]
+id = "delta-time-travel"
+q = "How does Delta time travel work, and how do VACUUM and retention settings limit it?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Every commit creates a version; query old ones with VERSION AS OF or TIMESTAMP AS OF, and roll back with RESTORE",
+  "Time travel works because old data files are kept until VACUUM removes them",
+  "VACUUM deletes unreferenced files older than the retention threshold (default 7 days)",
+  "deletedFileRetentionDuration (7 days default) and logRetentionDuration (30 days default) control how far back you can go",
+  "After VACUUM, versions needing deleted files can no longer be queried",
+]
+answer = """- Each commit creates a numbered version. I can query `SELECT * FROM t VERSION AS OF 42` or `TIMESTAMP AS OF '2026-10-01'`, see versions with `DESCRIBE HISTORY`, and roll back with `RESTORE TABLE t TO VERSION AS OF 42`.
+- It works because an update or delete only marks old files as removed in the log; the files stay in storage.
+- `VACUUM` physically deletes files that are no longer referenced and are older than the retention threshold, 7 days by default.
+- Two settings matter: `delta.deletedFileRetentionDuration` (default 7 days) for data files, and `delta.logRetentionDuration` (default 30 days) for log history.
+- After VACUUM, any version that needs deleted files fails to load, so time travel is effectively limited to the file retention window."""
+study = "time-travel-vacuum"
+
+[[questions]]
+id = "delta-optimize-zorder"
+q = "What do OPTIMIZE and Z-ordering do, and why do they make queries faster?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "OPTIMIZE compacts many small files into fewer large files (bin-packing)",
+  "Fewer files means less listing, metadata, and per-file task overhead",
+  "ZORDER BY co-locates rows with similar values of several columns in the same files",
+  "Co-location makes per-file min/max statistics selective, enabling data skipping",
+  "Z-order is not incremental and is superseded by liquid clustering for new tables",
+]
+answer = """- `OPTIMIZE` rewrites many small files into fewer large ones (bin-packing). Streaming and frequent appends produce small files, and each one costs a listing call, a footer read and a task.
+- `OPTIMIZE t ZORDER BY (customer_id, sku)` also reorders data so rows with similar values in those columns sit in the same files.
+- Delta stores min/max stats per file. Once data is co-located, a filter like `customer_id = 42` matches only a few files' ranges, so the rest are skipped (**data skipping**).
+- Z-ordering loses effectiveness with each extra column, and it is not incremental: rerunning rewrites the data it reorders.
+- For new tables on Databricks I prefer liquid clustering, which replaces both partitioning and Z-order."""
+study = "small-files-optimize"
+
+[[questions]]
+id = "delta-clone"
+q = "What is the difference between a deep clone and a shallow clone of a Delta table? When would you use each?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Deep clone copies both data files and metadata into an independent table",
+  "Shallow clone copies only metadata and references the source table's files",
+  "Shallow clone breaks if VACUUM on the source deletes files it references",
+  "Use deep clone for backups, migration or archiving; shallow clone for cheap testing or experiments",
+  "Both have independent history; writes to a clone do not change the source",
+]
+answer = """- A **deep clone** copies the data files and the metadata, producing a fully independent table. Running it again copies only what changed since the last clone.
+- A **shallow clone** copies only the metadata; its log points at the source table's data files, so it is created almost instantly and costs almost no storage.
+- Because a shallow clone depends on the source's files, a `VACUUM` on the source can delete files it still needs and break it.
+- I use deep clones for backups, disaster recovery copies, migrating tables, and archiving a snapshot. I use shallow clones for short-lived tests, for example trying a risky MERGE on prod-like data.
+- In both cases the clone has its own history, and writes to it never change the source."""
+study = "deletion-vectors-clone"
+
+[[questions]]
+id = "delta-cdf"
+q = "What is Delta Change Data Feed, and how would you use it to build downstream tables incrementally?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "CDF records row-level changes for each commit once delta.enableChangeDataFeed is set",
+  "Read with table_changes or the readChangeFeed option, by version or timestamp range, in batch or streaming",
+  "Output includes _change_type (insert, update_preimage, update_postimage, delete), _commit_version and _commit_timestamp",
+  "Downstream jobs process only changed rows, e.g. MERGE them into gold, instead of rescanning the whole table",
+  "Only available from when it was enabled and subject to retention/VACUUM",
+]
+answer = """- Change Data Feed makes Delta record row-level changes for every commit. Enable it with `ALTER TABLE t SET TBLPROPERTIES (delta.enableChangeDataFeed = true)`.
+- Read changes in batch with `table_changes('t', start_version, end_version)` or as a stream with `spark.readStream.option("readChangeFeed", "true").table("t")`.
+- Each row carries `_change_type` (`insert`, `update_preimage`, `update_postimage`, `delete`), `_commit_version` and `_commit_timestamp`.
+- Downstream, I filter out preimages, keep the latest change per key, and MERGE into the gold table, so I only touch changed rows instead of recomputing from the whole silver table.
+- Changes exist only from when CDF was enabled, and old change files are removed by VACUUM like other data."""
+study = "cdf-merge"
+
+[[questions]]
+id = "delta-concurrent-writers"
+q = "Two jobs write to the same Delta table at the same time: one appends new orders, the other runs a MERGE that updates last month's orders. What happens, and how do you avoid failures?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Delta uses optimistic concurrency: both read a snapshot, the first to commit wins, the second checks for conflicts",
+  "If the changes do not logically conflict (e.g. a blind append vs updates to different files), Delta retries the commit automatically and both succeed",
+  "If they conflict (both touch the same files or the MERGE read data the other changed), the second fails with a concurrent modification exception and the application must retry",
+  "Reduce conflicts with disjoint partitions or explicit partition/cluster filters in the MERGE condition",
+  "Mentions deletion vectors / row-level concurrency on Databricks reduce conflicts, and jobs should retry idempotently",
+]
+answer = """- Delta uses **optimistic concurrency**. Each job reads a snapshot, writes its files, and tries to commit the next version. The first commit wins.
+- The second job then checks whether the winner's changes conflict with what it read and wrote. A blind append usually does not conflict with a MERGE on other data, so Delta retries the commit on top of the new version and both succeed.
+- If they do conflict, for example the append adds files into the partition the MERGE scanned, or both rewrite the same files, the second job fails with an exception like `ConcurrentAppendException`. Delta does not redo the work; my job must retry.
+- To avoid it, I put explicit partition or clustering predicates in the MERGE `ON` condition so it only reads last month, and keep writers on disjoint data.
+- On Databricks, deletion vectors and row-level concurrency cut conflicts further. Jobs should still retry with backoff and be idempotent."""
+study = "delta-transaction-log"
+
+[[questions]]
+id = "delta-vacuum-recovery"
+q = "Someone ran VACUUM with a 0-hour retention on a production table, and an hour later you need to restore yesterday's version. Can you? What would you put in place?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "No: VACUUM physically deleted the unreferenced files, so time travel and RESTORE to versions needing them fail",
+  "Databricks has no built-in fail-safe recovery after VACUUM (fail-safe is a Snowflake concept)",
+  "Recovery only via storage-level protection set up beforehand: bucket versioning or soft delete, or backups or deep clones",
+  "Prevention: keep the retentionDurationCheck safety on, restrict who can VACUUM, rely on predictive optimization with default retention",
+  "Notes 0-hour retention can also break running readers and streams",
+]
+answer = """- Through Delta, no. VACUUM with 0 hours deleted every file not in the current version, so `VERSION AS OF` and `RESTORE` to yesterday fail with missing files.
+- Databricks has no built-in fail-safe period after VACUUM; that idea comes from Snowflake. Recovery depends on what we set up in advance: cloud storage versioning or soft delete on the bucket, or a deep clone or backup. With versioning, a cloud admin can restore the deleted objects and then RESTORE the table.
+- Short retention is also dangerous because running queries and streams may still need those files.
+- Prevention: keep `spark.databricks.delta.retentionDurationCheck.enabled` on (it blocks under 7 days), limit VACUUM rights to the platform team, use predictive optimization with default retention, enable bucket versioning or soft delete for critical tables, and keep periodic deep clones."""
+study = "time-travel-vacuum"
+
+[[questions]]
+id = "delta-liquid-clustering"
+q = "What is liquid clustering, how is it different from partitioning and Z-order, and what does CLUSTER BY AUTO do?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Declared with CLUSTER BY; replaces Hive-style partitioning and Z-order (cannot be combined with them on the same table)",
+  "Clustering happens incrementally when OPTIMIZE runs (or automatically via predictive optimization); already-clustered data is not rewritten each time",
+  "Clustering keys can be changed with ALTER TABLE without rewriting existing data immediately; OPTIMIZE FULL reclusters everything",
+  "Works well for high-cardinality filter columns where partitioning would create tiny files",
+  "CLUSTER BY AUTO lets Databricks choose and adjust keys from query patterns, on Unity Catalog managed tables with predictive optimization",
+]
+answer = """- Liquid clustering is a data layout declared with `CLUSTER BY (cols)` on create or `ALTER TABLE`. It replaces partitioning and Z-order, and cannot be mixed with them on the same table.
+- Clustering is done by `OPTIMIZE` (manual, scheduled, or predictive optimization). It is incremental: it clusters new or unclustered files and leaves already-clustered data alone, unlike Z-order, which rewrites what it reorders. It still rewrites the files it clusters.
+- Keys can change with `ALTER TABLE t CLUSTER BY (new_cols)`; new clustering work uses them, and `OPTIMIZE t FULL` reclusters all existing data.
+- It handles high-cardinality columns like `customer_id` well, where partitioning would explode into tiny files.
+- `CLUSTER BY AUTO` lets Databricks pick and evolve keys from the observed query workload. It needs Unity Catalog managed tables with predictive optimization."""
+study = "liquid-clustering"
+
+[[questions]]
+id = "delta-deletion-vectors"
+q = "What are deletion vectors in Delta, what trade-off do they make, and what do you need to do for a GDPR hard delete?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Deletion vectors record deleted row positions in a small side file instead of rewriting the whole Parquet file",
+  "Makes DELETE, UPDATE and MERGE much faster (merge-on-read) at a small read cost",
+  "Files are physically rewritten later by OPTIMIZE or REORG TABLE ... APPLY (PURGE)",
+  "For hard deletes the old bytes still exist in files until purged and VACUUM removes old files after retention",
+  "Readers and engines must support the deletion vectors table feature",
+]
+answer = """- Without deletion vectors, deleting one row rewrites the whole file that holds it. With them, Delta writes a small bitmap marking which rows in a file are deleted, and readers skip those rows.
+- So `DELETE`, `UPDATE` and `MERGE` get much cheaper (merge-on-read), and reads pay a small cost to apply the bitmaps until files are compacted.
+- Files are physically rewritten later by `OPTIMIZE`, or explicitly by `REORG TABLE t APPLY (PURGE)`.
+- For GDPR: the soft-deleted rows still exist in the old files, and old versions keep them too. A hard delete is DELETE, then `REORG ... APPLY (PURGE)`, then `VACUUM` once the retention window passes, with CDF and clones also checked.
+- It is a table feature, so older readers or external engines must support it."""
+study = "deletion-vectors-clone"
+
+[[questions]]
+id = "delta-table-formats"
+q = "Compare Delta Lake, Apache Iceberg and Apache Hudi. What is Delta UniForm and when would you use it?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "All three add ACID transactions, schema evolution and time travel over Parquet in object storage",
+  "Delta: ordered JSON commit log plus checkpoints, deepest integration with Spark/Databricks",
+  "Iceberg: tree of metadata files, manifest lists and manifests; hidden partitioning and partition evolution; broad multi-engine and catalog support",
+  "Hudi: designed for frequent record-level upserts and incremental pulls, with copy-on-write and merge-on-read tables",
+  "UniForm writes Iceberg metadata alongside Delta's log over the same Parquet files, so Iceberg clients can read one copy",
+]
+answer = """- All three are open table formats: Parquet data plus metadata that gives ACID commits, schema evolution, and time travel.
+- **Delta** tracks versions in an ordered JSON log with Parquet checkpoints. It is the native format on Databricks, with features like liquid clustering, deletion vectors and CDF.
+- **Iceberg** uses a metadata file pointing to manifest lists and manifests. It has hidden partitioning and partition evolution, and the broadest engine and catalog support (Trino, Flink, Snowflake, REST catalogs).
+- **Hudi** came from heavy upsert workloads: a record-level index, copy-on-write and merge-on-read tables, and incremental pulls.
+- **UniForm** makes a Delta table also write Iceberg metadata over the same Parquet files. Iceberg readers can query it without a second copy, while writes go through Delta. I would use it when Databricks owns the data but other teams' engines read Iceberg."""
+study = "table-formats"

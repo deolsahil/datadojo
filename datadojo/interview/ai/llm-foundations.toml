@@ -1,0 +1,137 @@
+title = "LLM Foundations"
+order = 1
+desc = "Tokens, context windows, inference, sampling, choosing a model, structured outputs and hallucination."
+
+[[questions]]
+id = "ai-tokens"
+q = "What is a token, and why should an engineer building on LLMs care about them?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "A token is a chunk of text from the tokenizer's fixed vocabulary, often a word or part of a word (subword, e.g. BPE)",
+  "The model reads and generates token ids, not characters or whole words",
+  "Cost is billed per token, with input and output priced separately (output usually higher)",
+  "The context window and output limits are measured in tokens",
+  "Token counts vary by language and content: code, numbers and many non-English languages use more tokens for the same meaning",
+]
+answer = """- A token is a piece of text from the tokenizer's vocabulary: a common word may be one token, a rare word several subword pieces (e.g. byte-pair encoding).
+- The model only sees integer token ids and predicts the next token id; it never sees individual letters, which is why it is weak at counting characters.
+- Providers bill per token, input and output priced separately, output usually costing more, so token counts drive cost.
+- Context window and max output are measured in tokens, so they decide how much history and how many RAG chunks fit.
+- Counts vary: roughly 4 English characters per token, but code, numbers and many non-English languages need more tokens, raising cost and latency."""
+study = "tokens"
+
+[[questions]]
+id = "ai-context-window"
+q = "What is a context window, and what happens in a long chat once the conversation no longer fits?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "The context window is the maximum number of tokens the model can process in one request, covering input and the generated output",
+  "The model has no memory between calls: the application resends the history each turn",
+  "When history overflows, the app must drop, truncate, summarize or retrieve older turns, otherwise the request fails or early context is lost",
+  "Bigger contexts cost more and slow time to first token",
+  "Models use information in the middle of very long contexts less reliably (lost in the middle)",
+]
+answer = """- The context window is the token limit for one request: system prompt, history, documents, tool results and the model's reply together.
+- The model is stateless; a chat only feels continuous because the app resends prior turns every time.
+- When it overflows, the application must decide what to keep: a sliding window of recent turns, a running summary of older ones, or retrieving only the relevant earlier messages. Otherwise the API rejects the request or early instructions get cut.
+- Even when everything fits, more tokens mean more cost and a slower time to first token.
+- Models tend to use facts at the start and end of long contexts better than the middle, so a focused context often beats a stuffed one."""
+study = "context-window"
+
+[[questions]]
+id = "ai-temperature-top-p"
+q = "What do temperature and top-p control, and what settings would you use for data extraction versus brainstorming?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "The model outputs a probability distribution over next tokens; sampling picks one",
+  "Temperature reshapes the distribution: low makes the most likely token dominate, high flattens it for more variety",
+  "Top-p (nucleus sampling) samples only from the smallest set of tokens whose probabilities add up to p",
+  "Uses low temperature for extraction or classification and higher for brainstorming or creative text",
+  "Notes that temperature 0 reduces but does not guarantee identical outputs, and does not prevent hallucination",
+]
+answer = """- At each step the model produces a probability for every possible next token; sampling settings decide how one is picked.
+- **Temperature** scales those probabilities: near 0 the top token almost always wins (close to greedy); higher values flatten the distribution so less likely tokens appear more often.
+- **Top-p** keeps only the most likely tokens whose probabilities sum to p (say 0.9) and samples among them, cutting off the weird tail.
+- Extraction, classification, code: low temperature for consistency. Brainstorming or varied copy: higher temperature. Usually tune one knob, not both.
+- Temperature 0 is not a determinism guarantee (serving and batching effects can still vary output), and it doesn't stop hallucination: a confident wrong answer can be the most likely one."""
+study = "sampling"
+
+[[questions]]
+id = "ai-hallucination-causes"
+q = "Why do LLMs hallucinate, and what can you do to reduce it in an application?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "The model generates plausible next tokens; nothing inside it verifies facts, so a fluent guess is likely when knowledge is missing",
+  "Names causes: missing or stale knowledge (private data, training cutoff), bad or missing retrieved context, ambiguous questions",
+  "Grounding with RAG and instructing the model to answer only from context and say it doesn't know",
+  "Requiring citations and validating outputs (code checks, faithfulness evals)",
+  "States hallucination can be reduced but not eliminated, so high-stakes outputs need checks or human review",
+]
+answer = """- An LLM predicts plausible text; it has no built-in fact check, so when it lacks the facts it still produces a fluent, confident guess.
+- Common causes: the knowledge was never in training (private data, events after the cutoff), retrieval supplied the wrong or no context, the question is ambiguous, or the prompt pushes for an answer at any cost.
+- Ground answers with RAG and tell the model to answer only from the provided context, explicitly allowing 'I don't know'.
+- Require citations to retrieved chunks, validate structured outputs in code, and run faithfulness evals that check claims against context.
+- You can reduce hallucination, not eliminate it, so high-stakes outputs get deterministic checks or human review."""
+study = "hallucination"
+
+[[questions]]
+id = "ai-prefill-decode"
+q = "Explain the prefill and decode phases of LLM inference. Why does a short prompt with a long answer still feel slow?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Prefill processes all prompt tokens in parallel and determines time to first token (TTFT)",
+  "Decode generates output one token at a time, each step depending on the previous token",
+  "The KV cache stores attention keys and values for earlier tokens so decode doesn't recompute them, at a GPU memory cost",
+  "Total latency is roughly TTFT plus output tokens divided by decode speed, so long outputs dominate",
+  "Mentions levers: stream tokens, cap or shorten output, smaller model, prompt caching for long repeated prefixes",
+]
+answer = """- **Prefill:** the whole prompt is processed in one parallel pass (compute-bound). Its duration sets **time to first token**, and it grows with prompt length.
+- **Decode:** tokens are generated one at a time, each depending on the last, so it is sequential and largely memory-bandwidth-bound.
+- The **KV cache** keeps attention keys and values for tokens already processed, so each decode step only computes the new token; it uses GPU memory that grows with context length and concurrent requests.
+- Latency is roughly TTFT + output tokens / tokens-per-second. A 1,000-token answer takes far longer than reading a short prompt, so output length dominates.
+- Levers: stream tokens for perceived speed, ask for shorter outputs or cap max tokens, use a smaller or faster model, and use prompt caching to cut prefill for long repeated prefixes."""
+study = "inference"
+
+[[questions]]
+id = "ai-choose-model"
+q = "You need to classify 2 million support tickets a day into 15 categories, and separately power a low-volume assistant that drafts complex legal summaries. How do you choose models for each?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Builds an eval set from real labelled examples and compares candidate models on it, rather than relying on leaderboards",
+  "For the high-volume classifier, prefers a small, cheap, fast model (possibly fine-tuned or distilled) because cost and latency scale with volume",
+  "For the low-volume complex task, accepts a larger or reasoning model since quality matters more than per-call cost",
+  "Considers cost at expected volume, latency, context length, and data privacy or residency (hosted vs open-weight)",
+  "Pins model versions and re-runs evals before switching or upgrading",
+]
+answer = """- First build eval sets from real data: labelled tickets for the classifier, expert-reviewed summaries with a rubric for the legal task. Choose on those, not on leaderboards.
+- Classifier: 2M calls a day makes cost and latency dominant. Start by checking a large model's accuracy as a ceiling, then try small models with few-shot prompts, and fine-tune or distill a small model if needed. Constrain output to the 15 labels.
+- Legal summaries: low volume, high stakes, so a strong frontier or reasoning model is worth the price; add citations and human review.
+- For both, weigh cost at volume, latency budget, context length (long legal documents), and privacy: sensitive data may need a provider with suitable terms or a self-hosted open-weight model.
+- Pin model versions and re-run the eval suite before any upgrade or switch."""
+study = "models"
+
+[[questions]]
+id = "ai-invalid-json"
+q = "Your extraction pipeline asks the model for JSON, and about 2% of responses fail to parse or are missing required fields, breaking downstream jobs. What do you do?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Uses the provider's structured output or schema-constrained decoding (or a tool definition) instead of relying on prompt instructions alone",
+  "Validates every response against the schema in code before it reaches downstream systems",
+  "Handles failures safely: retry with the validation error, then route to a dead-letter queue or fallback rather than crashing the job",
+  "Validates values too (enums, ranges, business rules), since a schema-valid response can still be wrong",
+  "Adds an explicit unknown or null option so the model isn't forced to invent values, and tracks the failure rate as a metric",
+]
+answer = """- Stop relying on 'reply in JSON' in the prompt: use the provider's structured-output feature with a JSON schema (or a tool definition), or grammar-constrained decoding when self-hosting.
+- Keep a validator in code (e.g. Pydantic or JSON Schema) between the model and downstream jobs; nothing unvalidated passes.
+- On failure, retry once with the validation error included, then send the record to a dead-letter queue for review instead of failing the whole batch.
+- Validate **values**, not just shape: enums, date formats, ranges and cross-field rules. Constrained decoding guarantees structure, not correctness.
+- Simplify the schema and allow null or 'not_found' for missing fields so the model doesn't hallucinate a value.
+- Track the validation failure rate on a dashboard and add failing inputs to the eval set."""
+study = "structured-outputs"

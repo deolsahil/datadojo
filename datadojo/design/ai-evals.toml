@@ -1,0 +1,132 @@
+title = "Evals: Testing AI Systems"
+section = "ai-systems"
+order = 4
+kind = "lesson"
+difficulty = "hard"
+big_idea = "Traditional software has unit tests; AI systems need evaluations, because their outputs are variable, subjective and multi-step, and quality must be measured, not assumed."
+summary = """A unit test checks that `add(2, 2) == 4`, every time. An LLM application can give a different answer on each run, many answers can be acceptable, and an agent may take ten steps to get there. You can't assert one exact output, but you still need to know whether the system works and whether your last change broke it.
+
+**Evals** are that test suite. You define **tasks** with success criteria, run **trials**, capture **transcripts**, apply **graders**, and record the **outcome**. Run them on every prompt, model or retrieval change and compare with a baseline.
+
+This turns AI quality into an engineering process rather than subjective judgment."""
+diagram = """flowchart LR
+  T[Task] --> TR[Trial] --> TS[Transcript] --> G[Grader] --> O[Outcome / result]
+  H[Evaluation harness] -.runs.-> TR
+  H -.applies.-> G"""
+
+[[blocks]]
+heading = "The vocabulary"
+body = """```
+Task → Trial → Transcript → Grader → Outcome
+```
+- **Task:** a defined test case with inputs and success criteria. *"Given this refund email, the agent issues a refund under ₹10,000 and replies politely."*
+- **Trial:** one execution of that task. Because outputs vary, a task is usually run several times.
+- **Transcript:** what happened during execution: prompts, model outputs, tool calls, retrieved documents, intermediate steps.
+- **Outcome:** what actually happened to the system or environment: the database row written, the ticket closed, the file created. Not what the model *said* it did.
+- **Grader:** how we decide whether the result was successful. It can check the outcome, the transcript, or both.
+- **Evaluation harness:** the infrastructure that runs tasks, captures transcripts, applies graders and produces results.
+- **Evaluation suite:** a collection of tasks testing a particular capability or behavior, such as "refund handling" or "SQL generation"."""
+
+[[blocks]]
+heading = "Types of graders"
+body = """These are complementary, not mutually exclusive. Use code wherever possible, models where judgment is needed, and humans to calibrate both.
+
+**Code-based:** deterministic checks.
+- Examples: exact match, regex, database state, API result, schema validation.
+- Pros: fast, cheap, reproducible. Cons: can be too rigid for subjective tasks.
+
+**Model-based:** an LLM as a judge.
+- Examples: rubric scoring, natural-language assertions ("the reply apologizes and gives a timeline"), pairwise comparison (A vs B), reference-based evaluation against a gold answer.
+- Pros: flexible. Cons: can be inconsistent and biased (position, verbosity, its own style); calibrate it against human labels.
+
+**Human:**
+- Useful for expert judgment, difficult subjective cases, and validating model-based graders.
+- But expensive and difficult to scale."""
+
+[[blocks]]
+heading = "Capability vs regression evals"
+body = """- **Capability evals:** *what can the system do?* Use challenging tasks where improvement is still possible; a low pass rate is expected and useful.
+- **Regression evals:** *did something that worked before break?* These should have very high pass rates; any drop is a signal.
+
+```
+Capability evals → improve system → regression evals → protect existing behavior
+```
+Maintain both. When a capability task becomes reliably solved, promote it into the regression suite."""
+
+[[blocks]]
+heading = "Non-determinism: pass@k vs pass^k"
+body = """LLMs may behave differently on different trials, so one run tells you little. Run each task k times.
+
+- **pass@k:** *at least one* of k attempts succeeds. Measures whether the system **can** solve it.
+- **pass^k:** *all* k attempts succeed. Measures whether it solves it **consistently**.
+
+Example with a per-trial success probability of 80%:
+```
+pass@5 = 1 - (0.2)^5 = 1 - 0.00032 ≈ 99.97%
+pass^5 = (0.8)^5               ≈ 32.8%
+```
+The same system looks almost perfect by one measure and fails two times in three by the other. A user-facing agent that must work every time should be judged by pass^k; a tool where a human picks the best of several drafts can use pass@k."""
+
+[[blocks]]
+heading = "Designing a good eval suite"
+body = """- **Start small:** 20 to 50 realistic tasks, especially ones derived from **real failures**, beat 1,000 synthetic ones.
+- Good tasks are **clear, solvable, reproducible, representative, and easy to grade.**
+- Test both **"should do X"** and **"should NOT do X"**, so you don't accidentally reward over-triggering (an agent that refunds everyone passes every "should refund" task).
+- **Evaluate the outcome**, not an unnecessarily rigid sequence of steps; there are often several valid paths.
+- Read transcripts regularly: a grader can pass a task for the wrong reason."""
+
+[[blocks]]
+heading = "Evals in CI/CD"
+body = """```
+Code / prompt change
+        ↓
+  Run eval suite
+        ↓
+Compare with baseline
+        ↓
+   Regression?
+    ↙      ↘
+  Yes       No
+   ↓         ↓
+Investigate  Deploy
+```
+Version prompts, models and retrieval settings like code, run the suite on every change, and block the deploy when regression scores drop."""
+
+key_points = [
+  "Task (inputs + success criteria) → Trial (one run) → Transcript (what happened) → Grader → Outcome (actual end state).",
+  "Prefer code-based graders; use model-based graders for judgment and calibrate them with humans.",
+  "Capability evals find what's possible; regression evals protect what already works.",
+  "pass@k = at least one success in k; pass^k = all k succeed. At 80%: 99.97% vs 32.8%.",
+  "Start with 20-50 real-failure tasks, test should and should-not, grade outcomes not paths.",
+]
+common_mistakes = [
+  "Judging a change by trying a few prompts by hand.",
+  "Only testing 'should do X', rewarding an over-triggering system.",
+  "Grading what the model said it did instead of the actual outcome.",
+  "Trusting an LLM judge without checking it against human labels.",
+  "Running each task once and ignoring non-determinism.",
+]
+interview_questions = [
+  "How would you build an eval suite for a customer-support agent?",
+  "Explain pass@k versus pass^k and when each matters.",
+  "When would you use an LLM-as-judge, and how do you make it trustworthy?",
+  "How do you stop a prompt change from silently degrading production quality?",
+]
+
+[[quiz]]
+q = "A task succeeds 80% of the time per trial. What is pass^5 (all five succeed)?"
+options = ["About 99.97%", "80%", "About 32.8%", "About 0.03%"]
+answer = 2
+why = "pass^5 = 0.8^5 ≈ 0.328. pass@5 (at least one success) would be 1 - 0.2^5 ≈ 99.97%."
+
+[[quiz]]
+q = "Which grader should you prefer when the task has a checkable end state, such as a row written to a database?"
+options = ["Human review", "LLM-as-judge", "Code-based check of the outcome", "Pairwise comparison"]
+answer = 2
+why = "Deterministic code checks are fast, cheap and reproducible; use them whenever the outcome can be checked directly."
+
+[[quiz]]
+q = "Your refund agent passes every 'should refund' task. What is missing from the suite?"
+options = ["More 'should refund' tasks", "'Should NOT refund' tasks", "A bigger model", "Caching"]
+answer = 1
+why = "Without negative tasks, an agent that refunds everyone scores perfectly; test both directions."

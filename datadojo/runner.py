@@ -150,7 +150,14 @@ def run_one(p, code, test, engine):
 
 
 def main(argv=None):
-    req_path, res_path = (argv or sys.argv[1:])[:2]
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) < 2:
+        # Almost always a DataDojo server that is older than this file: it still pipes the
+        # request over stdin (the pre-0.1 protocol) instead of passing two file paths.
+        sys.exit("runner.py: expected REQUEST.json RESULT.json, got %r.\n"
+                 "If DataDojo is already running, quit and start it again: the running copy is "
+                 "older than this runner." % (args,))
+    req_path, res_path = args[:2]
     with open(req_path, encoding="utf-8") as f:
         req = json.load(f)
     p, code, engine = req["problem"], req["code"], req.get("engine") or "duckdb"

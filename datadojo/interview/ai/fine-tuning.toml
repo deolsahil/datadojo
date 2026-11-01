@@ -1,0 +1,80 @@
+title = "Fine-Tuning"
+order = 4
+desc = "When to fine-tune vs RAG vs prompting, LoRA and QLoRA, training data, catastrophic forgetting and distillation."
+
+[[questions]]
+id = "ai-ft-vs-rag-policy"
+q = "Your support bot doesn't know the company's refund policy, which changes every month. A teammate proposes fine-tuning the model on the policy. What do you recommend?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Recommends RAG over the policy documents instead of fine-tuning",
+  "Explains fine-tuning changes behaviour (format, style, tasks), not reliable up-to-date knowledge",
+  "Facts in weights go stale and every monthly change would require retraining; RAG updates by re-indexing",
+  "RAG can cite the policy source, letting users and reviewers verify the answer",
+  "Notes fine-tuning is useful for tone or format and can be combined with RAG, and suggests trying prompting first",
+]
+answer = """- Use RAG over the policy documents, not fine-tuning.
+- Fine-tuning changes how the model behaves (format, tone, task skill). It's a poor way to store facts, especially ones that change.
+- Policy baked into weights is stale the day it changes, and every monthly update means another training run and re-evaluation. With RAG you re-index the new policy and answers update immediately.
+- RAG answers can cite the exact policy section, so customers and reviewers can verify them, and you can filter by region or effective date.
+- Fine-tuning still has a place for consistent tone or output format, and it combines well with RAG. But try prompting first; it may be enough."""
+study = "fine-tuning"
+
+[[questions]]
+id = "ai-lora"
+q = "Explain LoRA. Why is it so much cheaper than full fine-tuning, and what is QLoRA?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Full fine-tuning updates every weight, needing lots of GPU memory and producing a full model copy per task",
+  "LoRA freezes the base weights and trains small low-rank matrices added beside selected weight matrices",
+  "Only a tiny fraction of parameters is trained, cutting memory (gradients and optimizer state) and producing small adapter files",
+  "Adapters can be swapped per task on one base model, or merged into the weights for no extra inference latency",
+  "QLoRA quantizes the frozen base model (to 4-bit) so large models can be fine-tuned on a single GPU",
+]
+answer = """- Full fine-tuning updates every weight, so you need memory for gradients and optimizer state for billions of parameters, and you get a full-size model copy per task.
+- **LoRA** (a PEFT method) freezes the base weights and adds two small matrices B and A beside chosen layers, so the update is W + BA with a low rank r.
+- Only those matrices train, often well under 1% of parameters, so memory and compute drop sharply and the adapter is megabytes, not gigabytes.
+- One base model can serve many swappable adapters, or an adapter can be merged into the weights so inference has no extra latency.
+- **QLoRA** also quantizes the frozen base to 4-bit, letting much larger models be fine-tuned on a single GPU at a small quality cost."""
+study = "lora-peft"
+
+[[questions]]
+id = "ai-catastrophic-forgetting"
+q = "After fine-tuning a model on 20,000 internal ticket summaries, it summarizes tickets well but now gives poor answers to general questions and ignores formatting instructions. What happened, and how would you fix it?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Identifies catastrophic forgetting: training on a narrow task shifted weights away from general abilities",
+  "Notes likely contributors: full fine-tuning, too many epochs or too high a learning rate, a narrow training set",
+  "Mitigations: use LoRA/PEFT, fewer epochs or lower learning rate, early stopping on a validation set",
+  "Mixes general instruction-following data into the training set",
+  "Evaluates both the target task and general capabilities (and safety) against the base model before shipping, or routes general questions to the base model",
+]
+answer = """- This is **catastrophic forgetting**: heavy training on one narrow task pulled the weights toward it and away from general instruction-following.
+- Likely contributors: full fine-tuning rather than PEFT, too many epochs or a high learning rate, and a dataset of one task in one format.
+- Fixes: switch to LoRA so the base weights stay frozen; reduce epochs or learning rate and early-stop on a validation set.
+- Mix general instruction data (including varied formatting instructions) into training so those behaviours are rehearsed.
+- Evaluate on two suites, the ticket task and a general capability and safety suite, compared with the base model, and only ship if both pass.
+- Architecturally, you can also route: send ticket summarization to the tuned adapter and everything else to the base model."""
+study = "fine-tuning-data"
+
+[[questions]]
+id = "ai-distillation"
+q = "What is model distillation, and when would you use it in an LLM product?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Distillation trains a smaller student model to imitate a larger teacher model",
+  "Practical LLM version: run the teacher on real inputs, filter outputs with evals, fine-tune the student on those pairs",
+  "Use case: high-volume narrow tasks where the large model is too expensive or slow",
+  "Limitation: the student matches the teacher only on the narrow task, not in general ability",
+  "Compares student vs teacher on the same eval set, and checks the provider's terms of use for training on outputs",
+]
+answer = """- Distillation trains a small **student** model to reproduce the behaviour of a large **teacher**.
+- Classically the student learns from the teacher's probability distributions; with hosted APIs you usually only get text, so in practice you run the teacher on many real inputs, grade and filter its outputs, and fine-tune the student on the good pairs.
+- Use it for high-volume, narrow tasks (classification, extraction, routing) where the big model works but costs too much or is too slow, or where you need to run on-device or self-hosted.
+- The student will not match the teacher's general ability, only the distilled task.
+- Evaluate student and teacher on the same held-out set to decide whether the quality gap is worth the savings, and check the teacher provider's terms, some of which restrict training other models on outputs."""
+study = "distillation"

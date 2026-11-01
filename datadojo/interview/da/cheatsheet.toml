@@ -1,0 +1,1032 @@
+# Data Analyst cheatsheet: field notes the interview questions link to via `study`.
+
+# ---------------------------------------------------------------- SQL for Analysis
+
+[[sections]]
+id = "join-row-counts"
+group = "SQL for Analysis"
+title = "Joins and Row Counts"
+plain = "A join matches rows from two tables on a key. The number of rows you get back depends on how many matches each row finds, and that is where most silent analysis bugs come from."
+how = [
+  "Decide the grain of each table: what one row means (one order, one customer, one order line)",
+  "Check whether the join key is unique on each side",
+  "One-to-one keeps the row count, one-to-many multiplies the left rows, many-to-many multiplies both",
+  "LEFT JOIN keeps every left row, filling NULLs where nothing matched; INNER JOIN drops unmatched rows",
+  "Compare row counts and a key total (revenue) before and after the join",
+]
+uses = [
+  "Catching revenue that doubled because orders were joined to a table with two rows per customer",
+  "Finding customers with no orders using a LEFT JOIN plus WHERE right.key IS NULL",
+]
+picture = "Like a seating chart: if a guest's name appears twice on the table list, they get two chairs, and suddenly your headcount is wrong."
+body = """**Fan-out** is the classic trap: joining orders (one row per order) to promotions (several rows per order) and then summing order revenue counts each order once per promotion.
+
+Guard rails before trusting a joined number:
+- `SELECT key, COUNT(*) FROM t GROUP BY key HAVING COUNT(*) > 1` on the side you believed was unique
+- Compare `COUNT(*)` and `SUM(amount)` before and after the join
+- Aggregate the many side to the join grain first, then join
+
+```
+orders (1 row per order)  JOIN  order_items (n rows per order)
+-> result has 1 row per item; SUM(orders.total) is now inflated
+fix: SUM(items.price) or pre-aggregate items per order
+```
+
+A **filter on the right table in WHERE** after a LEFT JOIN removes the NULL rows and silently turns it into an inner join. Put that condition in the `ON` clause instead."""
+diagram = """flowchart LR
+  A[Check grain of each table] --> B[Is the key unique?]
+  B --> C[Pre-aggregate the many side]
+  C --> D[Join]
+  D --> E[Compare row count and totals]"""
+
+[[sections]]
+id = "group-by-vs-window"
+group = "SQL for Analysis"
+title = "GROUP BY vs Window Functions"
+plain = "GROUP BY collapses many rows into one row per group. A window function computes a value across related rows but keeps every row."
+how = [
+  "GROUP BY: pick the grouping columns, every other column must be aggregated, output has one row per group",
+  "Window: OVER (PARTITION BY ... ORDER BY ...) defines which rows each row can see",
+  "The window result is attached to each original row",
+  "Windows are evaluated after WHERE, GROUP BY and HAVING, so filter on them with a subquery or QUALIFY",
+]
+uses = [
+  "Total revenue per region: GROUP BY",
+  "Each order's share of its customer's total spend: SUM(amount) OVER (PARTITION BY customer_id)",
+]
+picture = "GROUP BY is a class photo per classroom; a window function is every student holding a card that says their class average."
+body = """```sql
+-- one row per customer
+SELECT customer_id, SUM(amount) AS total
+FROM orders GROUP BY customer_id;
+
+-- every order row kept, with the customer total alongside
+SELECT order_id, customer_id, amount,
+       SUM(amount) OVER (PARTITION BY customer_id) AS customer_total
+FROM orders;
+```
+
+- You cannot use a window function in `WHERE`; wrap it in a CTE and filter outside (or use `QUALIFY` in Snowflake, BigQuery, Databricks and DuckDB).
+- `PARTITION BY` without `ORDER BY` gives the whole partition; adding `ORDER BY` makes aggregates cumulative by default.
+- Mixing both is common: GROUP BY to daily totals, then a window to compute a 7-day moving average over those daily rows."""
+
+[[sections]]
+id = "ranking-dedup"
+group = "SQL for Analysis"
+title = "Ranking, Dedup and Running Totals"
+plain = "Ordered window functions number rows, rank them, and build cumulative sums. The same tool removes duplicates by keeping row number 1."
+how = [
+  "ROW_NUMBER gives 1, 2, 3 with no ties (ties broken arbitrarily unless you add a tiebreaker)",
+  "RANK gives ties the same number and skips: 1, 1, 3",
+  "DENSE_RANK gives ties the same number without gaps: 1, 1, 2",
+  "Dedup: ROW_NUMBER() OVER (PARTITION BY key ORDER BY updated_at DESC) and keep rn = 1",
+  "Running total: SUM(x) OVER (ORDER BY day ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)",
+]
+uses = [
+  "Top 3 products per category",
+  "Latest address per customer from a change log",
+  "Cumulative signups and 7-day moving averages on a dashboard",
+]
+picture = "A race finish: ROW_NUMBER hands out unique bibs, RANK lets two runners tie for gold and skips silver, DENSE_RANK lets them tie and still gives the next runner silver."
+body = """```
+score  ROW_NUMBER  RANK  DENSE_RANK
+ 90        1         1       1
+ 90        2         1       1
+ 85        3         3       2
+```
+
+Dedup keeping the latest row:
+```sql
+WITH ranked AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY user_id ORDER BY updated_at DESC, event_id DESC) AS rn
+  FROM user_events)
+SELECT * FROM ranked WHERE rn = 1;
+```
+
+- Add a **deterministic tiebreaker** to ORDER BY, or reruns can keep different rows.
+- With ORDER BY and no frame, many engines default to `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`, which treats rows with the same ORDER BY value as peers and adds them together. Use `ROWS` for a true row-by-row running total.
+- A 7-day moving average with `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW` assumes one row per day: fill missing days from a date spine first.
+- `LAG` and `LEAD` read the previous and next row: day-over-day change, time between events."""
+
+[[sections]]
+id = "cohort-retention-sql"
+group = "SQL for Analysis"
+title = "Cohort and Retention Queries"
+plain = "A cohort groups users by when they started. Retention asks what share of each cohort is still active N periods later."
+how = [
+  "Find each user's cohort date: their first signup or first activity, truncated to week or month",
+  "Join activity back to users and compute the period number since the cohort date",
+  "Count distinct active users per cohort and period",
+  "Divide by the cohort size (period 0) to get the retention rate",
+]
+uses = [
+  "Checking whether users who joined after a redesign stick around longer",
+  "A retention triangle on a product health dashboard",
+]
+picture = "Like tracking school classes by graduation year: you follow the class of 2024 together, not mixed in with everyone else."
+body = """```sql
+WITH firsts AS (
+  SELECT user_id, DATE_TRUNC('week', MIN(event_date)) AS cohort_week
+  FROM events GROUP BY user_id),
+activity AS (
+  SELECT DISTINCT f.user_id, f.cohort_week,
+         DATEDIFF('week', f.cohort_week, DATE_TRUNC('week', e.event_date)) AS wk
+  FROM firsts f JOIN events e ON e.user_id = f.user_id)
+SELECT cohort_week, wk,
+       COUNT(*) * 1.0 / MAX(COUNT(*)) OVER (PARTITION BY cohort_week) AS retention
+FROM activity GROUP BY cohort_week, wk;
+```
+(Date function names differ by engine.)
+
+- **Classic (bounded) retention**: active in exactly week N. **Unbounded (rolling)**: active in week N or any later week. Say which one you use.
+- Recent cohorts have not had time to reach week 8: leave those cells empty, do not show them as zero.
+- Define "active" carefully: a login, a key action, a purchase. The definition drives the result more than the SQL.
+- Read the triangle three ways: down a column (are newer cohorts better?), along a row (the decay curve), and along diagonals (calendar effects like an outage)."""
+
+[[sections]]
+id = "funnel-sql"
+group = "SQL for Analysis"
+title = "Funnel Queries"
+plain = "A funnel counts how many users reach each step of a journey, in order, and where they drop off."
+how = [
+  "Define the steps and the time window (for example, checkout within 7 days of viewing a product)",
+  "For each user, find the first time they hit each step",
+  "Require each step to happen after the previous one",
+  "Count users per step and compute step-to-step and overall conversion",
+]
+uses = [
+  "Signup flow: landing, form start, form submit, email verified",
+  "Ecommerce: product view, add to cart, checkout start, purchase",
+]
+picture = "A funnel is a series of doors: you count how many people walk through each door, and only people who came through the previous door count."
+body = """```sql
+WITH s AS (
+  SELECT user_id,
+    MIN(CASE WHEN event = 'view'     THEN ts END) AS t_view,
+    MIN(CASE WHEN event = 'cart'     THEN ts END) AS t_cart,
+    MIN(CASE WHEN event = 'purchase' THEN ts END) AS t_buy
+  FROM events GROUP BY user_id)
+SELECT COUNT(t_view) AS viewed,
+  COUNT(CASE WHEN t_cart > t_view THEN 1 END) AS carted,
+  COUNT(CASE WHEN t_buy > t_cart AND t_cart > t_view THEN 1 END) AS bought
+FROM s;
+```
+
+- Counting events instead of distinct users inflates steps for users who repeat actions.
+- Without the ordering check, a user who purchased from a direct link and viewed later counts as converted.
+- Taking the global first timestamp per step is a simplification; strict funnels match steps within a session or window.
+- Step conversion (cart to purchase) shows where the leak is; overall conversion shows the business impact."""
+
+[[sections]]
+id = "null-date-pitfalls"
+group = "SQL for Analysis"
+title = "NULL and Date Pitfalls"
+plain = "NULL means unknown, not zero or empty, and SQL treats it with three-valued logic. Dates hide their own traps: time zones, truncation and missing days."
+how = [
+  "Any comparison with NULL (=, <>, >) is unknown, and WHERE keeps only true rows",
+  "COUNT(*) counts rows; COUNT(col) skips NULLs; SUM, AVG, MIN and MAX ignore NULLs",
+  "NOT IN against a list containing a NULL returns no rows; use NOT EXISTS",
+  "Store timestamps in UTC and convert to the business time zone before truncating to a day",
+]
+uses = [
+  "Explaining why AVG(rating) looks high when unrated orders are NULL",
+  "Fixing a daily report whose late-evening sales land on the wrong day",
+]
+picture = "NULL is a sealed envelope: you cannot say it equals another sealed envelope, because you do not know what is in either."
+body = """```sql
+WHERE col = NULL        -- never true, use IS NULL
+WHERE status <> 'void'  -- also drops rows where status IS NULL
+AVG(score)              -- averages non-null only
+AVG(COALESCE(score, 0)) -- treats missing as zero: a different question
+```
+
+- `NOT IN (SELECT id FROM t)` returns nothing if `t.id` has a NULL. `NOT EXISTS` or a LEFT JOIN anti-join is safe.
+- `SUM` over zero rows or all-NULL rows returns NULL, not 0. Wrap with `COALESCE` for reporting.
+- Integer division: `3 / 4` is 0 in some engines (Postgres, SQL Server). Multiply by `1.0` or cast.
+- `BETWEEN '2026-10-01' AND '2026-10-31'` on a timestamp misses most of Oct 31. Use `ts >= '2026-10-01' AND ts < '2026-11-01'`.
+- Days with no events disappear from GROUP BY output. Left join from a **date spine** (one row per day) so gaps show as zero.
+- Week definitions differ (ISO weeks start Monday); confirm what the business means."""
+
+# ---------------------------------------------------------------- Metrics and KPIs
+
+[[sections]]
+id = "core-product-metrics"
+group = "Metrics and KPIs"
+title = "Core Product Metrics: DAU, MAU, Conversion"
+plain = "Active-user and conversion metrics count how many people use the product and how many take the action that matters. Each needs a precise definition before it means anything."
+how = [
+  "Define the actor (user, account, device) and the qualifying action (open, key action, purchase)",
+  "Define the window: DAU counts distinct actives in a day, MAU in a trailing 28 or 30 days",
+  "Stickiness = average DAU / MAU: how many days a month the typical monthly user comes back",
+  "Conversion rate = users who did the target action / users who had the chance to",
+]
+uses = [
+  "A weekly product review showing DAU, WAU, MAU and DAU/MAU",
+  "Tracking trial-to-paid conversion for a subscription product",
+]
+picture = "MAU is everyone who visited the gym this month; DAU/MAU tells you whether they are regulars or New Year's resolution visitors."
+body = """- **Active must mean value.** Counting app opens (including push-notification bounces) inflates DAU. A key action (sent a message, played a song) is harder to game.
+- DAU/MAU of 0.5 means the average monthly user is active about 15 days a month. What is good depends on the product: a messaging app should be daily, a tax app is yearly.
+- Conversion needs a clear **denominator**: of all visitors, of signups, of users who saw the feature. Changing the denominator changes the story.
+- State the time window and the attribution window ("purchased within 7 days of first visit").
+- Distinct counts do not add up: sum of DAU across a month is not MAU, and MAU across regions can double-count travelers."""
+
+[[sections]]
+id = "retention-churn"
+group = "Metrics and KPIs"
+title = "Retention and Churn"
+plain = "Retention is the share of users or customers who are still around after some time. Churn is the share who left. For one period they are complements, but how you define 'left' matters."
+how = [
+  "Pick the population at the start of the period (customers active on day 1)",
+  "Define leaving: cancelled a subscription, or no activity for N days",
+  "Churn rate = customers lost during the period / customers at the start",
+  "Retention for that period = 1 minus churn; cohort retention curves track it across many periods",
+]
+uses = [
+  "Monthly subscriber churn reported to finance",
+  "Revenue retention (net revenue retention) for a B2B product, which counts upgrades and downgrades",
+]
+picture = "Retention is a leaky bucket: you measure how much water is still there; churn is the size of the leak."
+body = """- **Do not include new customers acquired mid-period in the denominator**, or churn looks artificially low during fast growth.
+- **Logo churn** (customers lost) and **revenue churn** (dollars lost) can tell different stories: losing many small accounts vs one big one.
+- **Net revenue retention** above 100 percent means expansion from existing customers outweighs losses.
+- For non-subscription products, churn is inferred from inactivity, so the threshold (30 vs 90 days) is a choice; pick one that matches the natural usage cycle.
+- With a constant monthly churn c, expected customer lifetime is about 1 / c months: 5 percent monthly churn means about 20 months.
+- Retention curves that flatten are healthy (a core of loyal users); curves that keep sloping to zero mean no product fit for that cohort."""
+
+[[sections]]
+id = "arpu-ltv"
+group = "Metrics and KPIs"
+title = "ARPU and LTV"
+plain = "ARPU is average revenue per user over a period. LTV estimates the total value a customer brings over their whole relationship, so you know how much you can spend to acquire one."
+how = [
+  "ARPU = revenue in the period / average active users (ARPPU uses paying users only)",
+  "Simple LTV = ARPU per month x gross margin / monthly churn rate",
+  "Better LTV: sum actual cumulative margin per cohort over time and extrapolate the curve",
+  "Compare LTV to CAC (customer acquisition cost) and to the payback period",
+]
+uses = [
+  "Deciding the max bid for a paid marketing channel",
+  "Comparing value of customers from different acquisition channels",
+]
+picture = "LTV is like estimating the value of a regular at a coffee shop: how much they spend per visit, how much is profit, and how many months they keep coming."
+body = """```
+ARPU = 20 dollars per month, margin = 60 percent, churn = 4 percent per month
+LTV  = 20 x 0.6 / 0.04 = 300 dollars
+```
+
+- The simple formula assumes constant churn and ARPU; real churn is usually high early and lower later, so it can be far off. Cohort-based curves are more honest.
+- Use **margin, not revenue**, when comparing to acquisition cost.
+- LTV is an estimate with long horizons; discount future value or cap the horizon (for example 24 or 36 months).
+- Averages hide skew: a few whales can dominate. Look at the distribution and at LTV by segment and channel.
+- A common heuristic is LTV:CAC of about 3 and payback under 12 months, but it depends on the business and its cash position."""
+
+[[sections]]
+id = "north-star-guardrails"
+group = "Metrics and KPIs"
+title = "North Star and Guardrail Metrics"
+plain = "A north star metric captures the core value customers get, and the team steers toward it. Guardrail metrics are the things you must not break while chasing it."
+how = [
+  "North star: one metric that reflects customer value and predicts long-term revenue (for example, nights booked)",
+  "Input metrics: the levers teams can move that drive the north star",
+  "Guardrails: quality, cost and trust metrics that must stay flat (latency, refunds, unsubscribes, complaints)",
+  "Review all three together so a win on one does not hide damage on another",
+]
+uses = [
+  "A marketplace using completed transactions as the north star with cancellation rate as a guardrail",
+  "An A/B test scorecard with a primary metric plus guardrails like page load time and crash rate",
+]
+picture = "The north star is the destination on your GPS; guardrails are the speed limit and fuel gauge. Arriving fast with an empty tank and a ticket is not a win."
+body = """Good north star properties:
+- Reflects value delivered to the customer, not just revenue extracted
+- Moves on a time scale the team can learn from (weekly, not yearly)
+- Hard to game: sessions can be inflated with notifications; completed orders are harder
+
+Common pairings:
+```
+north star / primary          guardrail
+messages sent                 spam reports, blocks
+orders completed              refund rate, delivery time
+watch time                    content diversity, churn
+signup conversion             activation, fraud rate
+```
+
+Goodhart's law: once a measure becomes a target, people optimize the measure instead of the goal. Guardrails and counter-metrics are the defence."""
+
+[[sections]]
+id = "metric-trees"
+group = "Metrics and KPIs"
+title = "Metric Trees"
+plain = "A metric tree breaks one top-level metric into the smaller metrics that multiply or add up to it, so you can see which branch moved and who owns it."
+how = [
+  "Start from the output metric, for example revenue",
+  "Split it into an exact identity: revenue = buyers x orders per buyer x average order value",
+  "Keep splitting each branch: buyers = visitors x conversion rate; visitors by channel",
+  "Assign owners and data sources to the leaves",
+  "When the top moves, walk down the tree to find which leaf explains it",
+]
+uses = [
+  "Explaining to leadership that revenue fell because order value dropped, not traffic",
+  "Aligning team goals: growth owns visitors, product owns conversion, merchandising owns order value",
+]
+picture = "Like a family tree for a number: when the grandparent changes, you look at which child and grandchild changed."
+body = """```
+revenue
+  = active buyers x orders per buyer x average order value
+active buyers = new buyers + returning buyers
+new buyers    = visitors x signup rate x first-purchase rate
+average order value = items per order x price per item
+```
+
+- Multiplicative trees let you **decompose a change**: approximately, percent change in revenue is the sum of percent changes in each factor (for small changes, use log differences to make it exact).
+- Additive splits (by country, platform, channel) find **where** a change happened; multiplicative splits find **which mechanism**.
+- Keep the identity exact so the leaves really reconcile to the top; mismatched definitions between branches make the tree lie.
+- Leaves should be actionable by a team; a tree that ends in metrics nobody can move is just a chart."""
+diagram = """flowchart TD
+  R[Revenue] --> B[Active buyers]
+  R --> F[Orders per buyer]
+  R --> A[Average order value]
+  B --> N[New buyers]
+  B --> T[Returning buyers]
+  N --> V[Visitors]
+  N --> C[Conversion rate]"""
+
+[[sections]]
+id = "diagnosing-metric-drops"
+group = "Metrics and KPIs"
+title = "Diagnosing a Metric Drop"
+plain = "When a metric falls, work from 'is the data even right?' to 'is it external or seasonal?' to 'which segment and which step moved?' before guessing a cause."
+how = [
+  "Clarify: exact definition, how big the drop is, since when, and compared to what baseline",
+  "Check the data: pipeline delays, tracking changes, app releases, bot filters, definition changes",
+  "Check the calendar and outside world: day of week, holidays, seasonality, outages, competitors, news",
+  "Segment: platform, app version, country, channel, new vs returning; find where the drop concentrates",
+  "Decompose with the metric tree or funnel, form a hypothesis, then confirm and size it",
+]
+uses = [
+  "Signups dropped 15 percent yesterday",
+  "Weekly active users fell 8 percent after a release",
+]
+picture = "Like a doctor with a patient whose temperature spiked: first check the thermometer, then ask what they ate and where they travelled, then run tests on the likely organ."
+body = """Order matters because the cheapest, most common causes come first:
+```
+1. Is it real?     broken logging, late data, new filters, definition change
+2. Is it normal?   weekday, holiday, seasonality, compare to same day last year
+3. Is it external? outage, competitor launch, policy change, marketing paused
+4. Where?          segment by platform, version, geo, channel, user type
+5. Which step?     funnel or metric tree decomposition
+6. Why?            hypothesis, evidence, size of impact, recommendation
+```
+
+- **Internal change** checks: deploys, experiments ramping, pricing changes, marketing spend cuts, email sends.
+- If the drop is in one segment only (Android app version 8.2), it is almost always a release or tracking bug.
+- If it is spread evenly across every segment, think calendar, external event, or a top-of-funnel source like a paid channel turned off.
+- **Mix shift**: overall rate can fall while every segment is flat, because traffic moved to a lower-converting segment.
+- Close with impact and next step, not just a cause."""
+diagram = """flowchart TD
+  A[Metric dropped] --> B[Data and tracking ok?]
+  B --> C[Seasonal or external?]
+  C --> D[Segment the drop]
+  D --> E[Decompose funnel or tree]
+  E --> F[Hypothesis and impact]"""
+
+[[sections]]
+id = "simpsons-paradox-mix-shift"
+group = "Metrics and KPIs"
+title = "Mix Shift and Simpson's Paradox"
+plain = "An overall average can move in the opposite direction to every one of its segments, because the share of each segment in the total changed."
+how = [
+  "An overall rate is a weighted average of segment rates",
+  "If traffic shifts toward a segment with a lower rate, the overall rate falls even if each segment is unchanged or rising",
+  "Always compare segment rates and segment weights separately",
+  "Decide which view answers the question: often the segment view is the fair comparison",
+]
+uses = [
+  "Conversion fell overall, but rose on both desktop and mobile, because mobile (lower converting) grew from 40 to 70 percent of traffic",
+  "Average order value dropped after expanding into a lower-price country",
+]
+picture = "A school's average test score falls even though every class improved, because the school admitted many more students into the class that starts with lower scores."
+body = """```
+            before                after
+segment   share  conv          share  conv
+desktop    60%   10%            30%   11%
+mobile     40%    2%            70%    3%
+overall          6.8%                 5.4%
+```
+Both segments improved, overall dropped. The change is all mix.
+
+- Decompose a change into a **rate effect** (segment rates moved) and a **mix effect** (segment weights moved).
+- In an experiment, randomization keeps the mix balanced, so this mostly matters in observational data and before/after comparisons.
+- Which answer is right depends on the causal story: if the treatment itself caused the mix shift, the overall number may be the honest one."""
+
+# ---------------------------------------------------------------- Statistics
+
+[[sections]]
+id = "distributions-mean-median"
+group = "Statistics"
+title = "Distributions, Mean vs Median"
+plain = "A distribution shows how values are spread out. The mean is the balancing point and gets pulled by extreme values; the median is the middle value and does not."
+how = [
+  "Plot a histogram first: symmetric, skewed, bimodal, or heavy-tailed",
+  "For symmetric data, mean and median are close and either works",
+  "For right-skewed data (revenue, session length, income), mean is greater than median",
+  "Report the median or percentiles for 'typical', the mean when totals matter",
+]
+uses = [
+  "Reporting typical delivery time as a median plus the 90th percentile",
+  "Forecasting total revenue, which needs the mean per user times users",
+]
+picture = "Ten people in a bar earn 50k each; a billionaire walks in. The mean income jumps to about 90 million, the median barely moves."
+body = """- **Normal** (bell curve): heights, measurement error. **Right-skewed / heavy-tailed**: revenue per user, time on site, order size. **Binomial / Bernoulli**: converted or not. **Poisson**: counts of events per interval.
+- Heavy tails make the mean noisy: one whale can swing an A/B test. Options: winsorize or cap at a high percentile, use a log transform, use medians or quantile tests, or bootstrap a confidence interval.
+- Mean is still the right metric when the business cares about totals (revenue = users x mean), even if it is noisy.
+- **Percentiles** (p50, p90, p99) describe latency and wait time better than any single average.
+- Bimodal data (two humps) usually means two populations mixed together; split them before summarizing."""
+
+[[sections]]
+id = "variance-sampling"
+group = "Statistics"
+title = "Variance, Standard Error and Sampling"
+plain = "Variance measures how spread out values are. Standard error measures how much an estimate like a mean would wobble if you repeated the sample, and it shrinks as the sample grows."
+how = [
+  "Standard deviation = square root of variance, in the same units as the data",
+  "Standard error of a mean = standard deviation / square root of n",
+  "Quadrupling the sample size halves the standard error",
+  "A sample only represents the population if it was drawn without systematic bias",
+]
+uses = [
+  "Knowing a survey of 400 people gives a margin of error near 5 points for a proportion",
+  "Understanding why an A/B test on a noisy metric like revenue needs far more users than one on clicks",
+]
+picture = "Tasting soup: one spoonful from a well-stirred pot tells you about the whole pot; a bigger spoon makes the guess steadier, but if you never stirred, a bigger spoon does not help."
+body = """- For a proportion p, variance per observation is `p(1 - p)`; it is largest at p = 0.5.
+- Standard error falls with the square root of n, which is why each extra bit of precision costs more and more data.
+- The **central limit theorem**: the mean of a large enough sample is approximately normal even if the data is skewed, which makes z and t tests work. Very heavy tails need larger samples.
+- **Sampling bias** is not fixed by size: survivorship bias (only analysing customers who stayed), selection bias (opt-in surveys), non-response bias.
+- Stratified sampling (sample within segments) can reduce variance and ensure small groups are represented."""
+
+[[sections]]
+id = "confidence-intervals"
+group = "Statistics"
+title = "Confidence Intervals"
+plain = "A confidence interval is a range of plausible values for the true number, built from your sample. A 95 percent interval comes from a method that captures the true value 95 percent of the time across repeated samples."
+how = [
+  "Compute the estimate (mean, proportion, difference between groups)",
+  "Compute its standard error",
+  "95 percent interval is roughly estimate plus or minus 1.96 standard errors",
+  "If the interval for a difference excludes 0, the difference is significant at the 5 percent level",
+]
+uses = [
+  "Reporting an A/B lift as +2.1 percent (95 percent CI +0.4 to +3.8)",
+  "Showing a survey result with its margin of error",
+]
+picture = "Like throwing a ring at a peg you cannot see: 95 percent of your throws land around the peg. Any single ring either caught it or not."
+body = """- Correct reading: "if we repeated this study many times, 95 percent of intervals built this way would contain the true value." Saying "there is a 95 percent probability the true value is in this specific interval" is the common loose phrasing; strictly that is a Bayesian credible interval idea.
+- The interval is more useful than a p-value because it shows **size and uncertainty together**: a wide interval crossing zero says "we do not know", not "no effect".
+- Width scales with 1 / square root of n: to halve the width, collect 4x the data.
+- Overlapping intervals for two groups do not prove there is no significant difference; compute the interval of the difference itself.
+- For skewed metrics or ratios, the **bootstrap** (resample the data many times and take percentiles of the estimate) gives intervals without a formula."""
+
+[[sections]]
+id = "p-values-significance"
+group = "Statistics"
+title = "P-values, Significance and Practical Significance"
+plain = "A p-value is how surprising your data would be if there were truly no effect. Small means surprising. It is not the chance the result is a fluke, and it says nothing about whether the effect is big enough to matter."
+how = [
+  "State the null hypothesis: no difference between groups",
+  "Compute a test statistic from the data",
+  "The p-value is the probability of a result at least this extreme if the null were true",
+  "Compare to alpha (often 0.05) chosen before the test; below it, reject the null",
+  "Then ask whether the effect size is large enough to act on",
+]
+uses = [
+  "Deciding whether an A/B test result is likely real",
+  "Explaining to a PM why a significant 0.05 percent lift may not be worth shipping",
+]
+picture = "A smoke alarm: a p-value is how often the alarm would go off with no fire. A quiet alarm does not prove there is no fire, and a loud one does not tell you how big the fire is."
+body = """A p-value is **not**:
+- the probability that the null hypothesis is true
+- the probability the result is due to chance
+- a measure of effect size or importance
+- proof of no effect when large (absence of evidence is not evidence of absence, especially with low power)
+
+**Type I error** (false positive) rate = alpha. **Type II error** (false negative) rate = beta; power = 1 - beta.
+
+**Statistical vs practical significance**: with millions of users, a tiny lift becomes significant. Decide in advance the smallest effect worth acting on (the MDE), and judge results against it using the confidence interval, the cost of building and maintaining the change, and guardrail effects.
+
+p = 0.049 and p = 0.051 are essentially the same evidence; avoid treating 0.05 as a cliff."""
+
+[[sections]]
+id = "correlation-causation"
+group = "Statistics"
+title = "Correlation vs Causation"
+plain = "Two things moving together does not mean one causes the other. A third factor might drive both, the arrow might point the other way, or it might be chance."
+how = [
+  "Confounding: a third variable drives both (engaged users both use feature X and retain)",
+  "Reverse causality: the outcome causes the 'cause' (retained users have more time to find feature X)",
+  "Selection bias: who ended up in each group was not random",
+  "To claim causation, randomize (A/B test) or use a quasi-experimental design with stated assumptions",
+]
+uses = [
+  "Pushing back on 'users who use saved lists retain 2x better, so force everyone into saved lists'",
+  "Explaining why an A/B test is needed before a big rollout",
+]
+picture = "Ice cream sales and drownings rise together. Ice cream does not cause drowning; summer causes both."
+body = """- Controlling for known confounders (regression, matching) helps but cannot rule out **unknown** confounders.
+- Ask: what would have happened without the cause (the counterfactual)? Randomization creates that comparison group.
+- Correlation is still useful: it generates hypotheses and helps prediction even when it does not explain mechanism.
+- Spurious correlations are easy to find when you test many pairs of metrics; pre-register what you will look at."""
+
+# ---------------------------------------------------------------- Experimentation
+
+[[sections]]
+id = "ab-test-design"
+group = "Experimentation"
+title = "A/B Test Design"
+plain = "An A/B test randomly splits users into a control group and a treatment group, changes one thing for the treatment, and compares outcomes. Randomization makes the groups alike, so the difference is caused by the change."
+how = [
+  "Write a hypothesis: changing X will move metric Y by about Z because of reason R",
+  "Pick a primary metric, secondary metrics and guardrails before starting",
+  "Choose the randomization unit and compute sample size and duration from the MDE",
+  "Run for full weeks, check sample ratio and data quality, do not peek and stop early",
+  "Analyse the pre-registered metrics, check guardrails and segments, decide and document",
+]
+uses = [
+  "Testing a new checkout button layout",
+  "Measuring the effect of a new onboarding flow on week-1 activation",
+]
+picture = "A clinical trial for a product change: half the patients get the pill, half get a sugar pill, chosen by coin flip so the groups are alike."
+body = """Pre-launch checklist:
+```
+hypothesis       what changes, which metric, expected direction, why
+primary metric   one decision metric, plus guardrails
+unit             user, session, device, account, region
+sample size      alpha 0.05, power 0.8, MDE, baseline rate and variance
+duration         at least 1 to 2 full weekly cycles
+exposure         who is eligible; analyse only users who could see the change
+```
+
+- **A/A tests** (both groups identical) validate the pipeline: about 5 percent should come out significant at alpha 0.05.
+- Analyse **triggered users** (those who actually reached the changed page) to reduce noise, but assign before the trigger.
+- Decide what you will do for each outcome before seeing results: ship, iterate, or kill.
+- **CUPED** uses each user's pre-experiment value of the metric as a covariate to cut variance, which shortens tests."""
+diagram = """flowchart LR
+  H[Hypothesis] --> M[Metrics and guardrails]
+  M --> S[Sample size and duration]
+  S --> R[Randomize and run]
+  R --> Q[Quality checks]
+  Q --> D[Analyse and decide]"""
+
+[[sections]]
+id = "randomization-unit"
+group = "Experimentation"
+title = "Randomization Unit and Interference"
+plain = "The randomization unit is what you assign to control or treatment: a user, a session, a device, a store or a city. It must match how the change is experienced and must keep groups from affecting each other."
+how = [
+  "Default to user-level randomization so each person sees one consistent experience",
+  "Analysis unit should match the randomization unit, or the variance must be corrected",
+  "If users interact (marketplaces, social networks), treatment can leak into control",
+  "Then randomize larger clusters: cities, regions, time slots (switchbacks), or social clusters",
+]
+uses = [
+  "A ride-sharing pricing test randomized by city and time window",
+  "A social feature randomized by friend cluster so both sides of a conversation get it",
+]
+picture = "Testing a new fertilizer: if the plots share soil and water, fertilizer runs into the control plot, so you put the plots far apart."
+body = """- **Session-level** randomization lets one user see both versions: confusing, and it violates independence across sessions.
+- **Page-view level** is fine for invisible changes like ranking tweaks, risky for visible UI.
+- **SUTVA** (stable unit treatment value assumption): one unit's outcome does not depend on others' assignment. Marketplaces break it: if treatment buyers book more, control buyers find less inventory, and the measured lift is inflated.
+- Cluster randomization cuts the effective sample size a lot; fewer, larger units mean wider intervals.
+- Analysing per-pageview metrics (click-through rate) when randomizing by user needs the **delta method** or bootstrap by user, because page views from the same user are correlated."""
+
+[[sections]]
+id = "sample-size-power-mde"
+group = "Experimentation"
+title = "Sample Size, Power and MDE"
+plain = "Before a test, decide the smallest effect worth detecting (MDE) and how sure you want to be to catch it (power). Those, plus the metric's noise, set how many users you need."
+how = [
+  "Alpha: false positive rate you accept, often 0.05",
+  "Power: chance of detecting a true effect of size MDE, often 0.8",
+  "Baseline and variance: noisier metrics need more users",
+  "Rule of thumb: n per group about 16 x variance / MDE squared (alpha 0.05, power 0.8)",
+  "Duration = required users / eligible users per day, rounded up to full weeks",
+]
+uses = [
+  "Telling a PM a 1 percent relative lift on a 3 percent conversion needs millions of users per arm",
+  "Choosing a more sensitive metric (add-to-cart) when purchase volume is too low",
+]
+picture = "Spotting a dim star needs a bigger telescope; spotting a small effect needs a bigger sample."
+body = """```
+baseline conversion p = 0.10, variance = p(1-p) = 0.09
+MDE absolute = 0.01 (10 percent relative)
+n per group = 16 x 0.09 / 0.01^2 = 14,400
+```
+Halving the MDE quadruples the sample size.
+
+- **Low power** means many real effects are missed, and the significant ones you do find tend to be **exaggerated** (winner's curse).
+- Ways to need fewer users: a more sensitive metric, variance reduction (CUPED), triggering analysis on exposed users, a larger MDE if smaller effects are not worth shipping anyway.
+- Run at least one or two full weeks to cover weekday and weekend behaviour even if you reach n sooner.
+- MDE is a business choice: the smallest lift that pays for the change."""
+
+[[sections]]
+id = "peeking-novelty"
+group = "Experimentation"
+title = "Peeking, Novelty and Time Effects"
+plain = "Checking results repeatedly and stopping the moment they look significant inflates false positives. Early results also mislead because users react to newness, not to lasting value."
+how = [
+  "Fix sample size and duration before starting, and decide at the end",
+  "If you must monitor, use a sequential method designed for it (group sequential, always-valid p-values)",
+  "Watch the treatment effect over time: novelty fades, change aversion recovers",
+  "Look at new vs returning users separately; new users do not have old habits",
+]
+uses = [
+  "A PM sees p = 0.03 on day 2 and wants to ship",
+  "A redesigned homepage spikes clicks in week one, then drifts back to baseline",
+]
+picture = "Flipping a coin and stopping as soon as you are ahead: check often enough and you will always find a moment where you are winning."
+body = """- Peeking daily on a fixed-horizon test can push the real false positive rate from 5 percent to well over 20 percent, depending on how often you look.
+- Monitoring for **harm** (crash rate, revenue guardrail) and stopping a broken test is fine; stopping for a **win** early is the problem.
+- **Novelty effect**: users click a new thing because it is new. **Change aversion / primacy**: users dislike change at first and adapt.
+- Signals: daily effect plot trending toward zero, effect concentrated in returning users, new users showing a different effect.
+- Fixes: run longer, analyse later weeks, use a holdout group to measure long-term impact.
+- Other time traps: holidays and promotions during the test, and day-of-week effects if the test runs a partial week."""
+
+[[sections]]
+id = "multiple-testing"
+group = "Experimentation"
+title = "Multiple Testing"
+plain = "Every extra metric, segment or variant you test is another chance for a false positive. Test enough things and something will look significant by luck."
+how = [
+  "With m independent tests at alpha 0.05, chance of at least one false positive = 1 - 0.95^m",
+  "Name one primary decision metric in advance",
+  "Correct when you test many: Bonferroni (alpha / m) controls the family-wise error rate",
+  "Benjamini-Hochberg controls the false discovery rate and is less conservative",
+  "Treat unplanned segment wins as hypotheses for a follow-up test",
+]
+uses = [
+  "A scorecard with 30 metrics where two are 'significant'",
+  "A test with four variants against one control",
+]
+picture = "If you buy 20 lottery tickets, winning a small prize on one is not evidence you are lucky; it was likely to happen."
+body = """```
+tests   P(at least one false positive at 0.05)
+  1        5%
+ 10       40%
+ 20       64%
+```
+
+- **Segment fishing** ("it worked for Android users in Canada on weekends") is multiple testing in disguise.
+- Bonferroni is simple but strict and costs power; BH is common for exploratory metric scorecards.
+- Many variants: compare each against control with a correction, or run a fresh confirmatory test on the winner.
+- Pre-registration (writing down metrics and analysis before results) is the cheapest fix."""
+
+[[sections]]
+id = "sample-ratio-mismatch"
+group = "Experimentation"
+title = "Sample Ratio Mismatch (SRM)"
+plain = "SRM is when the observed split between control and treatment differs from the planned split by more than chance allows. It signals a bug in assignment or logging, and the results cannot be trusted until it is explained."
+how = [
+  "Compare observed counts to the expected split with a chi-square test",
+  "A tiny p-value (commonly below 0.001) flags SRM",
+  "Look for where users are lost: assignment, redirect, page load, bot filtering, logging",
+  "Fix the cause and rerun; do not just reweight the groups",
+]
+uses = [
+  "A 50/50 test showing 505,000 vs 495,000 users",
+  "A treatment page that loads slower, so fewer treatment users get logged",
+]
+picture = "If a fair coin lands heads 5,050 times out of 10,000, fine; if it lands heads 52,000 times out of 100,000, check the coin."
+body = """With 1,000,000 users at 50/50, the standard deviation of the control count is sqrt(1,000,000 x 0.25) = 500. A 505,000 vs 495,000 split is 5,000 off, about **10 standard deviations**: not chance.
+
+Common causes:
+- Treatment crashes or loads slower, so the logging event fires less often in treatment
+- Bots or spam filtered differently in one arm
+- Redirect-based variants lose users during the redirect
+- Assignment changed mid-test, or users were reassigned after a ramp
+- Triggering conditions that depend on the treatment itself
+
+SRM means the groups are no longer comparable: the missing users are probably not random, so the metric difference is biased in an unknown direction."""
+
+[[sections]]
+id = "quasi-experiments"
+group = "Experimentation"
+title = "When You Cannot A/B Test"
+plain = "Sometimes randomizing is impossible, unethical or too slow: a price change for everyone, a TV campaign, a legal change. Quasi-experimental methods build a comparison group from data, at the cost of extra assumptions."
+how = [
+  "Difference-in-differences: compare the before-after change in an affected group to an unaffected group",
+  "Synthetic control: build a weighted mix of untreated units that tracks the treated one before the change",
+  "Regression discontinuity: compare units just above and below an eligibility cutoff",
+  "Interrupted time series: model the pre-trend and measure the break after the change",
+  "Geo experiments: randomize regions instead of users when possible",
+]
+uses = [
+  "Measuring a price increase launched in Canada using the US as a comparison",
+  "Estimating the impact of a loyalty tier that starts at 1,000 points",
+]
+picture = "You cannot clone a city to see what would have happened without the new subway line, so you find a similar city without one and compare how both changed."
+body = """```
+                 before   after   change
+treated region     100     110     +10
+control region     100     104      +4
+DiD estimate                         +6
+```
+
+- DiD's key assumption is **parallel trends**: without the change, both groups would have moved alike. Plot the pre-period to check.
+- Every method trades randomization for an assumption; state it out loud and test it where you can (placebo tests on fake dates or untreated groups).
+- Watch for spillovers (shoppers crossing borders) and other changes happening at the same time.
+- Holdout groups (keep a small share of users on the old experience) are often the most practical option for long-term effects."""
+
+# ---------------------------------------------------------------- Product Sense
+
+[[sections]]
+id = "product-case-framework"
+group = "Product Sense"
+title = "Structuring an Open-Ended Case"
+plain = "Product cases are judged on structure as much as the answer. Clarify, lay out a plan, go deep on the likeliest branches, then land on a recommendation."
+how = [
+  "Clarify the goal, definitions, time frame and context; restate the problem",
+  "Lay out a framework out loud before diving in",
+  "Prioritize the branches by likelihood and ease of checking",
+  "Use numbers: estimate sizes, name the exact metric and query you would run",
+  "Close with a recommendation, the risk, and what you would do next",
+]
+uses = [
+  "'Signups dropped 15 percent yesterday, what do you do?'",
+  "'Should we launch feature X?' or 'How would you improve product Y?'",
+]
+picture = "Like a detective walking into a scene: first secure the facts, then list suspects, then interview the most likely one first."
+body = """Useful clarifying questions:
+- Who is the user and what is the product's goal here?
+- How is the metric defined, and over what window?
+- Is this one platform, one country, or everywhere?
+- Has anything changed: release, campaign, pricing, tracking?
+
+Habits that score well:
+- **Think out loud** and signpost ("I will check three things: data, external, internal").
+- **Quantify**: "15 percent of 20k daily signups is 3,000 users; at 5 percent paid conversion that is 150 lost customers a day."
+- Distinguish **diagnosis** questions (why did X move) from **evaluation** questions (did X work) from **design** questions (what should we build or measure).
+- Do not boil the ocean: name what you would check first and why."""
+
+[[sections]]
+id = "success-metrics"
+group = "Product Sense"
+title = "Defining Success for a Feature"
+plain = "To measure a feature, connect what the user does with it to the business goal: adoption, engagement, outcome, and what must not get worse."
+how = [
+  "State the feature's goal in user terms and in business terms",
+  "Adoption: how many eligible users try it",
+  "Engagement and depth: how often and how much they use it",
+  "Outcome: the business metric it should move (retention, conversion, revenue), ideally measured with an A/B test",
+  "Guardrails: what could get hurt (cannibalization, latency, support tickets)",
+]
+uses = [
+  "Measuring a new 'save for later' button in a shopping app",
+  "Evaluating an AI assistant inside a support product",
+]
+picture = "Judging a new restaurant dish: did people order it, did they finish it, did they come back, and did it slow down the kitchen?"
+body = """```
+layer        example for 'save for later'
+adoption     share of cart users who save at least one item
+engagement   items saved per user, share of saved items revisited
+outcome      purchase rate of saved items, 30-day repeat purchase
+guardrail    checkout conversion, cart abandonment, page latency
+```
+
+- Adoption alone is vanity: a feature can be popular and still hurt (users save instead of buying).
+- Pick **one primary metric** that maps to the goal, and say why the others are secondary.
+- Choose a time horizon that matches the behaviour (a saved item may be bought weeks later).
+- Plan the measurement: A/B test if possible; otherwise a staged rollout or a quasi-experiment."""
+
+[[sections]]
+id = "prioritization"
+group = "Product Sense"
+title = "Prioritizing Analysis and Product Bets"
+plain = "Analysts get more requests than they can do. Prioritize by expected impact on a decision, confidence, and effort, and say no clearly with a reason."
+how = [
+  "Ask what decision each request informs and what changes if the answer is yes or no",
+  "Size the impact: users affected x expected change x value per unit",
+  "Weigh confidence and effort (frameworks like RICE: reach, impact, confidence, effort)",
+  "Agree the order with stakeholders and communicate trade-offs",
+]
+uses = [
+  "Choosing among three dashboard requests and one urgent ad-hoc question",
+  "Ranking product opportunities found in a funnel analysis",
+]
+picture = "Like a hospital triage desk: the order depends on how serious each case is and how quickly it can be treated, not who shouted first."
+body = """- **No decision, low priority**: analysis that will not change any action is a report, not a priority.
+- **Reversible vs irreversible**: spend more rigor on decisions that are hard to undo (pricing, deprecating a feature).
+- Quick wins that unblock others (a broken metric definition) often go first.
+- RICE score = reach x impact x confidence / effort; useful for comparing, but the inputs are guesses, so sanity-check the ranking.
+- Communicate what you are not doing and when you could, so stakeholders can escalate if they disagree."""
+
+# ---------------------------------------------------------------- Dashboards and Storytelling
+
+[[sections]]
+id = "chart-choice"
+group = "Dashboards and Storytelling"
+title = "Choosing the Right Chart"
+plain = "Pick the chart from the question: change over time, comparison, composition, distribution or relationship. The simplest chart that answers it is usually best."
+how = [
+  "Trend over time: line chart",
+  "Compare categories: bar chart, sorted, starting at zero",
+  "Distribution: histogram or box plot",
+  "Relationship between two numbers: scatter plot",
+  "Single headline number: a big number with its comparison (vs last week, vs target)",
+]
+uses = [
+  "Daily active users for the last 90 days: line",
+  "Revenue by region: sorted horizontal bar",
+  "Delivery time spread: histogram with p50 and p90 marked",
+]
+picture = "Charts are tools in a toolbox: a hammer is great, but not for every screw. Match the tool to the job."
+body = """```
+question                     chart
+how is it trending?          line
+which is bigger?             bar, sorted
+what makes up the total?     stacked bar, or 100% bar; pie only for 2-3 parts
+how is it spread out?        histogram, box plot
+do two things move together? scatter
+where?                       map, only if geography matters
+```
+
+Common mistakes:
+- **Truncated y-axis on bar charts** exaggerates differences; bars must start at zero (line charts may zoom in, but label clearly).
+- **Dual axes** let you make any two lines look correlated.
+- Pie charts with many slices: people compare angles poorly.
+- 3D effects, rainbow colours and unsorted categories add noise.
+- Use colour to highlight the one thing that matters; grey out the rest.
+- Title with the takeaway ("Mobile conversion fell 12 percent after v8.2"), not just the metric name."""
+
+[[sections]]
+id = "dashboard-design"
+group = "Dashboards and Storytelling"
+title = "Dashboard Design for an Audience"
+plain = "A dashboard is built for a specific audience and decision. Executives need a few headline metrics with context; operators need detail they can act on today."
+how = [
+  "Name the audience and the decisions they make with it",
+  "Pick 3 to 7 key metrics with clear definitions, targets and comparisons",
+  "Lay out top-down: headline numbers, then trends, then breakdowns and drill-downs",
+  "Add filters only for the cuts people actually use (date, region, segment)",
+  "Show data freshness and definitions; set an owner and review usage",
+]
+uses = [
+  "Weekly executive business review dashboard",
+  "Store manager daily operations dashboard",
+  "Marketing channel performance dashboard",
+]
+picture = "A car dashboard shows speed, fuel and warnings, not the engine's every sensor; the mechanic has a different screen."
+body = """- **Context makes numbers meaningful**: every KPI needs a comparison (vs last period, vs same period last year, vs target).
+- **Leading vs lagging**: revenue is lagging; traffic, conversion and pipeline lead it. Put leading indicators where people can act.
+- Consistency: one definition per metric across all dashboards, ideally from a semantic layer.
+- Performance: pre-aggregated tables or extracts so the dashboard loads in seconds.
+- Trust signals: last refreshed time, data caveats, a link to the metric definition.
+- **Dashboard sprawl**: unused dashboards with conflicting numbers erode trust. Track views and retire stale ones."""
+
+[[sections]]
+id = "presenting-insights"
+group = "Dashboards and Storytelling"
+title = "Presenting Insights and Caveats"
+plain = "Lead with the answer and the recommendation, then the evidence, then caveats in plain words. Non-technical audiences need the 'so what', not the method."
+how = [
+  "Start with the headline: what you found and what you recommend",
+  "Give two or three supporting points with one clear chart each",
+  "Quantify impact in business terms (dollars, customers, hours)",
+  "State caveats and confidence plainly, with what would change your mind",
+  "End with the decision you need and the next steps",
+]
+uses = [
+  "A 5-minute readout of an A/B test to a VP",
+  "A written memo explaining why a KPI dropped last month",
+]
+picture = "Like a news article: the headline and first paragraph tell you everything; details come after for those who want them."
+body = """Pyramid structure:
+```
+answer / recommendation
+  supporting point 1  (chart)
+  supporting point 2  (chart)
+  supporting point 3  (chart)
+caveats, method and appendix
+```
+
+- Translate statistics: "we are fairly confident the lift is between 1 and 4 percent" instead of "p = 0.02, CI [0.01, 0.04]".
+- **Data quality caveats**: name the issue, its size, and whether it could change the conclusion ("tracking missed about 3 percent of iOS events on Oct 12; excluding that day does not change the result").
+- Never hide a known problem; flag it early. Trust once lost takes months to rebuild.
+- Anticipate the obvious question ("is this just seasonality?") and answer it on a slide.
+- Separate what the data shows from your interpretation and your recommendation."""
+
+[[sections]]
+id = "star-stories"
+group = "Dashboards and Storytelling"
+title = "Behavioral Answers with STAR"
+plain = "Behavioral questions test how you work with people and ambiguity. Answer with a real story: Situation, Task, Action, Result, plus what you learned."
+how = [
+  "Situation: one or two sentences of context",
+  "Task: what you specifically were responsible for",
+  "Action: what you did, in first person, with the key decision explained",
+  "Result: a measurable outcome (numbers, decision made, time saved)",
+  "Reflection: what you learned or would do differently",
+]
+uses = [
+  "Presenting a finding that contradicted leadership's belief",
+  "Handling a mistake in a published analysis",
+  "Clarifying a vague request from a stakeholder",
+]
+picture = "A short movie trailer: set the scene fast, spend most of the time on the action, end with a clear payoff."
+body = """- Spend most of the time on **Action**; interviewers grade your judgment, not the backstory.
+- Say "I", not "we", for your part; credit others briefly.
+- Quantify the result: "the team stopped a 200k dollar campaign", "report time went from 2 days to 2 hours".
+- Prepare 5 to 6 stories that can flex across questions: conflict, failure or mistake, influence without authority, ambiguity, prioritization, impact.
+- For mistake stories, own it, show the fix and the process change that prevents a repeat."""
+
+# ---------------------------------------------------------------- Tools and Data Modeling
+
+[[sections]]
+id = "analysis-tools"
+group = "Tools and Data Modeling"
+title = "Spreadsheets vs SQL vs Python"
+plain = "Spreadsheets are great for small, quick, shareable work; SQL for pulling and aggregating data where it lives; Python (pandas) for complex transformation, statistics, automation and modelling."
+how = [
+  "Use SQL to filter and aggregate large tables inside the warehouse",
+  "Use a spreadsheet for small results, quick what-if models and sharing with business users",
+  "Use Python or a notebook for stats tests, reshaping, visualisation, and repeatable pipelines",
+  "Move logic that gets reused into SQL models or code under version control",
+]
+uses = [
+  "SQL to get daily revenue by channel from a billion-row table",
+  "A spreadsheet budget model finance can edit",
+  "pandas plus scipy to analyse an A/B test with a bootstrap",
+]
+picture = "SQL is the forklift that moves pallets in the warehouse; the spreadsheet is a clipboard; Python is the workshop with power tools."
+body = """```
+             spreadsheet           SQL                   Python / pandas
+data size    up to ~1M rows        billions (warehouse)  fits in memory
+strength     quick, visual, shared aggregation at scale  stats, reshaping, automation
+weakness     manual, error-prone   stats, loops          setup, sharing
+repeatable   poor                  good                  good
+```
+
+- Spreadsheet risks: hidden hardcoded numbers, copy-paste errors, no version history of logic.
+- Push heavy work down to the warehouse; pull only the aggregated result into pandas.
+- pandas equivalents: `groupby().agg()` for GROUP BY, `merge` for joins, `groupby().transform()` or `rank()` for window-like results.
+- Reproducibility matters: a query in version control beats a spreadsheet emailed around."""
+
+[[sections]]
+id = "facts-dimensions-grain"
+group = "Tools and Data Modeling"
+title = "Facts, Dimensions and Grain"
+plain = "Fact tables record events or measurements (orders, clicks). Dimension tables describe the things involved (customers, products, dates). Grain is what one row of a table means."
+how = [
+  "State the grain first: one row per order line, per day per store, per session",
+  "Facts hold numeric measures and foreign keys to dimensions",
+  "Dimensions hold descriptive attributes you filter and group by",
+  "A star schema joins one fact table to several dimensions",
+]
+uses = [
+  "Knowing you can sum order_line revenue but not repeat order-level shipping fees per line",
+  "Joining sales to the date dimension to group by fiscal week",
+]
+picture = "A fact table is a till receipt roll; dimensions are the product catalogue and the customer address book you look things up in."
+body = """```
+fact_order_lines  (grain: one row per order line)
+  order_id, product_key, customer_key, date_key, qty, revenue
+dim_product       (one row per product)
+dim_customer      (one row per customer, or per version if history kept)
+dim_date          (one row per calendar day, with fiscal week, holiday flag)
+```
+
+- **Additive** measures (revenue, qty) can be summed across any dimension; **semi-additive** (account balance, inventory) can be summed across accounts but not across time; **non-additive** (ratios, distinct counts) must be recomputed from parts.
+- Mixing grains causes double counting: an order-level discount stored on every line gets summed multiple times.
+- **Slowly changing dimensions**: type 1 overwrites (lose history), type 2 adds a row per version with valid-from and valid-to dates, so you can report on the customer's segment at the time of the order.
+- Distinct counts are not additive: unique users per day do not sum to unique users per week."""
+
+[[sections]]
+id = "semantic-layer-bi"
+group = "Tools and Data Modeling"
+title = "BI Tools: Semantic Layer, Extracts vs Live"
+plain = "A semantic layer defines metrics and joins once, centrally, so every dashboard computes 'revenue' the same way. BI tools either query the warehouse live or work from an extract (a cached copy)."
+how = [
+  "Model tables and joins once in the semantic layer",
+  "Define each metric with its formula, filters and grain",
+  "Dashboards and notebooks request metrics by name; the layer writes the SQL",
+  "Choose live queries for freshness and huge data, extracts for speed and lower warehouse cost",
+]
+uses = [
+  "Ending the 'my revenue number does not match yours' meeting",
+  "Caching an executive dashboard as a nightly extract so it loads instantly",
+]
+picture = "A semantic layer is a shared recipe book: every kitchen makes the dish the same way instead of each chef improvising."
+body = """Examples of semantic layers: dbt Semantic Layer (MetricFlow), LookML in Looker, Power BI semantic models, Cube.
+
+```
+              live connection             extract / import
+freshness     real time-ish               as of last refresh
+speed         depends on warehouse        fast, in-memory
+cost          warehouse compute per view  refresh compute only
+data size     very large                  limited by extract size
+```
+
+- Metric definitions should be versioned and reviewed like code.
+- Row-level security and governed access belong in the layer, not in each dashboard.
+- Extracts can silently go stale if a refresh fails; show the refresh time.
+- Ratio metrics must be defined as sum of numerator / sum of denominator, not an average of ratios, so they roll up correctly."""

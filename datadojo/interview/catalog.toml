@@ -1,0 +1,23 @@
+# Interview tracks in display order. Each track lives in interview/<id>/:
+#   <topic>.toml     one topic: title, order, desc and [[questions]] (format: see content.py parse_topic)
+#   cheatsheet.toml  [[sections]] the learnable reference the questions link to via `study`
+
+[[tracks]]
+id = "de"
+title = "Data Engineer"
+desc = "Spark, Delta and lakehouses, SQL and modeling, pipelines, streaming, orchestration and data quality."
+
+[[tracks]]
+id = "ai"
+title = "AI Engineer"
+desc = "LLM fundamentals, RAG, embeddings, tool calling and MCP, agents, evals, guardrails and production GenAI."
+
+[[tracks]]
+id = "ml"
+title = "ML Engineer"
+desc = "Modeling and evaluation, feature stores, training and serving, MLOps, drift and ML system design."
+
+[[tracks]]
+id = "da"
+title = "Data Analyst"
+desc = "SQL for analysis, metrics and KPIs, A/B tests and statistics, product sense, dashboards and storytelling."

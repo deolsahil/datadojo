@@ -1,0 +1,86 @@
+title = "ML System Design"
+order = 7
+desc = "End-to-end designs: ETA prediction, fraud detection, recommendation feeds and search ranking."
+
+[[questions]]
+id = "ml-design-eta"
+q = "Design the ML system that predicts delivery time (ETA) shown to customers when they place a food-delivery order."
+level = "mid"
+kind = "design"
+rubric = [
+  "Clarifies requirements: when the ETA is shown and updated, latency budget, accuracy goal, and cost of late vs early errors",
+  "Defines the label (actual delivery minus order time) and relevant features: distance, restaurant prep time history, time of day, courier supply, weather, live order load",
+  "Chooses a sensible model such as gradient-boosted trees, possibly decomposed into prep, pickup and travel stages, with a loss that matches the goal (MAE or a quantile for a safe promise)",
+  "Serving design: real-time inference with features from an online store, streaming features for current load, fallback to a simple estimate",
+  "Evaluation and monitoring: MAE and lateness rate offline, A/B on customer metrics, monitoring by city with retraining",
+]
+answer = """- **Requirements**: ETA at checkout and updated during delivery; under ~50 ms; late arrivals hurt more than early ones.
+- **Label**: actual delivered time minus order time, from completed orders.
+- **Features**: route distance and travel time, restaurant's recent prep times, hour and weekday, weather, current orders per restaurant and couriers nearby (streaming, minute-fresh).
+- **Model**: LightGBM, optionally split into prep, pickup and travel sub-models. Train on MAE, or predict p50 and a higher quantile so the promised time is rarely missed.
+- **Serving**: real-time service reads static features from the online store and live load from a streaming aggregation; fallback is a distance-plus-average-prep estimate if features time out.
+- **Evaluation**: MAE, p90 error and share late beyond 10 minutes, sliced by city; A/B on order conversion and complaints.
+- **Ops**: monitor errors per city daily, retrain weekly, watch for drift from weather or new markets."""
+study = "ml-design-framework"
+
+[[questions]]
+id = "ml-design-fraud"
+q = "Design a real-time fraud detection system for card payments that must decide within 100 ms."
+level = "senior"
+kind = "design"
+rubric = [
+  "Clarifies requirements: latency, traffic volume, cost of missed fraud vs declined good customers, available actions (approve, step-up, review, decline)",
+  "Features: streaming velocity aggregates (counts and amounts per card over windows), device and merchant risk, deviation from user history, served from an online store",
+  "Model and decision: boosted trees plus rules, thresholds from business cost and review capacity, reason codes",
+  "Labels: delayed and biased chargebacks; handles maturity, analyst labels and a small exploration slice",
+  "Failure handling and ops: timeouts with rule-based fallback and a fail-open or fail-closed policy, monitoring flag rates, frequent retraining for adversarial drift, shadow or canary rollout",
+]
+answer = """- **Requirements**: decision in 100 ms p99 at thousands of TPS; actions: approve, step-up (one-time code), manual review, decline; price a missed fraud vs a declined good customer.
+- **Features**: Flink-style streaming aggregates (transactions and amount per card in 1 min, 1 h, 24 h), new device or IP, merchant risk, distance from usual location, amount vs card average; written to an online store and read in one batched lookup.
+- **Model**: LightGBM on tabular features plus hard rules for known patterns; thresholds from cost and analyst capacity; reason codes for analysts.
+- **Labels**: chargebacks arrive weeks late and only for approved transactions; train on matured windows, add analyst labels, keep a tiny random exploration slice.
+- **Failure**: on model or feature timeout, fall back to rules; decide in advance whether to fail open or closed by amount.
+- **Ops**: hourly flag-rate and drift alerts, PR-AUC and dollar recall weekly, retrain often because fraudsters adapt, roll out via shadow then canary."""
+study = "real-time-risk"
+
+[[questions]]
+id = "ml-design-feed"
+q = "Design the recommendation system that ranks posts in a social media home feed for 100 million daily users."
+level = "senior"
+kind = "design"
+rubric = [
+  "Clarifies the objective and its risks: engagement signals (clicks, likes, dwell, hides), long-term satisfaction, integrity and freshness",
+  "Uses a multi-stage funnel: candidate generation from several sources, a ranking model, and re-ranking for diversity and policy",
+  "Ranking model predicts multiple engagement events combined into a weighted score, using user, post, author and cross features",
+  "Covers data and serving: logged impressions as training data, feature store, latency budget per stage, caching",
+  "Evaluation and loops: offline metrics such as NDCG or AUC per task, A/B tests with long-term guardrails, position bias and feedback loop mitigation, cold start for new posts and users",
+]
+answer = """- **Objective**: rank recent posts for each user; predict several events (click, like, comment, dwell, hide). Pure click optimization invites clickbait, so guard with retention and negative feedback.
+- **Candidates** (~thousands): posts from followed accounts, two-tower embedding retrieval for unconnected content, trending posts, all filtered by freshness and policy.
+- **Ranking**: a multi-task model scores each candidate with user, post, author and user-author interaction features; final score = weighted sum of predicted events, weights tuned by A/B tests.
+- **Re-ranking**: author diversity, remove seen posts, integrity demotions, ads slots.
+- **Data and serving**: log every impression with features and position; features from an online store; budget roughly 20 ms retrieval, 50 ms ranking.
+- **Evaluation**: offline AUC per task and NDCG; online engagement plus long-term guardrails.
+- **Pitfalls**: **position bias** (position feature or randomized slice), **feedback loops** (exploration), **cold start** (content embeddings, boost new posts briefly)."""
+study = "ranking-systems"
+
+[[questions]]
+id = "ml-design-search-ranking"
+q = "Design the ranking system for product search on an e-commerce site with 50 million products."
+level = "senior"
+kind = "design"
+rubric = [
+  "Clarifies the goal (purchases or revenue per search, relevance) and constraints such as latency and catalog size",
+  "Retrieval combines lexical search (BM25 on an inverted index) and semantic embedding retrieval, with query understanding (spelling, category intent)",
+  "Ranking uses learning-to-rank (for example LambdaMART on LightGBM) with query-product relevance, product quality, price, popularity and personalization features",
+  "Labels come from click and purchase logs, with position bias correction and possibly human relevance judgments",
+  "Evaluation with NDCG or MRR offline and A/B tests on conversion and zero-result rate; handles cold start for new products and latency budget",
+]
+answer = """- **Goal**: maximize purchases per search while staying relevant; respond in ~100 ms over 50M products.
+- **Query understanding**: spelling correction, synonyms, predicted category and attributes ('red running shoes size 10').
+- **Retrieval**: hybrid of **BM25** on an inverted index (Elasticsearch or OpenSearch) and **embedding ANN** retrieval for semantic matches; merge to ~1,000 candidates with filters for stock and region.
+- **Ranking**: learning-to-rank, e.g. **LambdaMART** in LightGBM, with text match scores, embedding similarity, price, ratings, sales velocity, margin rules and user personalization.
+- **Labels**: clicks, add-to-cart and purchases graded by strength, corrected for **position bias**; a set of human relevance judgments for evaluation.
+- **Evaluation**: NDCG and MRR offline; A/B on conversion, revenue per search, zero-result and reformulation rate.
+- **Cold start**: new products get content-based relevance and a small exploration boost; cache popular queries for latency."""
+study = "ranking-systems"

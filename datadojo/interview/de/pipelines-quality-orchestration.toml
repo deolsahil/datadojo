@@ -1,0 +1,271 @@
+title = "Pipelines, Quality & Orchestration"
+order = 8
+desc = "Idempotency, backfills, ETL vs ELT, dbt, Airflow, data quality checks, contracts and bad records."
+
+[[questions]]
+id = "pipe-idempotency"
+q = "What does it mean for a pipeline to be idempotent, and how do you make a daily job idempotent?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Idempotent: running the job again with the same input produces the same result as running it once (no duplicates)",
+  "Parameterize by the logical run date or interval instead of current_date() or now()",
+  "Write by overwriting that date's slice (replaceWhere or partition overwrite) or MERGE on a stable key, not a blind append",
+  "Deterministic logic: stable IDs (not random UUIDs) and tie-breakers",
+]
+answer = """- An idempotent job gives the same result whether it runs once or five times for the same input. That matters because jobs get retried after failures and rerun for backfills.
+- The job takes its **logical date** as a parameter (for example from the orchestrator) instead of calling `current_date()`, so rerunning October 1 processes October 1.
+- It writes by **replacing that day's slice**, such as Delta `replaceWhere "dt = '2026-10-01'"` or a dynamic partition overwrite, or by **MERGE** on a stable business key. A blind `append` would add the day again on every retry.
+- The logic is deterministic: IDs come from a hash of business keys rather than random UUIDs, and dedup ordering has a tie-breaker."""
+study = "idempotency-backfills"
+
+[[questions]]
+id = "pipe-etl-vs-elt"
+q = "What is the difference between ETL and ELT? Why has ELT become common?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "ETL transforms data in a separate engine before loading it into the target",
+  "ELT loads raw data into the warehouse or lakehouse first, then transforms it there (SQL, dbt, Spark)",
+  "ELT is common because storage is cheap, platform compute scales, and keeping raw data enables reprocessing",
+  "ETL still fits when data must be filtered or masked before landing (privacy) or the target cannot transform efficiently",
+]
+answer = """- **ETL**: extract from the source, transform in a separate tool or server, then load only the finished result into the target.
+- **ELT**: extract, load the raw data into the lakehouse or warehouse first, then transform it there with SQL, dbt or Spark. The medallion pattern is ELT: raw bronze, then silver and gold built inside the platform.
+- ELT became common because cloud storage is cheap, lakehouse and warehouse compute scales on demand, and keeping the raw data means you can rebuild when logic changes.
+- ETL still makes sense when sensitive data must be masked or dropped before it lands, when volume must be reduced at the edge, or when the target is weak at transformations."""
+study = "etl-elt-batch-streaming"
+
+[[questions]]
+id = "pipe-dbt-basics"
+q = "What is dbt, and what kinds of tests and materializations does it offer?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "dbt compiles SELECT-based models into tables or views in the warehouse, ordered by ref() dependencies",
+  "Materializations: view, table, incremental, ephemeral (and materialized view on supporting adapters)",
+  "Generic tests: unique, not_null, accepted_values, relationships; singular tests are SQL that should return zero rows",
+  "Also mentions snapshots for SCD2, source freshness, or documentation and lineage",
+]
+answer = """- dbt is a transformation framework: each model is a `SELECT` in a `.sql` file, and dbt turns it into a table or view in the warehouse or lakehouse. `ref('model')` links models, so dbt builds a DAG and runs them in order.
+- **Materializations**: `view`, `table`, `incremental` (only process new or changed rows), `ephemeral` (inlined as a CTE), and `materialized_view` on adapters that support it.
+- **Tests**: generic ones in YAML (`unique`, `not_null`, `accepted_values`, `relationships`), singular tests (SQL that must return zero rows), and unit tests for logic on mock data.
+- Extras: **snapshots** for SCD Type 2 history, **source freshness** checks, and generated docs with lineage.
+- Everything lives in Git, so transformations get code review and CI."""
+study = "dbt"
+
+[[questions]]
+id = "pipe-airflow-basics"
+q = "Explain the main Airflow concepts: DAG, task, operator, sensor, retries and the data interval."
+level = "entry"
+kind = "concept"
+rubric = [
+  "A DAG is a Python-defined workflow of tasks with dependencies and a schedule",
+  "Operators are templates for tasks (run SQL, trigger Spark or Databricks job, Python function); sensors wait for a condition",
+  "Retries with retry_delay re-run failed tasks automatically, so tasks must be idempotent",
+  "Each run covers a data interval (data_interval_start / end), and tasks should process that interval, not now()",
+]
+answer = """- A **DAG** is a workflow defined in Python: tasks, their dependencies, and a schedule such as daily.
+- A **task** is one step, created from an **operator**: run SQL, trigger a Databricks job, call a Python function. Airflow orchestrates; heavy compute runs elsewhere.
+- A **sensor** is a task that waits for something, like a file landing or an upstream table updating, with a timeout. `reschedule` mode or deferrable sensors avoid holding a worker slot while waiting.
+- **Retries** (`retries`, `retry_delay`) re-run failed tasks automatically, which is why every task must be idempotent.
+- Each run has a **data interval**. The run for October 1 covers October 1 to 2 and starts after it ends. Tasks use `data_interval_start` / `data_interval_end` (or `ds`) instead of `now()`, so backfills and reruns process the right data."""
+study = "airflow"
+
+[[questions]]
+id = "pipe-data-quality-checks"
+q = "What data quality checks would you put on a new silver orders table?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Completeness: not-null checks on required columns like order_id and customer_id",
+  "Uniqueness of the primary key (order_id)",
+  "Referential integrity: every customer_id exists in the customer dimension",
+  "Validity and range: amount >= 0, status in an accepted set, dates not in the future",
+  "Freshness and volume: latest timestamp within SLA and row count in an expected range",
+]
+answer = """- **Not null**: `order_id`, `customer_id`, `order_ts` and `amount` must be present.
+- **Unique**: one row per `order_id`.
+- **Referential integrity**: every `customer_id` and `product_id` exists in its dimension; orphans go to a review table or a placeholder "unknown" member.
+- **Validity and range**: `amount >= 0`, `status IN ('placed','shipped','cancelled','returned')`, `order_ts` not in the future, currency codes valid.
+- **Freshness**: the newest `order_ts` is within the SLA, say two hours.
+- **Volume**: today's row count is within a normal band compared with the same weekday in previous weeks.
+- Severity decides the action: key and not-null failures block publishing, range issues quarantine the rows, and volume anomalies alert someone."""
+study = "data-quality-contracts"
+
+[[questions]]
+id = "pipe-read-modes"
+q = "When reading CSV or JSON in Spark, what do the PERMISSIVE, DROPMALFORMED and FAILFAST modes do, and what is badRecordsPath?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "PERMISSIVE (default): malformed fields become NULL and the raw record can be kept in a corrupt record column (_corrupt_record)",
+  "DROPMALFORMED drops malformed rows silently",
+  "FAILFAST throws an error on the first malformed record",
+  "badRecordsPath (Databricks) writes bad records or unreadable files with error details to a path while the job continues",
+  "Recommends capturing bad rows for a quarantine table rather than silently dropping them",
+]
+answer = """- **PERMISSIVE** is the default. Fields that cannot be parsed become NULL. If the schema includes `_corrupt_record` (or the name set by `columnNameOfCorruptRecord`), the raw text of the bad line is kept there.
+- **DROPMALFORMED** silently drops bad rows. Easy, but the loss is invisible unless you count it.
+- **FAILFAST** throws on the first bad record, which suits feeds where any error means the whole file is wrong.
+- **badRecordsPath** is a Databricks option: the job keeps going and writes bad records, or files it could not read, with exception details to that path for later review.
+- My default: PERMISSIVE with a corrupt record column (or badRecordsPath, or Auto Loader's `_rescued_data`), sending bad rows to a quarantine table and alerting on the count."""
+study = "bad-records-schema-drift"
+
+[[questions]]
+id = "pipe-backfill"
+q = "You found a bug in a transformation that has been producing wrong numbers for the last 6 months. How do you plan and run the backfill?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Fix and test the logic first, validating on one or a few intervals by comparing old vs new outputs",
+  "Rebuild from raw or bronze data, which must still be available; check source retention",
+  "Run the same idempotent job per interval (slice overwrite or MERGE) in bounded parallel batches to avoid starving production",
+  "Recompute dependent downstream tables and aggregates as well",
+  "Communicate with consumers about changing numbers, and add a test or check that would have caught the bug",
+]
+answer = """- Fix the logic and add a test that reproduces the bug. Run the fixed job for one or two sample days and diff old vs new outputs, so I can explain the change in numbers.
+- Confirm the inputs still exist: bronze data or source snapshots for all six months, and that VACUUM or retention has not removed them.
+- Run the same **idempotent** job for each day or month (each run overwrites its slice with `replaceWhere` or MERGEs by key), a few intervals in parallel, outside peak hours so production jobs are not starved.
+- Then recompute everything **downstream** in dependency order: aggregates, gold marts, extracts. CDF consumers will see these rewrites as changes.
+- Tell stakeholders beforehand which reports will change and why, and confirm totals after.
+- Afterwards, add a quality check that would have caught the bug."""
+study = "idempotency-backfills"
+
+[[questions]]
+id = "pipe-batch-vs-streaming"
+q = "A product manager asks for a 'real-time' sales dashboard. How do you decide between batch and streaming?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Clarifies the actual freshness requirement by asking what decision the data drives and how stale it can be",
+  "Batch is simpler, cheaper, and easier to backfill and debug",
+  "Streaming adds always-on cost, state, watermarks, late data and harder operations",
+  "Middle ground: frequent micro-batches or Structured Streaming with availableNow on a schedule (e.g. every 15 minutes)",
+  "Mentions the same code can later run continuously if the need for lower latency is proven",
+]
+answer = """- First, clarify what "real-time" means: what decision does the dashboard drive, and how stale can it be? Often 15 minutes or an hour is fine, while seconds matter for things like fraud or stock alerts.
+- **Batch** is simpler, cheaper, easier to backfill and debug, and its latency is just the schedule.
+- **Streaming** gives seconds-to-minutes freshness but adds always-on compute, state management, watermarks for late data, and harder operations.
+- A good middle ground is writing the pipeline with Structured Streaming but running it with `trigger(availableNow=True)` every 15 minutes. It is incremental and exactly-once, cheap, and can switch to continuous later without a rewrite.
+- I would agree on a freshness SLA in writing and monitor it."""
+study = "etl-elt-batch-streaming"
+
+[[questions]]
+id = "pipe-dbt-incremental"
+q = "How do dbt incremental models work, and what can go wrong with them?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "First run builds the full table; later runs use is_incremental() to select only new or changed rows",
+  "unique_key plus a strategy (merge, delete+insert, insert_overwrite, append, microbatch) controls how rows are applied",
+  "Late-arriving rows older than max(updated_at) are missed unless a lookback window is used",
+  "Logic or schema changes need --full-refresh or on_schema_change settings",
+  "Without a unique_key, append duplicates rows on reruns",
+]
+answer = """- The first run builds the whole table. Later runs wrap a filter in `{% if is_incremental() %}`, for example `where updated_at > (select max(updated_at) from {{ this }})`, so only new rows are processed.
+- `unique_key` with an `incremental_strategy` decides how rows land: `merge` upserts, `delete+insert` replaces matching keys, `insert_overwrite` replaces partitions, `append` just adds rows, and `microbatch` processes by time batches.
+- Pitfalls:
+  - Late rows with an `updated_at` older than the current max are skipped; use a lookback such as `max(updated_at) - interval 3 days` plus merge.
+  - With `append` and no key, reruns duplicate data.
+  - Changing model logic does not touch old rows; run `--full-refresh`, or backfill.
+  - New or changed columns need `on_schema_change` set, or the model fails or ignores them."""
+study = "dbt"
+
+[[questions]]
+id = "pipe-airflow-backfill-idempotent"
+q = "An Airflow DAG task was retried after a timeout, and the target table now has the day's data twice. What went wrong and how do you design tasks to prevent it?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "The task appended data; the first attempt actually finished writing (or partially wrote) before the timeout, and the retry appended again",
+  "Tasks must be idempotent: overwrite the run's data interval or MERGE on a key",
+  "Use data_interval_start/end (logical date) rather than now() so retries and backfills process the same slice",
+  "Set sensible execution_timeout and make sure the remote job is cancelled or checked before retrying",
+  "Clean up the duplicated day by rerunning the fixed idempotent task for that interval",
+]
+answer = """- The task did an `INSERT INTO` (append). The first attempt kept running or finished writing after Airflow's timeout fired, then the retry appended the same day again. Airflow retries assume the task is safe to repeat.
+- Fix the design: each task writes its data interval idempotently, either overwriting that slice (`replaceWhere "dt = '{{ ds }}'"`, `INSERT OVERWRITE ... PARTITION`) or MERGE on a business key.
+- Derive the slice from `data_interval_start` / `data_interval_end`, never `now()`, so a retry or backfill processes exactly the same input.
+- Make timeouts realistic, and make sure a timed-out remote job (Databricks, Spark) is cancelled or checked before the retry starts.
+- To repair the table, rerun the fixed task for that interval; the overwrite replaces the duplicated rows."""
+study = "airflow"
+
+[[questions]]
+id = "pipe-data-contracts"
+q = "What is a data contract, what goes in one, and how do you enforce it?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "An agreement between data producer and consumers about the data's schema, meaning and quality, owned by the producer",
+  "Contents: schema with types and nullability, primary key, semantics or units, freshness SLA, quality rules, owner and contact",
+  "Change management: versioning, notice for breaking changes, compatibility rules",
+  "Enforced in the producer's CI (block incompatible schema changes) and validated at ingestion with alerts or quarantine",
+  "Benefit: upstream breakages become visible, owned failures instead of silent downstream corruption",
+]
+answer = """- A data contract is an explicit agreement, owned by the producing team, about the data they publish: what it looks like, what it means, and how good it will be.
+- Contents: schema (fields, types, nullability), primary key, meaning and units (`amount` in cents, UTC timestamps), freshness SLA, quality rules (unique key, allowed values), owner and on-call contact.
+- Change rules: additive changes are allowed; breaking changes such as renames, removals or type changes need a new version and a notice period, with the old version kept for a while.
+- Enforcement in two places: the producer's CI checks schema compatibility and blocks breaking changes, and the ingestion pipeline validates incoming data against the contract and quarantines or alerts on violations.
+- The value is accountability: a renamed column becomes a failed build on the producer's side, not a silently NULL column in a revenue report."""
+study = "data-quality-contracts"
+
+[[questions]]
+id = "pipe-schema-drift"
+q = "Overnight, the upstream team renamed the column 'amount' to 'total_amount'. Your pipeline did not fail, but revenue in gold is now zero. Explain what happened and how you would prevent it."
+level = "senior"
+kind = "scenario"
+rubric = [
+  "A rename looks like one dropped column and one new column; with permissive schema evolution, amount became NULL and total_amount was added or rescued",
+  "Downstream SUM of a NULL column (with COALESCE to 0) produced zero revenue without errors",
+  "Immediate fix: map total_amount to amount in silver, then backfill the affected period from bronze",
+  "Prevention: explicit schemas and not-null or volume checks on critical columns that block publishing to gold",
+  "Prevention: schema change alerts and data contracts with the producer so renames are versioned and announced",
+]
+answer = """- To the pipeline a rename is a drop plus an add. With permissive schema handling, `amount` simply arrived as NULL, and `total_amount` was added as a new column or landed in rescued data. Nothing errored.
+- Gold computes `COALESCE(SUM(amount), 0)`, so revenue quietly became zero.
+- Fix now: in silver, map `total_amount` to `amount` (coalescing both so old and new files work), then rerun silver and gold for the affected period from bronze, which still has the raw values. Tell report users.
+- Prevent it:
+  - Explicit schemas for critical sources, and alerts whenever a column appears or disappears.
+  - Blocking checks before gold: `amount` not null, revenue within a normal band versus history.
+  - A **data contract** with the producer, so renames are versioned and announced, and caught in their CI."""
+study = "bad-records-schema-drift"
+
+[[questions]]
+id = "pipe-silent-drop"
+q = "Executives notice yesterday's revenue dashboard is 30% lower than usual. All jobs show green. How do you investigate, and what would you change afterwards?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "First decide whether it is a real business change or a data issue by comparing against the source system or an independent number",
+  "Traces layer by layer (source, bronze, silver, gold) with row counts and sums to find where data went missing",
+  "Checks likely causes: late or missing files, a filter or join dropping rows (e.g. new unknown dimension keys), schema drift, a partial source extract",
+  "Communicates early: tell stakeholders the number is under investigation, then fix and backfill",
+  "Adds monitoring that would catch it: volume and freshness checks, reconciliation against source totals, anomaly alerts that block or flag gold",
+]
+answer = """- Green jobs only mean nothing crashed. First check whether the drop is real: compare to the source system's total or another independent figure, and ask the business about outages or promotions.
+- Tell stakeholders quickly that the number is under investigation.
+- Then trace it layer by layer, comparing yesterday's row counts and revenue sums in source, bronze, silver and gold to find where the gap appears.
+- Common causes: files arrived late or only partly, so the job ran on incomplete data; an inner join dropped rows whose new product or store keys are not in the dimension yet; a schema change NULLed a column; a filter or dedup bug.
+- Fix the cause and backfill the day.
+- Prevention: freshness and volume checks per source, reconciliation of daily totals between source and gold, unknown-member handling for late dimensions, and anomaly checks that hold gold before publishing."""
+study = "data-quality-contracts"
+
+[[questions]]
+id = "beh-data-quality-catch"
+q = "Tell me about a time you found a data quality problem before (or after) it reached users. What did you do?"
+level = "entry"
+kind = "behavioral"
+rubric = [
+  "Situation: a concrete dataset and what was wrong (duplicates, missing data, wrong values) and who used it",
+  "Action: how they detected it, investigated the root cause, and fixed or contained it, in their own words (I, not we)",
+  "Communicated with affected users or the owner of the source",
+  "Result: measurable or concrete outcome (numbers corrected, issue caught before a report)",
+  "Reflection: what check, test or process they added so it would not happen again",
+]
+answer = """- **Situation**: in my last internship our weekly sales report fed a pricing meeting. While building a new model on top of it, I noticed order counts were about 4% higher than the source system showed.
+- **Task**: I owned the new model, so I wanted to understand the gap before building on it.
+- **Action**: I compared counts by day and found duplicates on days when the ingestion job had been retried. The job appended files without a key check. I wrote a `ROW_NUMBER` dedup by order id and file timestamp, verified totals against the source for three months, and told the report owner before the next meeting.
+- **Result**: the corrected report showed sales about 4% lower, the meeting used correct numbers, and the team switched the loader to MERGE.
+- **Reflection**: I added a uniqueness test on order id, and I now reconcile counts with the source before trusting any new dataset."""
+study = "behavioral-star"

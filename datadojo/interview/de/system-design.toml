@@ -1,0 +1,198 @@
+title = "System Design & Behavioral"
+order = 9
+desc = "End-to-end pipeline designs and experience questions: CDC, clickstream, late data, GDPR and more."
+
+[[questions]]
+id = "design-daily-file-ingest"
+q = "A vendor drops a CSV of transactions into cloud storage every night. Design a simple pipeline that loads it into a table analysts can query each morning."
+level = "entry"
+kind = "design"
+rubric = [
+  "Clarifies basics: file size, arrival time, expected schema, when analysts need data",
+  "Ingests incrementally (e.g. Auto Loader or a job reading the day's file) into a raw bronze table with an explicit schema and file metadata",
+  "Cleans and deduplicates into a silver table with types, and handles bad rows (quarantine)",
+  "Schedules it with an orchestrator, makes it idempotent per day, with retries",
+  "Adds basic checks and alerts: file arrived, row count, not-null keys",
+]
+answer = """- Clarify first: file size, when it lands, whether the schema is stable, and the deadline (say 8 a.m.).
+- **Ingest**: Auto Loader with `trigger(availableNow=True)` reads new files from the landing volume with an explicit schema and appends them to `bronze.transactions`, adding `_ingested_at` and the source file path. It remembers processed files, so reruns do not reload them.
+- **Clean**: a silver step casts types, trims strings, dedupes on `transaction_id`, MERGEs into `silver.transactions`, and sends unparseable rows to a quarantine table.
+- **Orchestrate**: a scheduled job (Lakeflow Jobs or Airflow) runs ingest then clean after the file's usual arrival time, with retries. Every step is idempotent.
+- **Checks**: alert if no file arrived by a cut-off, if the row count is far from normal, or if `transaction_id` has nulls or duplicates."""
+study = "system-design-framework"
+
+[[questions]]
+id = "design-late-revenue"
+q = "Your daily revenue table is computed at 1 a.m., but some transactions arrive up to 3 days late. Design how to keep daily revenue correct."
+level = "mid"
+kind = "design"
+rubric = [
+  "Separates event time (transaction date) from arrival or processing time and stores both",
+  "Recomputes a rolling window of recent days (e.g. the last 3-4 days) each run with partition overwrite or MERGE, instead of only yesterday",
+  "Alternative: find affected event dates from newly arrived rows and recompute only those days",
+  "Defines when a day is final (closed after the lateness window) and communicates that to report users",
+  "Handles data later than the window via a correction or restatement process and monitors lateness",
+]
+answer = """- Store both **event date** (when the transaction happened) and **ingested_at** (when we received it). Revenue is reported by event date.
+- Each nightly run recomputes the **last 4 event days**, not just yesterday, and overwrites those days in `gold.daily_revenue` with `replaceWhere`. Late rows from up to 3 days ago are absorbed automatically, and reruns stay idempotent.
+- A more efficient variant: collect the distinct event dates among newly ingested rows (via Change Data Feed or `ingested_at`) and recompute just those days.
+- Define finality: a day is "provisional" until 3 days pass, then "final". Expose that as a column so dashboards can show it.
+- Anything later than the window is handled by a monthly restatement job, and I track the lateness distribution, so if it grows beyond 3 days I widen the window."""
+study = "watermarks-late-data"
+
+[[questions]]
+id = "design-dq-framework"
+q = "Design a data quality framework for a lakehouse with about 200 tables owned by several teams."
+level = "mid"
+kind = "design"
+rubric = [
+  "Rules defined as configuration or code next to each table (dbt tests, Lakeflow expectations, or a shared library), owned by table owners",
+  "Covers standard check types: not-null, uniqueness, referential integrity, ranges, freshness, volume and distribution drift",
+  "Severity levels decide the action: block publish, quarantine rows, or warn",
+  "Write-audit-publish or checks before gold so consumers never see failing data",
+  "Results stored in a table with dashboards and alerts routed to owners; tiering so critical tables get stricter checks",
+]
+answer = """- **Rules as code** next to each table: dbt tests or Lakeflow expectations, plus a small shared library for checks they do not cover. Each table has an owner who maintains its rules.
+- **Standard checks** so teams do not reinvent them: not-null keys, uniqueness, referential integrity, ranges and accepted values, freshness, volume against history, and drift in null rates or distributions.
+- **Severity**: `block` stops publishing, `quarantine` diverts bad rows, `warn` only alerts.
+- **Placement**: write-audit-publish for gold. Data is written to staging, checked, then published (swap or MERGE), so consumers never read failing data.
+- **Results** go to a central table with run id, table, rule, failures and severity, feeding a dashboard and alerts routed to the owning team.
+- **Tiering**: tier-1 tables (finance, executive metrics) need full checks and an SLA; lower tiers need at least freshness and key checks."""
+study = "data-quality-contracts"
+
+[[questions]]
+id = "design-cdc-postgres-lakehouse"
+q = "Design a pipeline that replicates 50 tables from a production Postgres database into a Databricks lakehouse with under 10 minutes of latency, including updates and deletes."
+level = "senior"
+kind = "design"
+rubric = [
+  "Uses log-based CDC (Debezium or a managed connector reading the WAL via a replication slot) into Kafka, with an initial snapshot",
+  "Lands raw change events append-only in bronze (with op, before/after, LSN, commit timestamp)",
+  "Applies changes to silver per table: dedupe to the latest event per key by LSN, then MERGE with delete, update and insert branches (or AUTO CDC); SCD2 history if needed",
+  "Exactly-once and recovery: checkpoints, idempotent MERGE, replay from Kafka or bronze",
+  "Operational concerns: replication slot lag filling the source disk, schema changes, monitoring end-to-end latency, backfills and reconciliation",
+]
+answer = """- **Capture**: Debezium on Kafka Connect (or a managed CDC connector) reads the Postgres WAL through a logical replication slot. It takes an initial snapshot, then streams every insert, update and delete to a topic per table, keyed by primary key.
+- **Bronze**: one Structured Streaming job reads the topics and appends raw events to bronze Delta tables with `op`, `before`/`after`, LSN, commit timestamp and Kafka offsets. Append-only means we can always replay.
+- **Silver**: per table, each micro-batch keeps the latest event per key by LSN, then MERGEs: delete when `op = 'd'`, update when matched, insert when not. Lakeflow AUTO CDC can do this, including SCD2 where history is needed. Triggers every few minutes meet the 10-minute SLA.
+- **Reliability**: checkpoints plus idempotent MERGE give exactly-once results; replay from Kafka or bronze for repairs.
+- **Operations**: alert on replication slot lag (WAL can fill the source disk), handle schema changes, monitor end-to-end latency, and reconcile row counts with Postgres daily."""
+study = "cdc-debezium"
+
+[[questions]]
+id = "design-clickstream"
+q = "Design a clickstream analytics pipeline for a website with 50,000 events per second, supporting near-real-time dashboards and daily product analytics."
+level = "senior"
+kind = "design"
+rubric = [
+  "Requirements and scale: event volume, freshness for dashboards vs daily analytics, retention, PII",
+  "Collection into Kafka (or similar) partitioned by a key such as user or session id, with an event schema and event id",
+  "Streaming ingestion to bronze Delta, then silver with parsing, dedup by event id and watermarks for late events",
+  "Two serving paths: near-real-time aggregates with windowed streaming, and batch gold models (sessions, funnels) recomputed for late data",
+  "Covers file layout (clustering by date and event type, compaction), cost, schema evolution and monitoring of lag and volume",
+]
+answer = """- **Requirements**: about 4 billion events a day. Dashboards need minute-level freshness; product analytics can be daily but must be accurate. Agree on retention and PII handling (hash or drop IP addresses).
+- **Collect**: SDKs send events with an `event_id`, event time and a versioned schema to Kafka, keyed by `session_id` so a session stays ordered.
+- **Bronze**: Structured Streaming appends raw events to a Delta table clustered by event date, with auto compaction to avoid small files.
+- **Silver**: parse and validate, dedupe on `event_id` within a watermark (say 1 hour), and quarantine bad events.
+- **Real-time path**: windowed aggregations (page views and conversions per minute) with watermarks into a small gold table for dashboards.
+- **Batch path**: nightly jobs build sessions, funnels and daily metrics, recomputing the last few days to absorb late mobile events.
+- **Operations**: monitor Kafka lag, events per second versus normal, schema changes, and cost."""
+study = "system-design-framework"
+
+[[questions]]
+id = "design-gdpr-deletion"
+q = "Design a process that guarantees a user's personal data is deleted from the lakehouse within 30 days of a GDPR erasure request."
+level = "senior"
+kind = "design"
+rubric = [
+  "Knows where PII lives: catalog tags or lineage to find every table with user identifiers, including bronze, silver, gold, and derived copies",
+  "Central request table; a scheduled job deletes or anonymizes matching rows in each table with DELETE or MERGE",
+  "Physical removal: Delta keeps old files for time travel, so REORG/PURGE for deletion vectors and VACUUM after retention are required within the deadline",
+  "Covers other copies: Change Data Feed data, clones, backups, raw files in volumes, and downstream exports",
+  "Reduces future burden (pseudonymous ids with a separate lookup table, crypto-shredding, minimal PII in lower layers) and keeps an audit trail of completion",
+]
+answer = """- **Find the data**: tag PII columns in Unity Catalog and use lineage to list every table keyed by user, including bronze, derived gold tables, and raw files in volumes.
+- **Requests**: erasure requests go into a `gdpr_requests` table with user id, received date and status.
+- **Delete job**: runs at least weekly. For each registered table it runs `DELETE` (or a MERGE that anonymizes columns) for pending user ids, then marks the request with the tables done.
+- **Physical removal**: Delta keeps old files for time travel. With deletion vectors, run `REORG TABLE ... APPLY (PURGE)`, then `VACUUM`, and keep retention (7 days by default) short enough to fit the 30-day deadline.
+- **Other copies**: CDF change files, clones, backups with their own expiry, raw landing files, and exports to other systems.
+- **Design for it**: keep PII in one table keyed by a pseudonymous id, or encrypt per user and delete the key (crypto-shredding).
+- Log every completion for audit."""
+study = "deletion-vectors-clone"
+
+[[questions]]
+id = "design-batch-platform-migration"
+q = "Your company runs 300 nightly jobs on a legacy Hive metastore with mounts and all-purpose clusters. Design the migration to Unity Catalog and a modern setup without breaking reporting."
+level = "senior"
+kind = "design"
+rubric = [
+  "Inventory and assessment first: tables, jobs, mounts, dependencies and owners (e.g. with UCX and lineage)",
+  "Target design: catalogs per environment or domain, managed tables, external locations and volumes replacing mounts, groups and grants",
+  "Phased migration by domain: migrate tables (SYNC for external, CTAS or deep clone for managed), repoint jobs, run old and new in parallel and reconcile outputs",
+  "Modernize execution: jobs compute or serverless with UC access modes, cluster policies, jobs defined in Asset Bundles with CI/CD",
+  "Risk handling: rollback plan, communication, freeze windows, validation of row counts and key metrics before cutover",
+]
+answer = """- **Assess**: inventory tables, jobs, mounts, libraries and owners with UCX and job metadata, and map which reports depend on which tables. Group everything into domains.
+- **Target**: catalogs per environment (`dev`, `prod`) with schemas per domain, UC managed tables, external locations and volumes instead of mounts, and grants to groups rather than users.
+- **Migrate in waves**: per domain, upgrade external tables with `SYNC` and copy managed tables with deep clone or CTAS. Update code to three-level names and volume paths, then run old and new pipelines **in parallel** for a week, reconciling row counts and key metrics.
+- **Modernize while moving**: jobs on jobs compute or serverless with standard or dedicated access mode, cluster policies, and jobs defined in Asset Bundles deployed by CI.
+- **Cutover**: switch reports per domain, keep the old tables read-only for rollback, and communicate dates. Remove mounts at the end."""
+study = "unity-catalog"
+
+[[questions]]
+id = "beh-pipeline-failure"
+q = "Tell me about a pipeline failure you owned. What happened, what did you do, and what changed afterwards?"
+level = "mid"
+kind = "behavioral"
+rubric = [
+  "Situation: a specific failure with its business impact (late or wrong data, which consumers)",
+  "Action during the incident: detection, mitigation and communication with stakeholders",
+  "Root cause analysis: finds the real cause, not just the symptom",
+  "Result: measurable outcome (data restored by when, downtime, accuracy)",
+  "Reflection and prevention: concrete changes such as tests, alerts, idempotency or runbooks, and owning the mistake without blame",
+]
+answer = """- **Situation**: our nightly orders pipeline failed silently for two days after a source changed its timestamp format. Finance's daily revenue dashboard showed flat numbers, and they noticed before we did.
+- **Task**: I was on call and owned the pipeline.
+- **Action**: I posted a status note to finance within the hour, then traced row counts through each layer. Silver had zero rows for those days because the timestamp parse produced NULLs that a filter removed. I fixed the parser to accept both formats and backfilled two days from bronze using the job's idempotent date-overwrite mode.
+- **Result**: correct numbers were back by noon, about six hours after the report, and nothing had to be restated afterwards.
+- **Reflection**: the failure was ours, since nothing alerted on zero rows. I added volume and null-rate checks that block gold and a freshness alert, and they caught two similar source changes that quarter."""
+study = "behavioral-star"
+
+[[questions]]
+id = "beh-cost-reduction"
+q = "Describe a time you significantly improved the performance or cost of a data platform. How did you decide what to change?"
+level = "senior"
+kind = "behavioral"
+rubric = [
+  "Situation with baseline numbers (runtime, monthly cost, SLA misses)",
+  "Used data to find the biggest levers (billing or usage analysis, Spark UI, query profiles) rather than guessing",
+  "Concrete technical actions (e.g. compute type changes, fixing skew or small files, incremental processing) and how they got buy-in",
+  "Measurable result (percent cost reduction, runtime drop) and how it was sustained (policies, monitoring)",
+  "Reflection: trade-offs made or what they would do differently",
+]
+answer = """- **Situation**: our Databricks spend grew 60% in two quarters to about 90k dollars a month, and two critical jobs were missing their 6 a.m. SLA.
+- **Task**: I led a cost and performance review as the senior engineer on the platform team.
+- **Action**: I grouped billing system tables by job and tag. Five jobs drove half the cost. Three ran on all-purpose clusters; one rewrote a 4 TB table nightly; one had a skewed join spilling heavily. I moved jobs to job compute with policies, made the rewrite an incremental MERGE using Change Data Feed, and fixed the skew with a broadcast of the small side. I presented the plan with expected savings to get team leads to agree.
+- **Result**: monthly cost fell about 40%, and the slowest job went from 3 hours to 35 minutes, so the SLA was met.
+- **Reflection**: policies and a monthly cost review kept it from creeping back. I would set up per-team cost dashboards earlier next time."""
+study = "behavioral-star"
+
+[[questions]]
+id = "beh-stakeholder-disagreement"
+q = "Tell me about a time you disagreed with a stakeholder or another team about a data requirement or design. How did you resolve it?"
+level = "senior"
+kind = "behavioral"
+rubric = [
+  "Situation: a real disagreement with stakes (e.g. demand for real-time, a metric definition, a schema change)",
+  "Understood the other side's underlying need before arguing for a solution",
+  "Used data, prototypes or cost and risk estimates to make the trade-off concrete",
+  "Result: an agreed outcome with measurable impact and a preserved relationship",
+  "Reflection on what they learned about influencing without authority",
+]
+answer = """- **Situation**: the marketing lead wanted campaign metrics streamed "in real time", which meant an always-on streaming pipeline over several sources, roughly tripling that pipeline's cost.
+- **Task**: as the data lead, I had to either deliver it or agree on something better.
+- **Action**: I asked how the numbers were used. Campaign budgets were adjusted twice a day, so minute-level data would not change any decision. I showed the cost estimate for both options and built a quick prototype using the same Structured Streaming code with `availableNow` every 30 minutes.
+- **Result**: we agreed on 30-minute freshness with an SLA and a freshness indicator on the dashboard. It cost about a fifth of the streaming design, shipped in three weeks, and marketing later used the same approach for two other dashboards.
+- **Reflection**: starting from the decision the data supports, not the technology asked for, avoids most disputes. I now ask that question at every kickoff."""
+study = "behavioral-star"

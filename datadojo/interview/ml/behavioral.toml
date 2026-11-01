@@ -1,0 +1,58 @@
+title = "Behavioral"
+order = 8
+desc = "STAR-style stories: explaining models, production failures and choosing simplicity."
+
+[[questions]]
+id = "ml-behavioral-explain-model"
+q = "Tell me about a time you had to explain a model's results or limitations to a non-technical stakeholder."
+level = "entry"
+kind = "behavioral"
+rubric = [
+  "Describes a concrete situation: who the stakeholder was and what decision depended on the model",
+  "Explains the actions: translated metrics into business terms (money, customers, errors), used examples or visuals, was honest about limitations",
+  "Gives a measurable or concrete result, such as a decision made, adoption, or a changed threshold",
+  "Reflects on what they learned or would do differently",
+]
+answer = """- **Situation**: our marketing lead wanted to email everyone with churn score above 0.5 and asked why 'the model is 85 percent accurate' still missed customers.
+- **Task**: help her choose a sensible target list without a statistics lecture.
+- **Action**: I replaced accuracy with a simple table: if we email the top 10 percent, we reach about 45 percent of future churners, and 3 in 10 emailed customers would actually churn. I showed five real anonymized customers and why they scored high, and said plainly that brand-new customers score poorly because we have little history on them.
+- **Result**: she chose the top 15 percent based on budget; the campaign beat the previous rule-based list on retention by about 2 points in the A/B test.
+- **Reflection**: start from the decision and its costs, not the metric; I now lead with a 'what happens if we act on this' table."""
+study = "threshold-business-cost"
+
+[[questions]]
+id = "ml-behavioral-prod-failure"
+q = "Describe a time a model you built or owned failed or degraded in production. What happened and what did you change?"
+level = "mid"
+kind = "behavioral"
+rubric = [
+  "Describes a specific failure with its business impact and how it was detected",
+  "Explains the immediate mitigation (rollback, fallback, hotfix) and the root cause investigation",
+  "Identifies the root cause concretely, such as skew, upstream data change, drift or a leakage-driven offline estimate",
+  "Gives measurable results of the fix, and lasting process changes such as monitoring, tests or rollout practice",
+  "Reflects honestly on own part and what they learned",
+]
+answer = """- **Situation**: a demand forecast I owned started over-ordering perishables at about 40 stores; the ops team noticed waste rising roughly 15 percent in two weeks.
+- **Action**: we switched those stores to the previous model version the same day. Comparing served features with training data, I found an upstream sales table had switched from units to cases for one supplier, so recent sales looked tiny, then huge after a backfill.
+- **Fix**: we corrected the units at the source, retrained, and I added data checks (unit ranges, row counts, distribution shift vs last week) that block the pipeline, plus per-store forecast error alerts.
+- **Result**: waste returned to baseline within a month; the checks caught two more upstream changes that quarter before they reached the model.
+- **Reflection**: I had monitored the service, not the data. I now treat input data checks as part of the model, not an extra."""
+study = "monitoring"
+
+[[questions]]
+id = "ml-behavioral-simpler-model"
+q = "Tell me about a time you pushed back on a more complex ML approach, or decided not to use ML at all. How did you make the case?"
+level = "senior"
+kind = "behavioral"
+rubric = [
+  "Sets up a concrete situation with the proposed complex approach and why it was attractive",
+  "Describes evidence-based action: a baseline or experiment, cost and maintenance estimates, risks spelled out",
+  "Shows influence: how they brought stakeholders along without dismissing them",
+  "Gives a measurable outcome, such as time saved, metric achieved or cost avoided",
+  "Reflects on the trade-off and when the complex approach would become worth it",
+]
+answer = """- **Situation**: leadership wanted a deep learning model for supplier invoice anomaly detection after a vendor demo; the estimate was two quarters and a GPU serving stack.
+- **Action**: I spent a week building a baseline: per-supplier rules on amount deviation and duplicate invoice numbers, plus an isolation forest on a dozen features. On six months of audited invoices it caught about 80 percent of known issues. I presented that next to the cost, timeline and on-call burden of the deep model, and agreed with the sponsor on a clear bar the complex model would need to beat.
+- **Result**: we shipped the baseline in three weeks; it flagged roughly 1.2M dollars of duplicate payments in the first quarter, and the deep learning project was dropped.
+- **Reflection**: the complex model was not wrong, it was premature. If labeled anomalies grow and the baseline plateaus, it would be worth revisiting; I documented that trigger so the decision could be revisited on evidence."""
+study = "ml-design-framework"

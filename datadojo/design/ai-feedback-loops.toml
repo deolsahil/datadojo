@@ -1,0 +1,66 @@
+title = "User Feedback Loops: Learning From Production"
+section = "ai-systems"
+order = 7
+kind = "lesson"
+difficulty = "medium"
+big_idea = "Offline evals can't predict every real-world failure; the best systems turn production feedback into permanent engineering knowledge, as new eval cases."
+summary = """However good your eval suite, real users will ask things you never imagined. Production is where you discover unexpected failures, and users tell you about them through explicit and implicit signals.
+
+But feedback isn't automatically ground truth. It is sparse (most people never click anything), biased toward severe failures, and ambiguous about the cause. The valuable part is the loop that turns a signal into a diagnosed root cause, a fix, and a **new eval** that stops it coming back."""
+diagram = """flowchart LR
+  F[User feedback] --> A[Failure analysis] --> R[Root cause] --> X[Fix] --> E[New eval] --> P[Regression protection]"""
+
+[[blocks]]
+heading = "Signals users give you"
+body = """- **Explicit:** 👍 / 👎, ratings, written corrections.
+- **Implicit:** retries and rephrasing, copying the answer (good) or abandoning the workflow (bad), escalations to a human, edits to generated output.
+
+Implicit signals are far more plentiful; explicit ones are clearer."""
+
+[[blocks]]
+heading = "Feedback isn't ground truth"
+body = """A thumbs-down could mean:
+- Wrong answer
+- Wrong retrieval
+- Missing information
+- Bad UX
+- User misunderstanding
+
+So never feed raw feedback straight into training. Triage it: read the trace, find the stage that failed, and classify the cause."""
+
+[[blocks]]
+heading = "The loop that matters"
+body = """```
+User feedback → Failure analysis → Root cause → Fix → New eval → Regression protection
+```
+Each confirmed failure becomes a task in the eval suite, so the fix is verified now and protected forever. The best systems don't just collect feedback; they **convert important feedback into permanent engineering knowledge**."""
+
+key_points = [
+  "Production reveals failures offline evals never covered.",
+  "Collect explicit (👍/👎, corrections) and implicit (retries, escalations, abandonment) signals.",
+  "Feedback is sparse, biased toward severe failures, and ambiguous; triage before acting.",
+  "Every confirmed failure becomes a new eval case for regression protection.",
+]
+common_mistakes = [
+  "Treating every thumbs-down as a wrong answer.",
+  "Training directly on raw user feedback.",
+  "Collecting feedback with no trace attached, so root cause can't be found.",
+  "Fixing a reported issue without adding an eval, so it regresses later.",
+]
+interview_questions = [
+  "Design a feedback loop for an AI assistant. What do you collect and what do you do with it?",
+  "A thumbs-down rate doubled this week. How do you investigate?",
+  "Why shouldn't you fine-tune directly on user thumbs-up/down data?",
+]
+
+[[quiz]]
+q = "A user clicks thumbs-down. What should happen before any fix?"
+options = ["Retrain the model", "Analyze the trace to find which stage failed and why", "Delete the answer", "Lower the temperature"]
+answer = 1
+why = "A thumbs-down can mean retrieval, missing data, UX or misunderstanding; root-cause it first."
+
+[[quiz]]
+q = "What makes a fix 'permanent engineering knowledge'?"
+options = ["A Slack message", "Adding the failure as a new eval case", "A bigger model", "A longer prompt"]
+answer = 1
+why = "The new eval verifies the fix and catches the regression if it ever returns."

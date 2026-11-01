@@ -1,0 +1,236 @@
+title = "Databricks Platform"
+order = 4
+desc = "Unity Catalog, compute and access modes, Auto Loader, Lakeflow pipelines and jobs, bundles and cost."
+
+[[questions]]
+id = "dbx-unity-catalog"
+q = "What is Unity Catalog, and how are objects and permissions organized in it?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Central governance across workspaces for data and AI assets: access control, lineage, audit, discovery",
+  "Three-level namespace catalog.schema.table under a metastore",
+  "Securables include tables, views, volumes, functions and models, plus storage credentials and external locations",
+  "Permissions granted with GRANT to groups; USE CATALOG and USE SCHEMA are needed before SELECT works",
+  "Lineage and audit are captured automatically",
+]
+answer = """- Unity Catalog is Databricks' central governance layer. One metastore per region serves many workspaces, with shared permissions, lineage, auditing and search.
+- Objects use a three-level name: `catalog.schema.table`. Schemas hold tables, views, **volumes** (governed non-tabular files), functions and models.
+- Cloud storage access goes through **storage credentials** and **external locations**, so nobody needs raw keys.
+- Permissions are SQL grants to groups, for example `GRANT USE CATALOG`, `GRANT USE SCHEMA` and `GRANT SELECT ON TABLE prod.gold.revenue TO analysts`. Without the USE privileges, SELECT alone is not enough.
+- Lineage down to columns and audit logs are captured automatically and exposed through Catalog Explorer and system tables."""
+study = "unity-catalog"
+
+[[questions]]
+id = "dbx-compute-types"
+q = "Compare all-purpose compute, jobs compute and serverless compute in Databricks. Which would you use for a nightly production job?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "All-purpose compute is for interactive development, can be shared, and costs more per DBU",
+  "Jobs compute is created for a job run and terminates after it, with a lower DBU rate",
+  "Serverless is managed by Databricks, starts quickly, needs no cluster configuration, and is billed for usage",
+  "Production scheduled jobs should run on jobs compute or serverless, not all-purpose clusters",
+]
+answer = """- **All-purpose compute** is for interactive notebooks and exploration. Several people can attach to it, it stays up until it auto-terminates, and its DBU rate is higher.
+- **Jobs compute** is created when a job run starts and shut down when it ends. It is cheaper per DBU and isolates each run.
+- **Serverless compute** (for notebooks, jobs, pipelines and SQL warehouses) is run by Databricks: it starts in seconds, scales automatically, and I do not choose instance types.
+- For a nightly production job, I use jobs compute or serverless. Running production on an all-purpose cluster costs more and lets interactive users interfere with the job.
+- Serverless is great for spiky or short jobs; classic jobs compute gives more control over instance types and settings."""
+study = "compute-and-cost"
+
+[[questions]]
+id = "dbx-autoloader-basics"
+q = "What is Auto Loader, and how does it make sure each file is ingested exactly once?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Auto Loader is the cloudFiles streaming source that incrementally ingests new files from cloud storage",
+  "It records discovered and processed files in a key-value store (RocksDB) inside the stream's checkpoint location",
+  "File discovery by directory listing or file notifications / file events",
+  "Offsets commit only after the micro-batch is written, so a failed batch is reprocessed; with a transactional sink like Delta this gives exactly-once",
+  "Can run continuously or as a scheduled incremental batch with availableNow",
+]
+answer = """- Auto Loader is the `cloudFiles` source for Structured Streaming. It picks up new files landing in cloud storage or a volume and loads them incrementally, for example into a bronze Delta table.
+- It discovers files by directory listing or by file notifications (file events), which scale to millions of files.
+- Every file it discovers is recorded in a RocksDB store inside the stream's **checkpoint**. A file already recorded is not ingested again.
+- A micro-batch's progress is committed only after the batch is written. If a batch fails, it is retried from the checkpoint, and with the Delta sink the result is exactly-once.
+- I usually run it with `trigger(availableNow=True)` on a schedule, or continuously when I need low latency."""
+study = "auto-loader"
+
+[[questions]]
+id = "dbx-secrets"
+q = "How should a Databricks pipeline handle credentials like a database password or storage keys?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Never hard-code secrets in notebooks, job parameters or Git",
+  "Store them in a secret scope (Databricks-backed or backed by a cloud key vault) and read with dbutils.secrets.get",
+  "Secret values are redacted in notebook output and access is controlled with ACLs",
+  "For cloud storage, prefer Unity Catalog storage credentials and external locations instead of keys",
+]
+answer = """- Never put passwords or keys in notebook code, job parameters, or Git.
+- Store them in a **secret scope**, either Databricks-backed or backed by a cloud vault such as Azure Key Vault, and read them at runtime with `dbutils.secrets.get(scope="jdbc", key="password")`.
+- Databricks redacts secret values in notebook output, and scope ACLs control who can read them.
+- For cloud storage, better still is no secret at all: Unity Catalog **storage credentials** and **external locations** (backed by a managed identity or IAM role) grant access through permissions.
+- Jobs run as a **service principal**, so production access does not depend on a person's account."""
+study = "jobs-bundles-secrets"
+
+[[questions]]
+id = "dbx-uc-vs-hive"
+q = "Your company still uses the legacy Hive metastore with DBFS mounts. What does moving to Unity Catalog change, and what would you replace mounts with?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Hive metastore is per workspace (hive_metastore catalog) with older table ACLs; Unity Catalog is account-level and shared across workspaces",
+  "Unity Catalog adds the three-level namespace, central grants, automatic lineage, audit and system tables",
+  "dbutils.fs.mount mounts are legacy: anyone on the workspace can use them and they bypass UC governance",
+  "Replace mounts with Volumes for files and external locations with storage credentials for paths; managed or external tables in UC",
+  "Mentions a migration approach such as SYNC, UCX, or CTAS/deep clone into UC tables, then repointing jobs",
+]
+answer = """- The **Hive metastore** is per workspace. Its tables show up as the `hive_metastore` catalog, permissions use older table ACLs, and there is no cross-workspace lineage.
+- **Unity Catalog** is account-level: one governance model shared by workspaces, `catalog.schema.table` names, central grants, row filters and column masks, automatic lineage, and audit and billing system tables.
+- `dbutils.fs.mount` mounts are legacy. Credentials are baked into the mount, so anyone in the workspace can read through it, and UC does not govern it.
+- Replace mounts with **Volumes** for files (`/Volumes/cat/schema/vol/...`) and **external locations** with storage credentials for table paths. Move tables to UC managed tables where possible.
+- Migration: inventory with UCX, upgrade external tables with `SYNC`, copy managed ones with CTAS or deep clone, then repoint jobs and switch compute to UC access modes."""
+study = "unity-catalog"
+
+[[questions]]
+id = "dbx-access-modes"
+q = "What are the access modes for Databricks compute under Unity Catalog, and how do you choose?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Standard access mode (formerly Shared) lets multiple users share compute with user isolation enforced",
+  "Dedicated access mode (formerly Single user) is assigned to one user or group and supports more languages and APIs such as RDDs or ML runtimes",
+  "No isolation shared is legacy and not Unity Catalog secure; High Concurrency clusters are the legacy name for shared clusters",
+  "Choose standard for shared teams and SQL/Python workloads; dedicated for workloads that need low-level APIs or GPUs/ML",
+  "Mentions cluster policies to restrict which modes and sizes users can create",
+]
+answer = """- **Standard** access mode (formerly called Shared) lets many users share one cluster while Unity Catalog enforces isolation between them. Some low-level features, such as RDD APIs, are restricted.
+- **Dedicated** access mode (formerly Single user) is assigned to one user or one group. It supports the widest feature set, such as RDDs and ML runtimes with GPUs.
+- **No isolation shared** is legacy and not UC-secure. "High Concurrency" is the old name for shared clusters; I would not design new setups around either.
+- I default to standard for team development and SQL or PySpark work, and use dedicated for ML or code that needs low-level APIs. Jobs typically run as a service principal.
+- Cluster policies enforce these choices, along with node types, sizes, tags and auto-termination."""
+study = "compute-and-cost"
+
+[[questions]]
+id = "dbx-autoloader-1tb-file"
+q = "Auto Loader is ingesting a single 1 TB file and the job fails halfway through. What happens on restart, and how would you make this more robust?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Auto Loader tracks files, not byte offsets within a file",
+  "The failed micro-batch was never committed, so on restart the whole file is reprocessed from the beginning",
+  "No partial or duplicate data in the Delta sink because the batch commit is atomic",
+  "Mitigation: have producers split data into many smaller files; avoid non-splittable compressed files",
+  "maxBytesPerTrigger / maxFilesPerTrigger limit batch size but cannot split a single file; also size compute so the batch can finish",
+]
+answer = """- Auto Loader's unit of progress is the **file**. It does not checkpoint byte offsets inside a file.
+- The micro-batch containing the file failed before committing, so on restart Auto Loader processes the **whole 1 TB file again** from the beginning.
+- The Delta sink commits a batch atomically, so the half that was processed before the failure was never visible. There are no partial rows or duplicates, only wasted compute.
+- The real fix is upstream: ask the producer to write many smaller files (hundreds of MB each). If the file is a single gzip, it also cannot be split across tasks, so one task reads it all.
+- `maxFilesPerTrigger` and `maxBytesPerTrigger` limit how much goes into one batch, but a single file is always read whole. Size the cluster so that batch can complete, and add retries."""
+study = "auto-loader"
+
+[[questions]]
+id = "dbx-autoloader-reprocess"
+q = "A vendor re-sent a corrected version of a file that Auto Loader already ingested, using the same file name. How do you get Auto Loader to reprocess it?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Auto Loader remembers processed files in the checkpoint, so a re-uploaded file at the same path is skipped by default",
+  "cloudFiles.schemaLocation only stores the inferred schema; it does not control which files are reprocessed",
+  "Option: set cloudFiles.allowOverwrites=true so modified files are picked up again, accepting possible duplicates",
+  "Option: copy the corrected file to a new path or name so it is discovered as a new file",
+  "Option: a new checkpoint reprocesses everything; in all cases make the target idempotent (MERGE or delete the old rows) to avoid duplicates",
+]
+answer = """- Auto Loader records every processed file in its **checkpoint**. By default a file that reappears at the same path is treated as already seen and skipped.
+- `cloudFiles.schemaLocation` is not involved: it only stores the inferred schema history. Deleting it does not trigger reprocessing.
+- Options:
+  - Copy the corrected file under a **new name or path** (for example with a version suffix). Auto Loader sees it as a new file.
+  - Set `cloudFiles.allowOverwrites = true` so files modified after ingestion are picked up again. This can create duplicates, so only use it with an idempotent target.
+  - Start a **new checkpoint** to reprocess all files, only reasonable for a full rebuild.
+- Because the old file's rows are already in bronze, the target must handle it: MERGE on a business key, or delete rows by `_metadata.file_path` before reloading."""
+study = "auto-loader"
+
+[[questions]]
+id = "dbx-lakeflow-expectations"
+q = "What are Lakeflow Declarative Pipelines, and how do expectations help with data quality?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Formerly called Delta Live Tables (DLT); you declare streaming tables and materialized views and the engine handles dependencies, orchestration, retries and incremental processing",
+  "Expectations are declarative quality constraints on each row",
+  "Three actions: keep and record (expect), drop the row (expect_or_drop / DROP ROW), fail the update (expect_or_fail / FAIL UPDATE)",
+  "Quality metrics are recorded in the pipeline event log",
+  "Quarantining bad rows needs a separate table with the inverted condition",
+]
+answer = """- Lakeflow Declarative Pipelines (formerly Delta Live Tables) let me declare **streaming tables** and **materialized views** in SQL or Python. The engine works out dependencies, runs them in order, retries failures, and processes data incrementally.
+- **Expectations** are row-level rules attached to a table:
+  - `EXPECT (amount > 0)` / `@dlt.expect`: keep the row, record the violation.
+  - `ON VIOLATION DROP ROW` / `@dlt.expect_or_drop`: drop the row.
+  - `ON VIOLATION FAIL UPDATE` / `@dlt.expect_or_fail`: stop the update.
+- Pass and fail counts land in the pipeline **event log**, which I query for dashboards and alerts.
+- Dropping is not quarantining: to keep bad rows I add a second table with the inverted condition. CDC is handled by AUTO CDC (formerly APPLY CHANGES)."""
+study = "lakeflow-pipelines"
+
+[[questions]]
+id = "dbx-bundles-cicd"
+q = "How would you set up CI/CD for Databricks jobs and pipelines across dev, staging and prod?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Define jobs and pipelines as code with Databricks Asset Bundles (databricks.yml) with per-environment targets",
+  "Code in Git; pull requests run unit tests, linting and bundle validate",
+  "Deploy to dev or staging automatically, run integration tests, then deploy to prod from the main branch",
+  "Deploy and run as a service principal, not a personal user; secrets from a vault",
+  "Parameterize environment differences (catalog names, compute sizes) per target instead of hard-coding",
+]
+answer = """- Everything is code in Git: notebooks or Python packages, SQL, plus **Databricks Asset Bundles**. `databricks.yml` defines the jobs (Lakeflow Jobs, formerly Workflows), pipelines and their compute, with targets like `dev`, `staging` and `prod`.
+- On each pull request, CI runs unit tests (pure PySpark functions with small DataFrames), linting, and `databricks bundle validate`.
+- On merge, CI runs `databricks bundle deploy -t staging`, runs integration tests against staging data, and then deploys to `prod`, often with an approval step.
+- Deployments and production runs use a **service principal**, never a personal account, and credentials come from the CI secret store.
+- Environment differences such as catalog (`dev` vs `prod`), cluster size and schedules are bundle variables per target, so the same code moves between environments unchanged."""
+study = "jobs-bundles-secrets"
+
+[[questions]]
+id = "dbx-autoloader-schema-evolution"
+q = "An upstream team adds new fields to the JSON files you ingest with Auto Loader. How does Auto Loader handle schema inference and evolution, and which mode would you choose?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Schema is inferred from a sample of files and versioned at cloudFiles.schemaLocation; JSON/CSV columns are strings unless inferColumnTypes is enabled",
+  "Default addNewColumns mode: stream fails when a new column appears, schema is updated, and a restart continues with the new column",
+  "rescue mode keeps the schema fixed and puts unexpected fields into _rescued_data; failOnNewColumns and none are alternatives",
+  "_rescued_data also captures values with type mismatches so data is not lost",
+  "Choice depends on layer: permissive evolution in bronze (with automatic job retries), strict contracts in silver; schema hints for known types",
+]
+answer = """- On the first run Auto Loader infers the schema from a sample of files and stores it, versioned, under `cloudFiles.schemaLocation`. JSON and CSV columns are inferred as strings unless `cloudFiles.inferColumnTypes` is true; `schemaHints` pins known types.
+- `cloudFiles.schemaEvolutionMode`:
+  - `addNewColumns` (default): when a new field appears, the stream stops with an error after updating the stored schema; the restart picks up the new column. Jobs need automatic retries for this.
+  - `rescue`: schema never changes; unknown fields go into `_rescued_data`.
+  - `failOnNewColumns`: stop until someone changes the schema.
+  - `none`: ignore new columns.
+- `_rescued_data` also catches values whose type does not match, so nothing is silently lost.
+- My choice: `addNewColumns` in bronze with job retries enabled, an alert when the schema changes, and explicit schemas plus contract checks from silver onward."""
+study = "auto-loader"
+
+[[questions]]
+id = "dbx-cost-spike"
+q = "The monthly Databricks bill doubled. How would you find the cause and bring costs down?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Uses system.billing.usage (with tags, job and warehouse IDs) to attribute cost by workspace, SKU, job or user",
+  "Looks for common culprits: all-purpose clusters running production or left idle, continuous streams or pipelines, oversized clusters, runaway retries",
+  "Fixes compute choices: jobs compute or serverless, auto-termination, autoscaling limits, spot workers",
+  "Enforces cluster policies (max size, required tags, auto-termination) and budgets or alerts",
+  "Fixes inefficient jobs (skew, small files, full rewrites instead of incremental) rather than only shrinking clusters",
+]
+answer = """- First attribute the cost: query `system.billing.usage` joined with list prices, grouped by SKU, workspace, job, warehouse and custom tags, and compare to last month.
+- Typical culprits: production jobs on all-purpose clusters, interactive clusters with no auto-termination, streams or pipelines running continuously when hourly would do, oversized or never-scaling clusters, SQL warehouses that never stop, and failing jobs retrying all night.
+- Fixes: move jobs to jobs compute or serverless, set auto-termination, cap autoscaling, use spot workers for batch, switch always-on streams to `availableNow` schedules.
+- Guardrails: **cluster policies** for sizes, required tags and auto-termination, plus budgets and alerts per team.
+- Then make jobs cheaper per run: incremental processing instead of full rewrites, fixing skew and small files, and predictive optimization for table maintenance."""
+study = "compute-and-cost"

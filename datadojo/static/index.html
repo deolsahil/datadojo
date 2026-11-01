@@ -14,12 +14,15 @@
 </head>
 <body>
 <header class="nav">
-  <a class="logo" href="#/">DATA<span>DOJO</span></a>
+  <a class="logo" href="#/" title="Home" aria-label="DataDojo home">DATA<span>DOJO</span></a>
   <nav>
-    <a href="#/" data-nav="home">Home</a>
-    <a href="#/lang/sql" data-nav="sql">SQL</a>
-    <a href="#/lang/python" data-nav="python">Python</a>
-    <a href="#/lang/pyspark" data-nav="pyspark">PySpark</a>
+    <div class="dd"><button class="dd-btn" aria-haspopup="true">Practice <span class="caret-dd">▾</span></button>
+      <div class="dd-menu">
+        <a href="#/lang/sql" data-nav="sql">SQL</a>
+        <a href="#/lang/python" data-nav="python">Python</a>
+        <a href="#/lang/pyspark" data-nav="pyspark">PySpark</a>
+      </div></div>
+    <a href="#/interview" data-nav="interview">Interview</a>
     <a href="#/design" data-nav="design">System Design</a>
     <a href="#/games" data-nav="games">Games</a>
   </nav>

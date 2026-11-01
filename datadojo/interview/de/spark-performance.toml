@@ -1,0 +1,192 @@
+title = "Spark Performance"
+order = 2
+desc = "Shuffles, partitioning, skew, joins, memory errors, small files and the Spark UI."
+
+[[questions]]
+id = "perf-shuffle"
+q = "What is a shuffle in Spark, why is it expensive, and how do you size shuffle partitions?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "A shuffle redistributes rows across executors so rows with the same key end up in the same partition",
+  "Triggered by wide operations such as groupBy, join, distinct, orderBy, repartition",
+  "Expensive because of disk writes, network transfer, serialization and sorting",
+  "spark.sql.shuffle.partitions defaults to 200; aim for partitions around 100-200 MB, and AQE can coalesce them",
+]
+answer = """- A shuffle moves data between executors so all rows with the same key land in the same partition. Wide operations like `groupBy`, `join`, `distinct`, `orderBy` and `repartition` cause it.
+- It is expensive because map tasks write shuffle files to disk, reduce tasks fetch them over the network, and the data is serialized and often sorted.
+- The number of post-shuffle partitions is `spark.sql.shuffle.partitions`, 200 by default. That is too many for small data and too few for terabytes.
+- I aim for roughly 100-200 MB per partition, and with AQE enabled I set a generous value and let AQE coalesce small partitions.
+- Best of all is avoiding shuffles: filter early, broadcast small tables, skip unnecessary `distinct`."""
+study = "shuffles-partitioning"
+
+[[questions]]
+id = "perf-repartition-coalesce"
+q = "What is the difference between repartition and coalesce? When would you use each?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "repartition does a full shuffle and can increase or decrease the number of partitions",
+  "repartition gives evenly sized partitions and can partition by columns",
+  "coalesce only reduces partitions by merging existing ones without a shuffle, so it is cheaper but can be uneven",
+  "Use coalesce to reduce output file count; repartition to increase parallelism or fix imbalance",
+  "Warns that coalesce(1) can reduce upstream parallelism to one task",
+]
+answer = """- `repartition(n)` or `repartition("col")` performs a full shuffle. It can increase or decrease the partition count and produces evenly balanced partitions, optionally grouped by key.
+- `coalesce(n)` only decreases the count by merging neighbouring partitions without a shuffle. It is cheap, but partitions can end up uneven.
+- I use `coalesce` before a write to avoid producing thousands of tiny files.
+- I use `repartition` when I need more parallelism (for example after reading a few huge files), to fix badly unbalanced partitions, or to cluster by a key before a write.
+- Careful: `coalesce(1)` is narrow, so Spark may run the upstream stage with a single task too. If the upstream work is heavy, `repartition(1)` keeps it parallel."""
+study = "shuffles-partitioning"
+
+[[questions]]
+id = "perf-partition-cardinality"
+q = "A teammate partitioned a Delta table by user_id, which has 20 million distinct values. Queries and writes are now very slow. What went wrong and what would you do?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Partitioning by a high-cardinality column creates millions of folders and tiny files",
+  "Small files cause huge metadata, listing and task overhead for writes and reads",
+  "Partition only by low-cardinality columns such as date, and only when tables are large",
+  "Use liquid clustering (or Z-order) on user_id for filtering instead of partitioning",
+  "Rewrite the table without that partition column and compact files",
+]
+answer = """- Partitioning by `user_id` creates one folder per user, so 20 million directories, each with tiny files. Every write touches huge numbers of files, and every query plans and opens far too many.
+- Partitions should be on **low-cardinality** columns like a date, and only when each partition holds a meaningful amount of data (around a gigabyte or more).
+- For fast lookups by `user_id`, use **liquid clustering** (`CLUSTER BY (user_id)`), or Z-order on older setups, so min/max file stats let queries skip files.
+- Fix: rewrite the table with no `user_id` partitioning (for example `CREATE TABLE ... CLUSTER BY (user_id) AS SELECT * FROM old`), run `OPTIMIZE`, then switch readers over."""
+study = "shuffles-partitioning"
+
+[[questions]]
+id = "perf-skew-diagnose"
+q = "A join stage has 199 tasks that finish in 2 minutes and one that runs for over an hour. How do you diagnose and fix it?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Recognizes data skew: one partition has far more rows for a hot key",
+  "Confirms in the Spark UI stage metrics (max vs median duration and shuffle read size) and by counting rows per key",
+  "Checks for NULL or placeholder keys as the hot key and filters or handles them separately",
+  "Uses a broadcast join if the other side is small, or relies on AQE skew join",
+  "Uses salting or splitting hot keys when AQE is not enough",
+]
+answer = """- This is classic **skew**: one join key has far more rows than others, so one task gets a huge partition.
+- Confirm in the Spark UI: in the stage's task summary, max shuffle read and duration are far above the median. Then `groupBy(key).count().orderBy(desc("count"))` to find the hot keys.
+- Often the hot key is `NULL`, `-1` or `'unknown'`. Those rows usually cannot match anyway, so filter them out or process them separately.
+- If the other side is small, **broadcast** it so there is no shuffle at all.
+- Make sure **AQE skew join** is enabled; it splits large partitions in sort-merge joins.
+- If skew remains, **salt** the hot keys: add a random salt to the big side, replicate the small side for each salt value, and join on key plus salt."""
+study = "data-skew"
+
+[[questions]]
+id = "perf-broadcast-join"
+q = "How does a broadcast join work, when does Spark choose it, and what are its risks?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "The small table is collected to the driver and copied to every executor, so the large table is not shuffled",
+  "Chosen automatically below spark.sql.autoBroadcastJoinThreshold (10 MB default) or by AQE at runtime, or forced with a hint",
+  "Risk: the broadcast side must fit in driver and executor memory, otherwise OOM or timeouts",
+  "Only the non-preserved side of an outer join can be broadcast",
+  "Bad statistics can make Spark miss or wrongly pick a broadcast",
+]
+answer = """- Spark collects the small table to the driver and sends a copy to every executor. Each task then joins its partition of the big table against the local hash table, so the big table is never shuffled.
+- It is chosen automatically when the estimated size is under `spark.sql.autoBroadcastJoinThreshold` (10 MB by default), by AQE when runtime sizes turn out small, or explicitly with `F.broadcast(df)` or a `BROADCAST` hint.
+- Risk: the broadcast side has to fit in driver and executor memory. Broadcasting a multi-GB table causes OOM or broadcast timeouts.
+- For outer joins only the side that is not preserved can be broadcast, for example the right side of a left join.
+- Missing or stale statistics mislead the optimizer, so I verify with `explain()` and keep stats fresh."""
+study = "join-strategies"
+
+[[questions]]
+id = "perf-spill"
+q = "The Spark UI shows a lot of 'Spill (Disk)' on a stage. What does that mean and how do you reduce it?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Spill means execution data (sort, aggregation, join buffers) did not fit in memory and was written to disk",
+  "It slows the job through extra disk IO and serialization but is not itself a failure",
+  "Main cause is partitions that are too large, often from too few shuffle partitions or skew",
+  "Fix by increasing shuffle partitions, fixing skew, or giving more memory per core",
+]
+answer = """- Spill means a task's sort, aggregation or join buffers outgrew execution memory, so Spark wrote part of them to local disk and merged them back later.
+- It is not an error, but it adds disk IO and serialization, and heavy spill can make a stage many times slower.
+- The usual cause is partitions that are too big: too few shuffle partitions for the data size, or skew putting most data in a few partitions.
+- Fixes: raise `spark.sql.shuffle.partitions` (or let AQE size them), fix skew, filter and project earlier so less data is shuffled, or use instance types with more memory per core.
+- I check whether spill is spread across all tasks (undersized partitions) or concentrated in a few (skew)."""
+study = "memory-oom-spill"
+
+[[questions]]
+id = "perf-udf-choice"
+q = "Why are Python UDFs slow, and when would you use a pandas UDF or a built-in function instead?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Python UDFs move each row between the JVM and a Python worker, adding serialization overhead",
+  "UDFs are a black box to Catalyst: no predicate pushdown through them, no code generation",
+  "Built-in functions run in the JVM and are optimized, so they are the first choice",
+  "pandas UDFs use Apache Arrow to process data in vectorized batches and are much faster than row UDFs",
+  "Python workers use memory outside the JVM, which can cause container OOM",
+]
+answer = """- A plain Python UDF sends rows from the JVM to a Python worker, runs the function one row at a time, and sends results back. That serialization dominates the runtime.
+- Catalyst cannot look inside a UDF, so it cannot push filters through it or generate optimized code for it.
+- My first choice is always a **built-in** from `pyspark.sql.functions` or SQL (`regexp_extract`, `when`, `transform` on arrays, date functions), because it stays in the optimized JVM engine.
+- If I really need Python, such as calling a library or model, I use a **pandas UDF**, which moves Arrow batches and works on pandas Series, often many times faster than a row UDF.
+- Python workers use memory outside the JVM heap, so heavy UDFs may need more memory overhead."""
+study = "udfs"
+
+[[questions]]
+id = "perf-salting"
+q = "Explain salting in detail. When is AQE's skew handling not enough, and what does salting cost you?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Salting appends a random value (0..N-1) to the key on the skewed side to spread a hot key over N partitions",
+  "For joins the other side is replicated N times with every salt value and the join is on key plus salt",
+  "For aggregations, aggregate by key plus salt first, then aggregate again by key",
+  "AQE skew handling only covers sort-merge joins and limited cases, not skewed groupBy aggregations or extreme single-key skew",
+  "Costs: replicated rows on the small side, an extra aggregation step, more complex code; salt only hot keys when possible",
+]
+answer = """- Salting spreads one hot key across N partitions by adding a random salt `0..N-1` to the key on the skewed side.
+- For a join, I replicate the other side N times, once per salt value (`explode` of an array of salts), and join on `(key, salt)`.
+- For an aggregation, I group by `(key, salt)` to get partial results, then group by `key` to combine them. This works for sums and counts; distinct counts need care.
+- AQE's skew handling covers skewed partitions in sort-merge joins. It does not rebalance a skewed `groupBy`, and some join types and plans are not eligible, so extreme skew may still need salting.
+- Costs: the small side grows N times, there is an extra shuffle or aggregation, and the code is harder to read. I salt only the known hot keys and choose N from the skew ratio."""
+study = "data-skew"
+
+[[questions]]
+id = "perf-executor-oom"
+q = "A nightly Spark job started failing with executor out-of-memory errors after the data grew. How do you troubleshoot and fix it?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Distinguishes executor OOM from driver OOM and checks which one occurred (and container killed for exceeding memory overhead)",
+  "Checks the Spark UI for skew, oversized partitions, and spill in the failing stage",
+  "Checks for a broadcast join that grew beyond safe size",
+  "Fixes partition sizing: more shuffle partitions or repartition, fix skew",
+  "Considers Python UDF or memory overhead, exploding arrays, and only then larger memory instances",
+]
+answer = """- First, confirm it is the executor: lost executors, `OutOfMemoryError` in task logs, or a container killed for exceeding memory (often Python or off-heap overhead). Driver OOM points to `collect` or planning instead.
+- In the Spark UI, find the failing stage. If one or a few tasks have huge shuffle reads, it is **skew**: handle hot keys, enable AQE skew join, or salt.
+- If all tasks are big, partitions are too large: raise shuffle partitions or repartition so each is around 100-200 MB.
+- Check the plan for a **broadcast join** whose small side grew; disable or lower the threshold for it.
+- Look for `explode` or `collect_list` creating huge rows, and Python UDFs needing more `memoryOverhead`.
+- Only after that, move to instances with more memory per core. Then add a data-volume alert so growth is noticed early."""
+study = "memory-oom-spill"
+
+[[questions]]
+id = "perf-slow-job-triage"
+q = "A job that used to take 20 minutes now takes 3 hours with no code change. Walk me through how you would find the cause using the Spark UI."
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Checks whether input volume, file count or data distribution changed (more data, small files, new hot key)",
+  "Uses the Jobs and Stages tabs to find the slowest stage and compares max vs median task time and shuffle read",
+  "Uses the SQL tab or explain to look for plan changes such as a broadcast join flipping to sort-merge, or lost partition pruning",
+  "Checks spill, GC time and executor loss in the Executors tab",
+  "Compares with a previous good run and fixes the specific cause rather than adding nodes",
+]
+answer = """- Start with what changed outside the code: input size, number of files (a small-files problem), a new hot key, cluster or runtime version, or statistics.
+- In the **Jobs/Stages** tabs, find the stage that takes the time. Compare max vs median task duration and shuffle read: one outlier means skew; uniformly slow tasks mean too much data per task or too few tasks.
+- In the **SQL** tab, compare the plan with an old run: did a broadcast join become a sort-merge join, did a filter stop pruning partitions, or are far more files scanned?
+- In stage metrics and the **Executors** tab, check spill, GC time, and lost executors.
+- Then fix that cause: compact files, re-enable pruning, fix skew, refresh stats or re-add a broadcast hint. Adding nodes is a last resort."""
+study = "memory-oom-spill"

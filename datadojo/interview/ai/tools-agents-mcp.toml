@@ -1,0 +1,121 @@
+title = "Tools, Agents & MCP"
+order = 3
+desc = "Tool calling, the Model Context Protocol, agent loops, and when (not) to use agents or multi-agent systems."
+
+[[questions]]
+id = "ai-tool-calling"
+q = "How does tool calling (function calling) work? Does the model run the function?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "The application describes tools to the model with a name, description and argument schema",
+  "The model does not execute anything: it outputs a structured request naming the tool and arguments",
+  "The application validates and executes the call, then sends the result back to the model",
+  "The model uses the result to continue, call more tools, or produce the final answer",
+  "Because the app executes, it must enforce validation, permissions and limits, and treat tool results as untrusted",
+]
+answer = """- You send the model a list of tools, each with a name, a description and a JSON schema for its arguments.
+- When the model decides it needs one, it replies with a structured tool call, e.g. `get_order(order_id=123)`. It never runs code itself.
+- Your application validates the arguments, checks the user is allowed, executes the function, and appends the result to the conversation.
+- The model reads the result and either calls another tool or writes the final answer; this can repeat over several turns or include parallel calls.
+- Since your code is what executes, it's the security boundary: validate inputs, enforce permissions and limits in code, and treat tool output as data that may contain injected instructions."""
+study = "tool-calling"
+
+[[questions]]
+id = "ai-mcp"
+q = "What is the Model Context Protocol (MCP), and what problem does it solve?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "MCP is an open protocol that standardizes how AI applications connect to external tools and data",
+  "Solves the N x M integration problem: each tool exposes one MCP server, each app implements one client, instead of custom integrations for every pair",
+  "MCP servers expose tools (actions), resources (data) and prompts (templates)",
+  "The host application's MCP client connects to servers, discovers their capabilities and forwards the model's tool calls",
+  "Notes it standardizes the connection but not trust: servers must be trusted and given least-privilege access",
+]
+answer = """- MCP is an open protocol for connecting AI applications to tools and data sources in a standard way, often compared to a USB-C port for AI.
+- Without it, every AI app writes a custom integration for every system: N apps x M tools. With MCP, each system ships one server and each app one client.
+- A server exposes **tools** (actions like create_issue), **resources** (data such as files or records) and **prompts** (reusable templates).
+- The host app's MCP client connects to servers (locally or remotely), discovers what they offer, shows the tools to the model, and forwards the model's tool calls to the right server.
+- It standardizes the plumbing, not the trust: only connect trusted servers, give them least-privilege credentials, and confirm risky actions, because a server's output can carry prompt injection."""
+study = "mcp"
+
+[[questions]]
+id = "ai-agent-loop"
+q = "What makes an LLM application an 'agent', and what must you add to an agent loop before it runs in production?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "An agent is a model in a loop that chooses the next action, uses tools, observes results and repeats until done",
+  "Contrasts with a fixed workflow where code, not the model, decides the steps",
+  "Hard limits: maximum steps, timeouts, token or cost budgets",
+  "Safety: least-privilege tools, validation in code, human approval before irreversible actions",
+  "Observability: a trace of every step, plus context management (summarizing or trimming) for long runs",
+]
+answer = """- An agent is a model running in a loop: given a goal and tools, it decides the next action, the app executes it, the result goes back into context, and it repeats until it answers or a limit hits.
+- In a workflow, your code fixes the steps; in an agent, the model chooses them dynamically.
+- Production additions: max steps, wall-clock timeouts and token/cost budgets so it can't run forever.
+- Detect loops (same failing call repeated) and return clear errors so it can change approach.
+- Least-privilege tools, argument validation and business limits in code, and human approval before irreversible actions.
+- Trace every step (action, arguments, result, tokens) for debugging and evals, and summarize or trim history so long runs don't overflow the context."""
+study = "agents"
+
+[[questions]]
+id = "ai-agent-stuck"
+q = "Your research agent sometimes runs for 40 steps, calling the same search tool with nearly identical queries, and costs ten times the average. What do you do?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Reads the transcripts or traces of the long runs to find why it repeats (empty results, unclear errors, vague tool description, unclear stopping criteria)",
+  "Adds hard limits: max steps, cost or token budget, timeouts, with a graceful final answer or escalation when hit",
+  "Adds repeat or loop detection for near-identical tool calls",
+  "Improves tool design: clearer descriptions, informative error and empty-result messages, better result formatting",
+  "Clarifies stopping criteria in the prompt and adds these cases to an eval suite tracking steps and cost per task",
+]
+answer = """- Pull the traces for the 40-step runs. Typical causes: search returns nothing useful and the model keeps retrying, errors come back as vague text, the tool description doesn't explain how to query well, or the prompt never says when it has enough.
+- Add hard limits: max steps, a token or cost budget and a timeout, ending with a best-effort answer or an escalation, not a silent cut-off.
+- Detect repeats: if a call is near-identical to a previous one, block it and tell the model to try something different.
+- Fix the tool: clearer description with examples, explicit 'no results for X, try broader terms' messages, concise results.
+- State stopping criteria in the prompt ('stop once you have three sources').
+- Add these tasks to the eval suite, tracking success plus steps and cost per task, so the fix is measured."""
+study = "agents"
+
+[[questions]]
+id = "ai-when-not-agent"
+q = "A team wants to build an autonomous agent to process incoming invoices: extract fields, match to purchase orders, and flag mismatches. Would you use an agent? Why or why not?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Recognizes the steps are known in advance, so a deterministic workflow with LLM steps fits better than a free-running agent",
+  "Explains workflow benefits: predictable, cheaper, faster, easier to test and audit",
+  "Explains agent costs: more calls and tokens, variable paths, compounding errors, harder debugging",
+  "Places the LLM where judgment is needed (extraction, fuzzy matching) and keeps matching rules and approvals in code",
+  "Says when an agent would be justified: open-ended steps that can't be known in advance, e.g. investigating unusual mismatches",
+]
+answer = """- I'd start with a workflow, not an agent: the steps (extract, validate, match, flag) are known up front, so code should own the control flow.
+- Workflows are predictable, cheaper, lower-latency, and easy to test and audit, which matters for finance.
+- An agent adds variable paths, more model calls and tokens, errors compounding across steps, and harder debugging and evals.
+- Use the LLM where judgment is needed: structured extraction from messy invoices and fuzzy matching of vendor names. Keep tolerance rules, PO matching logic and approvals in deterministic code.
+- An agent could be justified for the long tail, e.g. investigating an unusual mismatch by searching emails and contracts where steps can't be predicted, behind limits and human review.
+- Either way, prove it on an eval set of real invoices."""
+study = "agent-design-choices"
+
+[[questions]]
+id = "ai-multi-agent"
+q = "When would you split a system into multiple agents, such as an orchestrator with specialist sub-agents, and what are the costs?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Benefits: parallel work on independent sub-tasks, smaller focused contexts per agent",
+  "Benefits: separating tools and permissions per agent (least privilege)",
+  "Costs: more tokens and money, added latency from coordination",
+  "Costs: context lost in handoffs, coordination failures, errors compounding, harder debugging and evaluation",
+  "Recommends starting with a single agent and adding sub-agents only when evals show a gain over that baseline",
+]
+answer = """- Multi-agent helps when sub-tasks are genuinely independent and can run **in parallel**, e.g. researching ten companies at once.
+- Each sub-agent gets a **smaller, focused context** with only its instructions and tools, which can improve quality on long tasks.
+- It allows **separating permissions**: a read-only research agent, and a separate agent with write access behind approval.
+- Costs: many more tokens and calls, so higher spend, and coordination adds latency.
+- Handoffs lose context, agents can duplicate or contradict each other, errors compound, and tracing and evaluating the whole system gets much harder.
+- I'd start with one agent and good tools, and add sub-agents only when the eval suite shows they beat that baseline on quality, cost or latency."""
+study = "agent-design-choices"

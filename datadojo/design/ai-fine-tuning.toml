@@ -1,0 +1,81 @@
+title = "Fine-Tuning: Teaching the Model How to Behave"
+section = "ai-systems"
+order = 3
+kind = "lesson"
+difficulty = "medium"
+big_idea = "Fine-tuning changes how a model behaves, not what it knows today; use RAG for knowledge and fine-tuning for format, style and specialized tasks."
+summary = """A pretrained model has learned language and general knowledge. **Fine-tuning** continues training it on a smaller set of task-specific examples (input → ideal output), so the weights shift toward the behavior you want: a fixed output format, a consistent tone, a classification scheme, a domain's way of writing.
+
+What it does **not** do well is keep the model up to date. Facts baked into weights go stale, can't be cited, and every change means another training run. That is RAG's job.
+
+**The biggest mistake:** don't fine-tune a model simply because it doesn't know frequently changing information."""
+diagram = """flowchart LR
+  B[Pretrained model] --> T[Training on task examples]
+  X[Examples: input → ideal output] --> T
+  T --> F[Fine-tuned model]
+  F --> O[Consistent format, style, domain behavior]"""
+
+[[blocks]]
+heading = "When to use it"
+body = """- **Classification:** routing tickets, labelling intent, tagging documents, at high volume and low latency.
+- **Specific output formats:** always valid JSON in your schema, a fixed report layout.
+- **Consistent style:** brand voice, a support tone, concise answers.
+- **Domain-specific behavior:** how a legal or medical team phrases and structures things.
+- **Specialized tasks:** a small fine-tuned model can match a large general one on a narrow task at a fraction of the cost.
+
+Try **prompting and few-shot examples first**; fine-tune when prompts get long, brittle or expensive at scale."""
+
+[[blocks]]
+heading = "RAG vs fine-tuning"
+body = """```
+                     RAG                     Fine-tuning
+Changes              Context / knowledge     Model behavior
+Knowledge freshness  Easy (re-index)         Difficult (retrain)
+Private knowledge    Good                    Expensive to maintain
+Style                Limited                 Strong
+Classification       Possible                Often useful
+```
+They combine well: fine-tune for format and tone, use RAG for the facts."""
+
+[[blocks]]
+heading = "LoRA / PEFT"
+body = """Full fine-tuning updates every weight, which needs a lot of GPU memory and produces a full-size copy of the model per task. **Parameter-efficient fine-tuning (PEFT)** freezes the original weights and trains a small number of extra parameters instead.
+
+**LoRA (Low-Rank Adaptation)** adds two small low-rank matrices beside selected weight matrices and trains only those, often well under 1% of the parameters. Training is far cheaper, the adapter file is megabytes instead of gigabytes, and you can keep one base model with many swappable adapters. **QLoRA** also quantizes the frozen base model to 4-bit, so large models fit on a single GPU."""
+
+[[blocks]]
+heading = "Common mistakes"
+body = """- Fine-tuning to inject frequently changing facts (prices, policies, inventory): they go stale immediately. Use RAG.
+- Too few or inconsistent examples: the model learns the inconsistency.
+- No eval set held out before training, so nobody can tell whether the tuned model is better.
+- Skipping the prompt-engineering baseline, so you can't show fine-tuning was worth its cost."""
+
+key_points = [
+  "Fine-tuning changes behavior (format, style, classification), RAG changes knowledge.",
+  "Don't fine-tune just because the model doesn't know frequently changing information.",
+  "LoRA/PEFT trains a tiny adapter on a frozen base model: cheaper training, small artifacts, swappable per task.",
+  "Always compare against a prompt/few-shot baseline on a held-out eval set.",
+]
+common_mistakes = [
+  "Using fine-tuning as a knowledge store for facts that change.",
+  "Training on a few hundred inconsistent examples.",
+  "No held-out evaluation, so the gain is assumed rather than measured.",
+]
+interview_questions = [
+  "When would you choose fine-tuning over RAG, and when both?",
+  "Explain LoRA and why it reduces training cost.",
+  "Your fine-tuned model is worse on general questions after training. What happened?",
+  "How would you build the training set for a ticket classifier?",
+]
+
+[[quiz]]
+q = "Your support bot needs today's refund policy, which changes monthly. What should you use?"
+options = ["Fine-tune monthly", "RAG over the policy documents", "LoRA adapter per policy", "A bigger model"]
+answer = 1
+why = "Frequently changing knowledge belongs in retrieval, which updates by re-indexing; fine-tuning would go stale."
+
+[[quiz]]
+q = "What does LoRA train?"
+options = ["Every weight of the model", "Only the embedding layer", "Small low-rank matrices added beside frozen weights", "A separate reranker"]
+answer = 2
+why = "The base model is frozen; only small low-rank adapter matrices are trained, a tiny fraction of the parameters."

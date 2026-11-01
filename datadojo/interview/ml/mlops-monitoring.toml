@@ -1,0 +1,121 @@
+title = "MLOps and Monitoring"
+order = 6
+desc = "CI/CD for models, data vs concept drift, monitoring, retraining, shadow and canary rollouts, rollback."
+
+[[questions]]
+id = "ml-data-vs-concept-drift"
+q = "What is the difference between data drift and concept drift? Give an example of each."
+level = "entry"
+kind = "concept"
+rubric = [
+  "Data drift: the distribution of inputs P(X) changes",
+  "Concept drift: the relationship between inputs and the target P(y given X) changes",
+  "Gives a sensible data drift example (new user segment, new device, marketing campaign bringing different customers)",
+  "Gives a sensible concept drift example (fraudsters changing tactics, behaviour change after an economic shock)",
+  "Notes data drift can be detected without labels, while concept drift usually needs labels or proxies to confirm",
+]
+answer = """- **Data drift** (covariate shift): the inputs change, P(X) moves. Example: a campaign brings in many younger users, so the age distribution shifts.
+- **Concept drift**: the mapping from inputs to the answer changes, P(y given X) moves. Example: fraudsters switch tactics, so transaction patterns that were safe are now risky.
+- Data drift can be spotted **without labels** by comparing feature distributions (PSI, KS test) between training and recent data.
+- Concept drift usually needs **labels** (or strong proxies) to confirm, because inputs may look identical while accuracy falls.
+- Not all data drift hurts accuracy, and a sudden 'drift' is often a pipeline bug, so check upstream data first."""
+study = "drift"
+
+[[questions]]
+id = "ml-monitoring-delayed-labels"
+q = "You deploy a credit-default model whose true labels arrive months later. What do you monitor in the meantime?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Service health: latency, error rate, throughput, fallback rate",
+  "Input data health: schema, null rates, ranges, freshness and drift of important features versus training",
+  "Prediction health: score distribution and approval or flag rate over time and by segment",
+  "Leading or proxy outcomes such as early missed payments, plus actual performance once labels mature",
+  "Logs predictions with model version and features so labels can be joined later; alerts have thresholds and owners",
+]
+answer = """- **Service**: latency, error and timeout rates, fallback usage.
+- **Inputs**: schema checks, null and out-of-range rates, freshness, and drift (PSI or KS) on the most important features vs the training window.
+- **Predictions**: score distribution and approval rate per day, sliced by channel, region and product; a sudden shift is the earliest warning.
+- **Leading outcomes**: early delinquency (first payment missed, 30 days past due) as a proxy long before default is known.
+- **Matured performance**: AUC, calibration and default rate by score band as each monthly cohort's labels arrive.
+- Log every decision with **model version, features and score** so labels can be joined later and decisions audited.
+- Alerts need thresholds, owners and runbooks; page on sudden breaks, ticket on slow drift."""
+study = "monitoring"
+
+[[questions]]
+id = "ml-retraining-strategy"
+q = "How do you decide how often to retrain a model, and what are the risks of fully automated retraining?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Measures decay empirically, such as training on older data and testing on successive later periods, to set the cadence",
+  "Compares strategies: scheduled, trigger-based on drift or performance, and online or incremental learning",
+  "Considers training window choice (sliding vs expanding vs weighted) and label maturity",
+  "Risks of automation: retraining on bad or broken data, feedback loops, silent regressions on slices",
+  "Requires the same evaluation gates, champion-challenger comparison and safe rollout for every retrained model",
+]
+answer = """- **Measure decay**: train on data up to month M, then score months M+1, M+2, ... to see how fast performance falls. That curve sets the cadence: weekly if it drops in days, quarterly if it barely moves.
+- **Strategies**: scheduled (simple, predictable), trigger-based on drift or metric alerts (efficient but only as good as the alerts), online or incremental updates for very fast-changing domains (hardest to validate).
+- **Window**: sliding windows adapt faster, expanding windows keep rare patterns; only include examples whose labels have matured.
+- **Automation risks**: a broken upstream table gets baked into the model, feedback loops (the model trains on data it influenced), quiet regressions on key slices.
+- So every retrain goes through **data validation, champion-challenger evaluation** on a fixed holdout plus slices, and a **shadow or canary** rollout with easy rollback. Regulated models add human sign-off."""
+study = "retraining"
+
+[[questions]]
+id = "ml-shadow-canary"
+q = "What are shadow deployment and canary deployment for ML models, and what does each tell you?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Shadow: the new model gets a copy of live traffic and its predictions are logged but never used for decisions",
+  "Shadow reveals crashes, latency, skew and score distribution differences with zero user impact, but cannot measure user or business impact",
+  "Canary: a small percentage of real traffic is served by the new model, ramped up gradually",
+  "Canary measures real impact with limited blast radius, watched through guardrail metrics",
+  "Both need a fast rollback path, such as repointing to the previous model version",
+]
+answer = """- **Shadow**: production traffic is copied to the new model; its predictions are logged and compared but never acted on.
+- It reveals **crashes, latency, feature skew and score differences** (how many more transactions it would flag) with zero user risk. It cannot show user or business impact, because nobody sees its output.
+- **Canary**: route a small slice of real traffic (1-5 percent) to the new model, then ramp up (5, 25, 50, 100) while watching guardrails such as error rate, latency, conversion and complaints.
+- It measures **real impact** with a limited blast radius; with proper randomization and stats it becomes an A/B test.
+- Typical order: offline eval, then shadow, then canary, then full rollout.
+- Both need **instant rollback**: keep the previous version loaded and switch with a config or alias change."""
+study = "safe-rollouts"
+
+[[questions]]
+id = "ml-bad-rollout"
+q = "An hour after deploying a new recommendation model, support tickets about irrelevant recommendations spike. What do you do?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Mitigates first: rolls back to the previous model version (or shifts traffic back) before deep debugging",
+  "Confirms impact with metrics such as click-through rate, error rates or prediction distributions compared with before the deploy",
+  "Investigates likely causes: missing or stale features, wrong model artifact, preprocessing mismatch, or a genuine model regression",
+  "Communicates with stakeholders and support during the incident",
+  "Proposes prevention: shadow or canary rollout with guardrail alerts, and a post-incident review",
+]
+answer = """- **Stop the bleeding**: roll back to the previous model version (repoint the alias or shift traffic) right away; debug after users are safe.
+- **Confirm** the impact with data: compare click-through, empty or fallback results, and the score distribution before and after the deploy.
+- **Investigate**: did the right artifact deploy? Are features missing, null or stale in production? Was preprocessing (encoders, vocabularies) shipped with the model? Replay a few bad requests through the old and new models side by side.
+- **Communicate**: tell support and the product owner what happened and that it is rolled back.
+- **Prevent**: shadow and canary rollouts with alerts on CTR and score distribution, a pre-deploy check on a golden set of requests, and a short blameless post-incident review."""
+study = "safe-rollouts"
+
+[[questions]]
+id = "ml-cicd-models"
+q = "What does a CI/CD pipeline for machine learning test that a normal software pipeline does not?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Data tests: schema, null rates, ranges, row counts, freshness and distribution checks on training and serving data",
+  "Model quality gates: the candidate must beat or match the production model on a fixed evaluation set",
+  "Slice checks for important segments (and fairness where relevant) so averages do not hide regressions",
+  "Operational checks: latency, memory, model size, input signature compatibility with serving",
+  "Continuous training and versioning: pipelines rerun on schedule or trigger, everything versioned, promotion through shadow or canary with rollback",
+]
+answer = """- Normal CI tests **code**; ML must also test **data** and the **trained model**.
+- **Code**: unit tests on feature transformations, a small end-to-end training run on sample data, contract tests on the serving API.
+- **Data**: schema, null rates, value ranges, row counts, freshness and distribution vs the last good run; fail the pipeline before training on garbage.
+- **Model gate**: champion-challenger on a frozen holdout; the candidate must beat or match production on the primary metric and on **key slices** (region, new users, device), with fairness checks where relevant.
+- **Operational**: latency and memory under load, artifact size, and the input signature matches what serving sends.
+- **Delivery**: continuous training reruns the same pipeline on schedule or trigger; artifacts, data versions and configs are versioned in a registry; promotion goes through shadow or canary with automatic rollback."""
+study = "ml-cicd"

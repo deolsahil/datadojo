@@ -1,0 +1,102 @@
+title = "Training and Serving"
+order = 5
+desc = "Batch vs real-time inference, latency, model registry and reproducibility, GPUs and distributed training."
+
+[[questions]]
+id = "ml-batch-vs-realtime"
+q = "What is the difference between batch and real-time inference? Give an example where each is the right choice."
+level = "entry"
+kind = "concept"
+rubric = [
+  "Batch inference scores many records on a schedule and stores predictions for later lookup",
+  "Real-time inference scores a single request on demand with low latency, often behind an API",
+  "Gives a fitting batch example (nightly churn scores, weekly demand forecasts) and a fitting real-time example (fraud at checkout, search ranking)",
+  "Explains the deciding factors: how fresh inputs must be and whether the input depends on the request",
+  "Notes trade-offs: batch is cheaper and simpler; real-time needs fast feature access, scaling and fallbacks",
+]
+answer = """- **Batch**: a scheduled job scores a whole table (e.g. every customer nightly) and writes predictions to a table or cache that apps read later.
+- **Real-time**: a service scores one request as it arrives and answers in milliseconds.
+- Batch fits when the set of entities is known and inputs change slowly: **nightly churn scores** pushed to the CRM.
+- Real-time fits when the answer depends on the request itself or must be fresh: **fraud scoring at checkout**, search ranking for a typed query.
+- Batch is cheaper and easier to debug and rerun. Real-time needs fast feature lookups, autoscaling, latency monitoring and a **fallback** if the model is down.
+- Hybrids are common: precompute heavy parts in batch, combine with request context in real time."""
+study = "batch-vs-realtime-inference"
+
+[[questions]]
+id = "ml-design-batch-scoring"
+q = "Design a simple pipeline that retrains a churn model monthly and delivers weekly churn scores for every customer to the marketing team."
+level = "entry"
+kind = "design"
+rubric = [
+  "Clarifies requirements: who consumes scores, where (table, CRM), how often, and the label definition of churn",
+  "Has an orchestrated flow: build features from the warehouse, train or load the model, score all customers, write results with model version and score date",
+  "Separates the monthly training job (with evaluation against the current model before promotion) from the weekly scoring job",
+  "Uses a model registry or versioned artifacts so scoring loads a known approved version",
+  "Adds checks and monitoring: input data validation, row counts, score distribution, failure alerts, and a way to rerun",
+]
+answer = """- **Clarify**: churn = no purchase in 60 days? Marketing reads a warehouse table or a CRM sync? Scores needed by Monday 08:00.
+- **Features**: a SQL or Spark job builds a customer snapshot as of the scoring date (recency, frequency, spend, support tickets).
+- **Monthly training** (Airflow or similar): build a point-in-time training set, train LightGBM, evaluate on the latest held-out month vs the current model; if better and checks pass, register the new version as production.
+- **Weekly scoring**: load the production version from the registry, score every customer, write `customer_id, score, risk_band, model_version, score_date` to a partitioned table, then sync to the CRM.
+- **Checks**: validate input row counts and null rates before scoring, compare score distribution to last week, alert on failure; jobs are idempotent so a rerun overwrites the same partition."""
+study = "batch-vs-realtime-inference"
+
+[[questions]]
+id = "ml-latency-budget"
+q = "Your real-time ranking service must respond in 50 ms at p99, but it currently takes 300 ms to score 500 candidates. How do you get it under budget?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Starts by profiling the request to find where time goes (feature fetch, preprocessing, model, network) at p99, not average",
+  "Fixes feature retrieval: batch lookups into one round trip, cache item features in memory, precompute heavy features",
+  "Shrinks model cost: fewer or shallower trees, distillation, quantization or a compiled runtime",
+  "Uses a cascade: a cheap first-pass model narrows 500 candidates to a smaller set for the heavy model",
+  "Addresses tail latency and safety: timeouts with fallback ranking, warm-up, autoscaling, and checks that quality is not lost via offline eval and A/B test",
+]
+answer = """- **Profile first**: trace one request end to end at p99. Commonly most of the time is **feature fetching**, not model math.
+- **Features**: replace per-candidate calls with one batched lookup (Redis MGET or pipelines), cache slowly changing item features in process memory, and precompute expensive aggregates.
+- **Model**: cut tree count or depth, distil into a smaller model, quantize, or use a compiled runtime (ONNX Runtime, Treelite-style compilation); vectorize scoring of all 500 in one call.
+- **Cascade**: a light model or embedding score trims 500 to ~100, and the heavy model ranks only those.
+- **Tail latency**: hard timeout with a fallback (cached or popularity ranking), model warm-up, enough replicas, avoid GC pauses.
+- Verify each change keeps quality with offline NDCG and an A/B test, and add a latency dashboard per stage."""
+study = "serving-latency"
+
+[[questions]]
+id = "ml-registry-reproducibility"
+q = "What is a model registry for, and what do you need to record so that any production model can be reproduced exactly?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Registry stores versioned model artifacts with metadata, metrics and a stage or alias (staging, production), giving a single source of truth for what is deployed",
+  "Enables controlled promotion with approval and instant rollback by pointing to a previous version",
+  "Reproducibility needs code version (git commit) and environment (locked dependencies or container image)",
+  "Needs the exact data version or snapshot and the query that built the training set",
+  "Needs config, hyperparameters, feature list and random seeds, with lineage linking the model to the run; notes some GPU or distributed nondeterminism may remain",
+]
+answer = """- A **model registry** (MLflow, SageMaker, Vertex AI) stores each trained model as a **version** with metrics, owner, input schema and a stage or alias such as `staging` or `production`.
+- Serving loads 'the production alias', so promotion is a controlled, auditable step and **rollback** is repointing to the previous version.
+- To reproduce a version, record:
+- **Code**: git commit of training and feature code. **Environment**: locked dependencies and container image.
+- **Data**: an immutable snapshot or table version (Delta or Iceberg time travel, DVC) plus the training-set query.
+- **Config**: hyperparameters, feature list, random seeds, and the evaluation results.
+- Link them all through **lineage** (model version -> run -> data + code). Even then, GPU kernels and distributed training can introduce small nondeterminism, so expect statistically equivalent rather than bit-identical results."""
+study = "model-registry-reproducibility"
+
+[[questions]]
+id = "ml-data-vs-model-parallel"
+q = "Explain data parallelism vs model parallelism in distributed training. When do you need each?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Data parallel: each GPU holds a full model copy, processes a different slice of the batch, and gradients are averaged with all-reduce",
+  "Model parallel: the model itself is split across GPUs, by layers (pipeline parallel) or within layers (tensor parallel)",
+  "Use data parallel when the model fits on one GPU and you want more throughput; model parallel when it does not fit",
+  "Mentions sharded data parallel (FSDP or ZeRO) that shards weights, gradients and optimizer state to save memory",
+  "Notes costs: communication overhead, pipeline bubbles, larger effective batch size needing learning-rate adjustment",
+]
+answer = """- **Data parallel** (PyTorch DDP): every GPU has a full copy of the model, each processes a different slice of the batch, then gradients are **all-reduced** (averaged) so all copies take the same step. Use it when the model fits on one GPU and you want faster training.
+- **Model parallel**: the model is split. **Pipeline parallel** puts different layers on different GPUs (with idle 'bubbles' to manage); **tensor parallel** splits individual weight matrices and needs very fast links like NVLink. Use it when the model does not fit.
+- **Sharded data parallel** (FSDP, DeepSpeed ZeRO) is the middle ground: data parallel, but weights, gradients and optimizer state are sharded across GPUs, so bigger models fit without full model parallelism.
+- Costs: communication overhead grows with GPU count, and a larger effective batch often needs learning-rate warmup or scaling.
+- For boosted trees on tabular data, you rarely need any of this."""
+study = "distributed-training"

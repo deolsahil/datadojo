@@ -1,0 +1,141 @@
+title = "Models"
+order = 2
+desc = "Linear and logistic regression, trees and boosting, when deep learning pays off, embeddings, clustering and LLMs."
+
+[[questions]]
+id = "ml-logistic-regression"
+q = "How does logistic regression work, and why is it still a common choice in production?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Computes a weighted sum of features and passes it through a sigmoid to get a probability between 0 and 1",
+  "Trained by minimizing log loss (cross-entropy), usually with regularization",
+  "It is a linear classifier: the decision boundary is linear, so non-linear patterns need engineered features",
+  "Weights are interpretable as changes in log-odds",
+  "Production strengths: fast, cheap, usually well calibrated, easy to explain, strong baseline",
+]
+answer = """- It computes `z = w . x + b` and passes it through the **sigmoid** `1 / (1 + e^-z)` to get a probability between 0 and 1.
+- Training minimizes **log loss** (cross-entropy) with gradient-based optimization, usually with L1 or L2 regularization.
+- The decision boundary is **linear**. Non-linear effects need engineered features: bins, interactions, splines.
+- Each weight is a change in **log-odds**: weight 0.7 means one unit up multiplies the odds by about 2.
+- Why it survives in production: trains and serves in microseconds, handles millions of sparse features, gives reasonably **calibrated** probabilities, and is easy to explain to regulators. It is also the baseline every fancier model must beat."""
+study = "linear-logistic"
+
+[[questions]]
+id = "ml-rf-vs-gbdt"
+q = "Compare random forests and gradient-boosted trees like XGBoost or LightGBM. When would you pick each?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Random forest trains many deep trees independently on bootstrap samples and random feature subsets, then averages them",
+  "Gradient boosting adds shallow trees sequentially, each fitting the errors of the ensemble so far",
+  "Random forest mainly reduces variance and needs little tuning; boosting reduces bias and is usually more accurate when tuned",
+  "Boosting is more prone to overfitting and needs learning rate, depth and early stopping tuned",
+  "Both need no feature scaling and handle non-linear interactions; neither extrapolates beyond the training target range",
+]
+answer = """- **Random forest**: many deep trees trained **in parallel** on bootstrap samples with random feature subsets; predictions are averaged. Averaging cuts **variance**.
+- **Gradient boosting**: shallow trees added **one after another**, each fitting the residual errors (gradients) of the current ensemble. It mainly cuts **bias**.
+- Boosting usually wins on accuracy for tabular data once tuned, but overfits more easily: tune learning rate, depth, subsampling and use **early stopping**.
+- Random forest is a robust, low-effort baseline, hard to overfit badly, trivially parallel.
+- Both handle mixed features and interactions with no scaling, and neither can **extrapolate** beyond seen target values.
+- I default to LightGBM or XGBoost for production tabular models and use a random forest as a quick sanity baseline."""
+study = "tree-ensembles"
+
+[[questions]]
+id = "ml-tabular-deep-learning"
+q = "Your team wants to replace a LightGBM churn model (200k rows, 80 tabular features) with a deep neural network because it is more modern. How do you respond?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "States that on mid-sized tabular data, tuned gradient-boosted trees usually match or beat deep nets",
+  "Lists the costs of deep learning: more tuning, GPUs or slower training, harder explanation and debugging",
+  "Names cases where deep learning would be justified: unstructured inputs (text, images), sequences, very large data or high-cardinality IDs needing embeddings",
+  "Proposes an evidence-based approach: a time-boxed experiment against the current model on the same split and metric",
+  "Suggests cheaper wins first, such as better features, labels or tuning",
+]
+answer = """- 'Modern' is not a reason. On 200k rows of tabular data, a tuned **LightGBM** usually matches or beats a neural net.
+- Deep nets add costs: more hyperparameters, longer or GPU training, nondeterminism, harder explanations for the business, more fragile serving.
+- Deep learning would earn its place if we add **unstructured inputs** (support ticket text, app event sequences), have **far more data**, or need learned **embeddings** for high-cardinality IDs.
+- Proposal: a **time-boxed experiment** on the same time-based split and business metric (e.g. PR-AUC and retained revenue at the action threshold). Ship only if it wins clearly after cost.
+- Meanwhile, bigger gains often come from **better features and labels**, or adding text embeddings as features to the existing LightGBM model."""
+study = "deep-learning-when"
+
+[[questions]]
+id = "ml-embeddings-basics"
+q = "What is an embedding, and how would you use embeddings in a product recommendation feature?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "An embedding is a dense vector that represents an item, user or text so that similar things are close together",
+  "Embeddings are learned from data, such as co-purchases, clicks or text, rather than hand-written",
+  "Similarity is measured with cosine similarity or dot product",
+  "For recommendations: embed items, find nearest neighbours to an item or user vector to suggest similar items",
+  "Mentions an approximate nearest neighbour index (or vector database) for speed at scale",
+]
+answer = """- An **embedding** is a dense list of numbers (e.g. 64-1024 values) that places an item, user or text in a space where similar things are close.
+- It is **learned**: from co-purchases or clicks (matrix factorization, two-tower models) or from content with a pretrained text or image model.
+- Closeness is measured with **cosine similarity** or **dot product**.
+- For 'similar products': embed every product, then for the product being viewed fetch its nearest neighbours.
+- For personalized recs: build a user vector (learned, or the average of recently viewed items) and fetch the items closest to it.
+- At millions of items, store vectors in an **approximate nearest neighbour** index (HNSW, FAISS or a vector database) to answer in milliseconds, then optionally re-rank with a richer model."""
+study = "embeddings-recsys"
+
+[[questions]]
+id = "ml-two-tower-retrieval"
+q = "Explain how a two-tower model is used for candidate retrieval in a recommender, and what its main limitations are."
+level = "senior"
+kind = "concept"
+rubric = [
+  "One tower encodes the user and context, the other encodes the item; the score is a dot product or cosine of the two vectors",
+  "Because the towers interact only at the end, item vectors can be precomputed and served from an ANN index",
+  "Trained on positive interactions with sampled negatives, often in-batch negatives, with a correction for popularity bias",
+  "Limitation: no rich user-item cross features, so it is used for recall and followed by a heavier ranker",
+  "Mentions cold start handled by content features in the item tower, and index refresh or freshness concerns",
+]
+answer = """- **User tower** embeds user history and context; **item tower** embeds item ID and content features. Score = dot product of the two vectors.
+- The towers only meet at the dot product, so **item vectors are precomputed** and loaded into an ANN index. At request time you run only the user tower and query the index for the top few hundred items in milliseconds.
+- Training uses positive interactions (clicks, watches) with **sampled negatives**, commonly in-batch negatives with a correction for item popularity so popular items are not over-penalized.
+- **Limitation**: no early interaction between user and item features, so it cannot model fine cross features. It is a **recall** stage; a heavier ranker with cross features orders the shortlist.
+- **Cold start**: put content features (text or image embeddings, category) in the item tower so new items get sensible vectors.
+- Operate it: refresh item embeddings and the index regularly, and version user and item towers together."""
+study = "embeddings-recsys"
+
+[[questions]]
+id = "ml-kmeans-clustering"
+q = "How does k-means clustering work, and what are its main pitfalls?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Picks k centroids, assigns each point to the nearest centroid, recomputes centroids as cluster means, repeats until stable",
+  "k must be chosen up front, for example with the elbow method or silhouette score plus business usefulness",
+  "Sensitive to feature scale, so features should be standardized",
+  "Sensitive to initialization and outliers; mentions k-means++ or multiple restarts",
+  "Assumes roughly spherical, similar-sized clusters; names an alternative such as DBSCAN for other shapes",
+]
+answer = """- Choose k, place k starting centroids (**k-means++** spreads them out), assign every point to its nearest centroid, move each centroid to the mean of its points, repeat until assignments stop changing.
+- **Choosing k**: elbow plot of within-cluster distance, silhouette score, and mostly whether the segments are actionable.
+- **Scale features** first; otherwise the widest-range feature decides the clusters.
+- Results depend on **initialization**: run several restarts and keep the best. **Outliers** drag centroids, so cap or remove them.
+- It assumes roughly **round, similar-sized** clusters. For odd shapes or noise, use **DBSCAN/HDBSCAN**; for soft membership, Gaussian mixtures.
+- There is no ground truth, so profile each cluster and check stability across runs."""
+study = "clustering"
+
+[[questions]]
+id = "ml-llm-vs-classifier"
+q = "A product manager wants to replace your support-ticket routing classifier (a fine-tuned small model, 2M tickets a day) with calls to a large LLM. How do you evaluate the idea?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Compares both on the same held-out labeled set with the same metrics (per-class precision and recall), not on anecdotes",
+  "Estimates cost per day and latency at 2M tickets, which likely favours the small model",
+  "Notes LLM strengths: handles new or rare categories with only a prompt change, little labeled data needed",
+  "Proposes a hybrid: keep the small model for confident cases and route low-confidence or new-category tickets to the LLM",
+  "Suggests using the LLM to label or relabel data to improve the small model, and mentions output parsing and consistency",
+]
+answer = """- Decide on evidence: run both on the same **held-out labeled set** and compare per-class precision and recall, especially on rare queues.
+- Price it: 2M tickets a day times per-call cost and latency. A small fine-tuned model is usually orders of magnitude cheaper and faster with predictable latency.
+- The LLM's real advantages: new categories need only a prompt change, it handles messy or multilingual tickets, and it needs few labels.
+- Likely answer is a **hybrid**: keep the small model for high-confidence predictions; send low-confidence or 'other' tickets to the LLM.
+- Use the LLM as a **labeler** to expand training data for new categories, with human spot checks, then retrain the small model.
+- If LLM output drives routing, constrain it to a fixed label set (structured output) and monitor consistency and cost."""
+study = "llm-vs-classic"

@@ -1,0 +1,137 @@
+title = "Embeddings & Retrieval"
+order = 2
+desc = "Embeddings, semantic search, RAG, vector indexes, chunking, hybrid search, reranking and debugging RAG."
+
+[[questions]]
+id = "ai-embeddings"
+q = "What is an embedding, and how does it make semantic search possible?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "An embedding is a fixed-length vector of numbers produced by an embedding model from text (or other data)",
+  "Texts with similar meaning produce vectors that are close together",
+  "Closeness is measured with cosine similarity or dot product",
+  "Semantic search embeds documents ahead of time, embeds the query with the same model, and returns the nearest vectors",
+  "Notes a limitation: embeddings can blur exact identifiers like product codes or names, or that query and documents must use the same model",
+]
+answer = """- An embedding model turns text into a fixed-length vector, typically hundreds to a few thousand numbers.
+- It is trained so that texts with similar meaning land close together: 'parental leave' sits near 'maternity policy' even with no shared words.
+- Closeness is measured with cosine similarity or dot product.
+- Semantic search embeds every document chunk in advance and stores the vectors; at query time it embeds the question with the **same** model and returns the nearest chunks.
+- Limits: embeddings capture meaning, not exact strings, so codes like 'XR-450' or rare names can be missed (pair with keyword search), and switching embedding models means re-embedding the whole corpus."""
+study = "embeddings"
+
+[[questions]]
+id = "ai-rag-what"
+q = "What is retrieval-augmented generation, and why use it instead of just asking the model?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Describes the steps: retrieve relevant passages, add them to the prompt as context, generate an answer grounded in them",
+  "The model was not trained on private or recent data and has a knowledge cutoff, so without retrieval it guesses or hallucinates",
+  "Knowledge lives in the index, so updating it means re-indexing documents, not retraining",
+  "Answers can cite their sources, which helps users verify them",
+  "Mentions the indexing side: documents are chunked and embedded into a vector index ahead of time",
+]
+answer = """- RAG = **retrieve, augment, generate**: search a trusted document collection for passages relevant to the question, put the best ones in the prompt, and have the model answer from them.
+- A model alone doesn't know your private documents or anything after its training cutoff, so it guesses fluently, which is hallucination.
+- Offline, documents are parsed, chunked and embedded into a vector index; online, the query is embedded and the nearest chunks are retrieved (often reranked).
+- Because knowledge sits in the index, a policy change means re-indexing one document, not retraining a model.
+- The answer can cite which chunk each claim came from, so users can check it."""
+study = "rag"
+
+[[questions]]
+id = "ai-product-code-miss"
+q = "Users search your support assistant for 'XR-450 error E1032' and it returns generic troubleshooting pages, even though a page for exactly that error exists. Retrieval is pure vector search. What's going on and how do you fix it?"
+level = "entry"
+kind = "scenario"
+rubric = [
+  "Identifies that embeddings capture meaning and blur exact identifiers like product codes and error IDs",
+  "Proposes hybrid search: add BM25 keyword search alongside vector search",
+  "Explains merging the two result lists, e.g. reciprocal rank fusion",
+  "Suggests a reranker and/or metadata filters (e.g. by product) to rank the exact page first",
+  "Verifies the fix with a retrieval eval set of real queries and their correct pages (recall@k or hit rate)",
+]
+answer = """- Embedding models represent meaning, so 'XR-450 error E1032' lands near every generic error page; exact codes are close to noise to them.
+- Add keyword search (BM25) alongside vector search. BM25 rewards rare exact terms like 'E1032', which is exactly what's missing.
+- Fuse both ranked lists, commonly with reciprocal rank fusion, which combines by rank so scores don't need calibrating.
+- Add a reranker (cross-encoder) over the fused candidates, and filter by product metadata when the query names a product.
+- Build a small retrieval eval set of real queries with their correct pages and measure recall@k before and after, so the fix is proven and protected."""
+study = "hybrid-search"
+
+[[questions]]
+id = "ai-hnsw"
+q = "How does an approximate nearest neighbour index like HNSW work, and what trade-offs does it make?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Exact search compares the query to every vector, which is too slow at millions of vectors; ANN trades a little recall for speed",
+  "HNSW builds a multi-layer graph: sparse long-range links on top layers, dense local links on lower layers",
+  "Search starts at the top layer and greedily moves to closer neighbours, descending layer by layer",
+  "Names tuning knobs such as connections per node (M) and search breadth (efSearch/efConstruction): higher means better recall but slower and more memory",
+  "Notes HNSW is memory-hungry and contrasts with an alternative such as IVF or quantization",
+]
+answer = """- Brute-force search compares the query with every vector: fine for thousands, too slow for tens of millions. ANN indexes accept slightly lower recall for large speed-ups.
+- **HNSW** builds a layered proximity graph. Top layers have few nodes with long-range links; the bottom layer has every vector with dense local links.
+- A query enters at the top, greedily hops to the neighbour closest to the query, then drops a layer and repeats, like zooming from motorway to street.
+- Knobs: M (links per node), efConstruction (build effort) and efSearch (candidates explored). Raising them improves recall but costs latency, build time and memory.
+- HNSW gives high recall at low latency but keeps the graph and vectors in memory. **IVF** clusters vectors and probes only a few clusters, and **quantization** compresses vectors, both trading accuracy for memory."""
+study = "vector-databases"
+
+[[questions]]
+id = "ai-chunking"
+q = "How would you chunk a 300-page HR policy manual for RAG, and how would you know your chunking is good?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Splits on document structure (sections, headings, paragraphs) rather than blind fixed character counts",
+  "Explains the size trade-off: too small loses context, too large dilutes the embedding and wastes context window",
+  "Uses a size limit of a few hundred tokens with some overlap as a starting point, keeping tables and lists intact",
+  "Attaches metadata and context to each chunk (document title, section heading, date, region, permissions)",
+  "Evaluates with a labelled set of questions and their correct passages (recall@k), comparing chunking variants",
+]
+answer = """- Parse carefully first (PDF headings, tables), then split on structure: chapter, section, paragraph, so each chunk is about one thing.
+- Size trade-off: tiny chunks lose context ('this applies after 90 days': what does?); huge ones mix topics, blur the embedding and waste context. Start around a few hundred tokens with modest overlap.
+- Never split a table or a numbered list mid-way; keep them whole.
+- Prepend the document and section title to each chunk and store metadata such as region, policy version, effective date and access groups for filtering.
+- Measure, don't guess: build a set of real HR questions with their correct passages and compare variants on recall@k, then check answer quality end to end."""
+study = "chunking"
+
+[[questions]]
+id = "ai-reranking"
+q = "What does a reranker add to a RAG pipeline, and why not just use it for all retrieval?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "A reranker (usually a cross-encoder) scores each query and chunk pair together, giving more accurate relevance than embedding similarity",
+  "Embedding (bi-encoder) retrieval encodes query and documents separately, so document vectors are precomputed and fast but coarser",
+  "Pattern: retrieve a broad candidate set cheaply (e.g. top 50), rerank, keep the top few for the prompt",
+  "A cross-encoder must run per pair at query time, so it is too slow and expensive to run over the whole corpus",
+  "Benefits: right document moves to the top and fewer chunks are sent to the LLM, cutting tokens; cost is added latency",
+]
+answer = """- Vector retrieval uses a **bi-encoder**: query and documents are embedded separately, so document vectors are precomputed and search is fast, but relevance is approximate.
+- A **reranker**, typically a cross-encoder, reads the query and a chunk together and outputs a relevance score, which is much more precise.
+- Because it runs once per (query, chunk) pair at query time, you can't run it over millions of chunks; it's used as a second stage.
+- Pattern: retrieve top 50 with hybrid search for recall, rerank, send the top 3-5 to the model for precision.
+- Payoff: the right chunk ranks first instead of 12th, and fewer chunks means fewer tokens and less 'lost in the middle'. Cost: an extra model call and some latency, so measure ranking metrics before and after."""
+study = "reranking"
+
+[[questions]]
+id = "ai-rag-debug"
+q = "Users report that your internal RAG assistant gives wrong answers even though the correct information exists in the documents. How do you debug it?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Separates retrieval failures from generation failures by checking whether the correct chunk was in the retrieved context",
+  "Uses traces of real failing queries (retrieved chunk ids, scores, prompt, answer) rather than guessing",
+  "Retrieval fixes: chunking or parsing, hybrid search, query rewriting, reranking, metadata filters, re-indexing stale documents",
+  "Generation fixes: grounding instructions, fewer and better chunks, citations, faithfulness evaluation",
+  "Turns the failing queries into an eval set with retrieval (recall@k) and answer-quality metrics to verify fixes",
+]
+answer = """- Collect the failing queries and open their traces: retrieved chunk ids, scores, the final prompt and the answer.
+- First question: **was the correct chunk in the context at all?** That splits retrieval from generation.
+- Not retrieved: check parsing (tables mangled?), chunking (answer split across chunks?), vocabulary mismatch (add hybrid search or query rewriting), missing filters (wrong region or version), or a stale index (re-index, check dates).
+- Retrieved but ranked low or drowned among 20 chunks: add a reranker and send fewer chunks.
+- Present but the answer ignores or contradicts it: tighten the grounding instructions, require citations, and run a faithfulness check.
+- Turn these queries into an eval set measuring retrieval recall@k and answer correctness separately, and rerun it after each fix."""
+study = "rag-debugging"

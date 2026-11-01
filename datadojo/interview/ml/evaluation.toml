@@ -1,0 +1,140 @@
+title = "Evaluation"
+order = 3
+desc = "Precision and recall, ROC vs PR curves, calibration, cost-based thresholds, regression metrics and online tests."
+
+[[questions]]
+id = "ml-precision-recall"
+q = "Define precision, recall and F1. Give an example where you would favour precision and one where you would favour recall."
+level = "entry"
+kind = "concept"
+rubric = [
+  "Precision = TP / (TP + FP): of the predicted positives, how many are correct",
+  "Recall = TP / (TP + FN): of the actual positives, how many were caught",
+  "F1 is the harmonic mean of precision and recall, so it is low if either is low",
+  "Gives a sensible precision-first example where false positives are costly (spam filter, auto-blocking accounts)",
+  "Gives a sensible recall-first example where misses are costly (disease screening, safety defects)",
+  "Notes the threshold trades one against the other",
+]
+answer = """- **Precision** = TP / (TP + FP): when the model says yes, how often is it right.
+- **Recall** = TP / (TP + FN): of all real positives, how many it caught.
+- **F1** = 2PR / (P + R), the harmonic mean, so it stays low unless both are decent.
+- **Favour precision** when a false alarm is expensive: a spam filter that hides a real invoice, or auto-banning an account.
+- **Favour recall** when a miss is expensive: cancer screening, or detecting faulty brake parts, where a false alarm just triggers a second check.
+- Moving the threshold trades them: higher threshold, more precision and less recall."""
+study = "classification-metrics"
+
+[[questions]]
+id = "ml-roc-vs-pr-auc"
+q = "When would you report PR-AUC instead of ROC-AUC? Why can ROC-AUC look misleadingly good?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "ROC plots true positive rate vs false positive rate; ROC-AUC is the probability a random positive outranks a random negative",
+  "PR plots precision vs recall across thresholds",
+  "Under heavy class imbalance, a small FPR can still mean many more false positives than true positives, so ROC-AUC stays high while precision is poor",
+  "PR-AUC's random baseline equals the positive rate, so it reflects performance on the rare class",
+  "Neither metric sets a threshold or measures calibration; report a metric at the operating point too",
+]
+answer = """- **ROC** plots TPR vs FPR; ROC-AUC is the probability that a random positive gets a higher score than a random negative. Random is 0.5 regardless of class balance.
+- **PR** plots precision vs recall; its random baseline is the positive rate (0.001 for 0.1 percent fraud).
+- With 1M negatives and 1k positives, an FPR of 1 percent is 10,000 false alarms against at most 1,000 true hits. ROC barely moves, so AUC can read 0.95 while precision is under 10 percent.
+- So for **rare positives** where the cost is in false alarms (fraud, defects, rare disease) I report PR-AUC; ROC-AUC is fine for balanced problems or pure ranking comparisons.
+- Both are threshold-free and ignore calibration, so I also report recall at the operating false-positive rate or precision at top-k."""
+study = "roc-vs-pr-auc"
+
+[[questions]]
+id = "ml-calibration"
+q = "What does it mean for a model to be calibrated, how do you check it, and when does it matter?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Calibrated means predicted probabilities match observed frequencies (of cases scored 0.8, about 80 percent are positive)",
+  "Checks with a reliability diagram (bucket predictions, compare mean prediction to actual rate) or Brier score, log loss or ECE",
+  "Fixes with Platt scaling or isotonic regression fitted on held-out data",
+  "Matters when probabilities feed decisions or money: expected value, bidding, cost-based thresholds, risk shown to humans",
+  "Notes AUC is unaffected by calibration and that class weights, resampling, boosting or deep nets often miscalibrate",
+]
+answer = """- **Calibrated**: scores mean what they say. Of all predictions near 0.8, about 80 percent turn out positive.
+- **Check** with a reliability diagram: bucket predictions into deciles, plot mean predicted vs actual positive rate; perfect is the diagonal. Summarize with Brier score, log loss or expected calibration error.
+- **Fix** on held-out data: **Platt scaling** (logistic fit on scores, good for small data) or **isotonic regression** (monotone, needs more data).
+- It **matters** when probabilities are multiplied by money or compared to costs: ad bidding (P(click) x value), cost-based thresholds, insurance pricing, or risk scores shown to people.
+- AUC ignores calibration, so a great-AUC model can still be badly calibrated. Class weights, resampling, boosted trees and deep nets often need recalibration; so does any shift in base rate."""
+study = "calibration"
+
+[[questions]]
+id = "ml-threshold-from-cost"
+q = "Your fraud model outputs a probability. A missed fraud costs about 200 dollars, and sending a good transaction to manual review costs 5 dollars. How do you choose the threshold?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Rejects 0.5 as arbitrary and frames the choice as minimizing expected cost",
+  "Derives or uses the rule: act when p x 200 > (1 - p) x 5, giving a threshold around 5/205, roughly 0.024",
+  "Notes the closed-form threshold needs calibrated probabilities; otherwise sweep thresholds on validation data and pick the minimum total cost",
+  "Accounts for review capacity limits, which may force a higher threshold or a top-k policy",
+  "Mentions re-checking the threshold after retraining or base-rate changes, or using multiple tiers (approve, review, decline)",
+]
+answer = """- 0.5 is arbitrary; choose the threshold that **minimizes expected cost**.
+- Review when expected loss from fraud beats the review cost: `p x 200 > (1 - p) x 5`, so threshold = 5 / 205, about **0.024**. A transaction with a 3 percent fraud chance is worth reviewing.
+- That only works if the probabilities are **calibrated**. Otherwise, on a validation set at the real fraud rate, compute total cost (FN x 200 + FP x 5) for each threshold and pick the minimum.
+- Check **review capacity**: if the threshold flags 20,000 a day and analysts handle 3,000, either raise it to the top 3,000 scores or add tiers: auto-decline very high scores, review the middle, approve the rest.
+- Include customer friction in the FP cost, and re-tune after every retrain or when the fraud rate shifts."""
+study = "threshold-business-cost"
+
+[[questions]]
+id = "ml-regression-metrics"
+q = "Compare MAE, RMSE and MAPE. Which would you use to evaluate a delivery-time (ETA) model, and why?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "MAE is the average absolute error in the target's units and treats all errors linearly",
+  "RMSE squares errors before averaging, so large errors dominate; it is always at least MAE",
+  "MAPE is average percentage error, easy to explain but undefined or unstable near zero and asymmetric",
+  "Makes a justified choice for ETA, such as MAE in minutes for interpretability, possibly with a tail metric like p90 error or share within N minutes",
+  "Notes the training loss shapes the prediction: squared loss targets the mean, absolute loss the median",
+]
+answer = """- **MAE**: average absolute error in the target's units ('off by 4.2 minutes'). Every minute of error counts the same.
+- **RMSE**: square, average, root. Large errors dominate, so it punishes the occasional 30-minute miss. RMSE is always >= MAE; a big gap means heavy-tailed errors.
+- **MAPE**: average percent error. Easy for business, but blows up when actuals are near zero and penalizes over-prediction more.
+- For **ETA** I would report **MAE in minutes** as the headline, plus a tail metric like **p90 absolute error** or **share of orders within 5 minutes**, since late surprises hurt customers most. Slice by city and distance.
+- Training loss decides what you predict: MSE gives the mean, MAE the median, and quantile loss a chosen percentile if you need a safe promised time."""
+study = "regression-metrics"
+
+[[questions]]
+id = "ml-offline-online-gap"
+q = "Your new ranking model improves offline NDCG by 3 percent, but the A/B test shows no lift in conversions. What could explain this, and how would you investigate?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Offline metric may be a poor proxy for the business goal (clicks or NDCG vs conversions)",
+  "Selection or position bias: offline data only contains items the old model showed, so offline evaluation favours imitating it",
+  "Training-serving skew or stale or missing features online; checks served features and score distributions against offline",
+  "Experiment issues: not enough power, sample ratio mismatch, short duration, or latency regression eating the gain",
+  "Segment analysis: gains concentrated in low-value traffic; proposes concrete next steps such as replaying logged requests, interleaving or aligning the offline metric",
+]
+answer = """- **Proxy mismatch**: NDCG on clicks may not track conversions. Check whether offline gains come from items people click but rarely buy.
+- **Logged-data bias**: offline data only contains items the old model chose to show, at positions it chose, so offline evaluation is biased toward the old policy.
+- **Skew**: replay logged production requests through both models and compare scores; check whether some features are stale, null or computed differently online.
+- **Experiment validity**: power for a realistic lift, **sample ratio mismatch**, full weekly cycles, guardrails like **latency** (a heavier model can cost the gain in drop-off).
+- **Segments**: the gain may sit in low-traffic or low-value queries.
+- Next steps: fix any skew, add a conversion-weighted offline metric, try **interleaving** for a more sensitive comparison, and keep a small exploration slice for less biased training data."""
+study = "online-experiments"
+
+[[questions]]
+id = "ml-ab-test-model"
+q = "How would you set up an A/B test to decide whether a new recommendation model should replace the current one?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Defines a primary metric tied to the business (e.g. conversion or revenue per user) and guardrail metrics such as latency, errors or unsubscribes",
+  "Randomizes at the user level (not request) with a stable assignment",
+  "Computes sample size and duration from a minimum detectable effect, running full weekly cycles",
+  "Avoids peeking or uses sequential testing; checks sample ratio mismatch",
+  "Validates the new model first with shadow or a small canary, and decides with significance plus practical effect size",
+]
+answer = """- **Before the test**: shadow the model to catch errors and latency issues, and agree on a decision rule up front.
+- **Primary metric**: one business metric such as purchases or revenue per user. **Guardrails**: p99 latency, error rate, unsubscribes, diversity.
+- **Randomize by user** with stable hashing so each person always sees the same model; ramp the treatment from 1 percent upward.
+- **Size it**: compute sample size from the minimum detectable effect, then run at least one or two full weeks to cover weekly patterns and novelty.
+- **During**: check sample ratio mismatch; do not stop early on a lucky p-value unless using a sequential method.
+- **Decide** on statistical significance and a practically meaningful lift, with no guardrail breach, and check key segments such as new users."""
+study = "online-experiments"

@@ -1,0 +1,212 @@
+title = "Modeling & Warehousing"
+order = 6
+desc = "Star schemas, grain, facts and dimensions, SCDs, medallion layers, OLTP vs OLAP and data vault."
+
+[[questions]]
+id = "model-star-vs-snowflake"
+q = "What is the difference between a star schema and a snowflake schema? Which would you pick for a BI layer?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Star schema: a central fact table joined directly to denormalized dimension tables",
+  "Snowflake schema: dimensions are normalized into multiple related tables (e.g. product to category to department)",
+  "Star needs fewer joins and is simpler for BI users and query engines",
+  "Snowflake reduces redundancy and can ease maintenance of hierarchies but adds joins",
+  "Picks star for BI in most modern columnar warehouses and lakehouses",
+]
+answer = """- A **star schema** has one fact table (for example `fact_sales`) joined directly to **denormalized** dimensions like `dim_product`, which holds product, category and department columns together.
+- A **snowflake schema** normalizes dimensions into chains of tables, such as `dim_product -> dim_category -> dim_department`.
+- Star means fewer joins, simpler SQL for analysts, and plans the optimizer handles well. The repeated category names cost little in columnar storage.
+- Snowflake removes that redundancy and can make hierarchies easier to maintain, at the cost of more joins and more complex queries.
+- For a BI layer I pick a star schema; snowflaking only makes sense for very large, shared hierarchies."""
+study = "dimensional-modeling"
+
+[[questions]]
+id = "model-grain"
+q = "What does 'grain' mean in dimensional modeling, and why do you define it first?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Grain is the exact meaning of one row in a fact table (e.g. one row per order line)",
+  "It is declared before choosing dimensions and facts, which must all be true at that grain",
+  "Mixing grains in one table causes double counting or wrong aggregations",
+  "Finer (atomic) grain is more flexible since it can always be rolled up",
+]
+answer = """- The grain is the precise definition of one fact row, for example "one row per order line per product" or "one row per account per day".
+- I define it first because every dimension and measure has to be true at that grain. An order-level `shipping_fee` does not belong on an order-line table unless it is allocated across lines.
+- Mixing grains causes double counting: summing an order-level total stored on every line multiplies it by the number of lines.
+- I prefer the most **atomic** grain available, because detailed data can always be rolled up into daily or monthly aggregates, but aggregates cannot be broken back down."""
+study = "dimensional-modeling"
+
+[[questions]]
+id = "model-scd-types"
+q = "Explain slowly changing dimension types 0, 1, 2 and 3. When would you use Type 2?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Type 0 keeps the original value and never changes it",
+  "Type 1 overwrites the old value, keeping no history",
+  "Type 2 adds a new row for each change, with a surrogate key, valid_from/valid_to dates and a current flag",
+  "Type 3 keeps limited history in an extra column such as previous_value",
+  "Use Type 2 when facts must be reported by the attribute value at the time of the event",
+]
+answer = """- **Type 0**: keep the original value forever, such as original signup channel or date of birth.
+- **Type 1**: overwrite in place. No history; good for corrections like a typo in a name.
+- **Type 2**: on change, close the current row (set `valid_to`, `is_current = false`) and insert a new row with a new **surrogate key** and `valid_from`. Full history.
+- **Type 3**: add a column for the previous value (`current_region`, `previous_region`); only one step of history.
+- I use Type 2 when reports must reflect the value at the time of the fact, such as sales by the region a customer lived in when they bought, or commission by the sales rep's team at that time."""
+study = "scd-types"
+
+[[questions]]
+id = "model-medallion"
+q = "Describe the medallion architecture. What belongs in bronze, silver and gold?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Bronze holds raw data as ingested (append-only) with metadata like ingest time and source file",
+  "Silver holds cleaned, typed, deduplicated and conformed data, with quality checks applied",
+  "Gold holds business-level models: star schemas, aggregates, metrics for BI and ML",
+  "Keeping raw bronze lets you replay and rebuild downstream layers after bugs",
+]
+answer = """- **Bronze**: raw data as it arrived, usually append-only, with metadata like `_ingested_at`, source file path and Kafka offsets. Minimal transformation, so nothing is lost.
+- **Silver**: cleaned and conformed data. Types are enforced, duplicates removed, CDC applied (one row per entity or entity version), keys standardized, and bad rows quarantined.
+- **Gold**: business-ready tables for consumers: dimensional models, aggregates like daily revenue, and features for ML.
+- The main benefit is **replay**: if a silver transformation has a bug, I fix it and rebuild from bronze without asking the source to resend data.
+- It also gives a clear access model: most analysts only get gold."""
+study = "medallion"
+
+[[questions]]
+id = "model-oltp-olap"
+q = "What is the difference between OLTP and OLAP systems, and why are they modeled differently?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "OLTP runs operations: many small, concurrent reads and writes of individual rows (orders, payments)",
+  "OLAP runs analytics: large scans and aggregations over history",
+  "OLTP is normalized (around 3NF) and row-oriented with indexes to keep writes consistent and avoid update anomalies",
+  "OLAP is denormalized (star schemas) and columnar so scans read only needed columns",
+  "Analytics should not run heavy queries on the production OLTP database",
+]
+answer = """- **OLTP** systems, like the app's Postgres database, handle many small transactions: insert an order, update a balance. They need fast single-row access, strong consistency and high concurrency.
+- **OLAP** systems, like a warehouse or lakehouse, answer questions over lots of history: revenue by region by month. They do large scans and aggregations.
+- OLTP is **normalized** (around 3NF), row-oriented, and indexed, so each fact is stored once and updates do not create anomalies.
+- OLAP is **denormalized** into star schemas and stored in **columnar** formats, so a query reads only the columns it needs and compresses well.
+- That is why we copy data out of OLTP with pipelines or CDC instead of running heavy reports against production."""
+study = "oltp-olap-normalization"
+
+[[questions]]
+id = "model-fact-types"
+q = "What are additive, semi-additive and non-additive facts, and what is a factless fact table? Give an example of each."
+level = "mid"
+kind = "concept"
+rubric = [
+  "Additive facts can be summed across all dimensions (sales amount, quantity)",
+  "Semi-additive facts can be summed across some dimensions but not time (account balance, inventory level)",
+  "Non-additive facts cannot be summed at all (ratios, percentages, unit price); store components and recompute",
+  "A factless fact table records events or coverage with no numeric measure (attendance, promotion coverage)",
+  "Mentions how to aggregate semi-additive facts over time (average or period-end value)",
+]
+answer = """- **Additive**: can be summed across every dimension. `sales_amount` and `quantity` can be added by store, product and day.
+- **Semi-additive**: can be summed across some dimensions but not time. An account balance can be summed across accounts on one day, but adding Monday's and Tuesday's balances is meaningless. Over time, use the period-end value or an average.
+- **Non-additive**: never summed, like margin percent, conversion rate or unit price. Store the components (revenue and cost, conversions and visits) and recompute the ratio after aggregating.
+- **Factless fact table**: rows record that something happened or applied, with no measure. Examples: student attended class on a date, or which products were on promotion in which stores. You count rows, or find what did not happen (promoted but not sold)."""
+study = "dimensional-modeling"
+
+[[questions]]
+id = "model-dimension-types"
+q = "What are conformed, degenerate, junk and role-playing dimensions?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Conformed dimension: shared with the same keys and meaning across multiple fact tables, enabling cross-process analysis",
+  "Degenerate dimension: an identifier kept in the fact table with no dimension table, like order or invoice number",
+  "Junk dimension: combines several low-cardinality flags and indicators into one small dimension",
+  "Role-playing dimension: one physical dimension used in several roles, such as date as order date and ship date",
+]
+answer = """- **Conformed**: the same dimension, with the same keys and attribute meanings, used by several fact tables. `dim_date` and `dim_customer` shared by sales and support facts let you compare them side by side.
+- **Degenerate**: a dimension key with no attributes, kept directly in the fact table, such as `order_number` or `invoice_id`. It is useful for grouping lines back into an order.
+- **Junk**: a small table combining several unrelated low-cardinality flags, like `is_gift`, `payment_type` and `channel`, one row per combination, so the fact table carries one key instead of many flag columns.
+- **Role-playing**: one physical dimension used in different roles. `dim_date` joins to the fact as `order_date_key`, `ship_date_key` and `delivery_date_key`, usually through views with role-specific column names."""
+study = "dimensional-modeling"
+
+[[questions]]
+id = "model-scd2-merge"
+q = "How would you implement an SCD Type 2 dimension on a Delta table using MERGE?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Dimension rows have a surrogate key, the business key, valid_from, valid_to and an is_current flag",
+  "Deduplicate incoming changes to one per business key and detect real changes by comparing tracked attributes (or a hash)",
+  "MERGE must both expire the current row and insert a new version; uses a staged union with a NULL merge key so changed rows also hit the insert branch",
+  "WHEN MATCHED on the current row with changed attributes: set is_current false and valid_to; WHEN NOT MATCHED: insert new versions and brand-new keys",
+  "Mentions alternatives: Lakeflow AUTO CDC with SCD type 2 or dbt snapshots",
+]
+answer = """- Table columns: surrogate key, business key `customer_id`, tracked attributes, `valid_from`, `valid_to`, `is_current`.
+- Stage changes: keep the latest change per `customer_id`, and compare a hash of tracked attributes with the current row to find real changes.
+- One MERGE has to close the old row and insert the new one, but a source row only matches once. So I union the staged data twice: once with `merge_key = customer_id`, and once with `merge_key = NULL` for changed customers only.
+- `ON t.customer_id = s.merge_key AND t.is_current`:
+  - `WHEN MATCHED AND t.hash <> s.hash THEN UPDATE SET is_current = false, valid_to = s.effective_ts`
+  - `WHEN NOT MATCHED THEN INSERT` the new version (`valid_from = effective_ts`, `is_current = true`), which covers both the NULL-key copies and brand-new customers.
+- On Databricks, AUTO CDC with `STORED AS SCD TYPE 2` does this for me; in dbt, snapshots do."""
+study = "scd-types"
+
+[[questions]]
+id = "model-scd-advanced"
+q = "When would you use SCD Type 4 or Type 6 instead of plain Type 2?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Type 4 separates history: a current table for fast lookups plus a separate history table (Kimball also uses it for a mini-dimension of fast-changing attributes)",
+  "Use Type 4 when attributes change very often and would bloat a Type 2 dimension",
+  "Type 6 combines 1, 2 and 3: Type 2 versioned rows plus a current-value column overwritten on all rows of the key",
+  "Use Type 6 when users need both as-was reporting and as-is reporting without extra joins",
+  "Notes the cost: more complex loads and updates touching all historical rows for Type 6",
+]
+answer = """- **Type 4**: keep a small current table for fast lookups and put history in a separate history table. Kimball's version moves fast-changing attributes, like age band or credit score band, into a **mini-dimension** with its own key on the fact.
+- I use Type 4 when some attributes change so often that Type 2 would create millions of versions per customer, or when most queries only want the current value.
+- **Type 6** (1+2+3): Type 2 rows for history, plus a `current_region` column overwritten on every row for that key whenever it changes.
+- I use Type 6 when analysts need both views at once: sales by the region at the time (`historical_region`) and the same sales restated by today's region (`current_region`), without a self-join.
+- Cost: more complex loads, and each change updates all historical rows of that key."""
+study = "scd-types"
+
+[[questions]]
+id = "model-data-vault"
+q = "What is Data Vault modeling, and when would you choose it over going straight to a star schema?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Hubs store unique business keys; links store relationships between hubs; satellites store descriptive attributes with load timestamps",
+  "It is insert-only and keeps full auditable history with record source and load date",
+  "Good for integrating many changing sources and absorbing new sources or schema changes without remodeling",
+  "Downsides: many tables and joins, so it is not query-friendly; star schemas or marts are built on top for consumption",
+  "Choose it for large enterprise integration and audit needs; skip it for smaller teams where a star schema on silver is enough",
+]
+answer = """- Data Vault splits data into three table types:
+  - **Hubs**: one row per unique business key (customer number), with load date and record source.
+  - **Links**: relationships between hubs (customer placed order).
+  - **Satellites**: descriptive attributes for a hub or link, historized by load timestamp.
+- Loads are insert-only, so you get a full, auditable history of what each source said and when.
+- Its strength is integration: new sources and attributes become new satellites or links without reworking existing tables, and loads parallelize well.
+- The cost is many tables and joins, which is hard to query. You still build star schemas or marts on top for BI.
+- I would choose it in a large enterprise with many overlapping sources and strict audit needs. For most lakehouse teams, a silver layer plus star schemas in gold is simpler."""
+study = "oltp-olap-normalization"
+
+[[questions]]
+id = "model-design-sales-mart"
+q = "Design a dimensional model for an online retailer's sales so analysts can report revenue, units and returns by product, customer, store channel and date."
+level = "mid"
+kind = "design"
+rubric = [
+  "Declares the grain explicitly, e.g. one row per order line, with returns as a separate fact or clearly modeled",
+  "Identifies dimensions: date (role-playing for order and ship dates), product, customer, channel or store, promotion",
+  "Identifies measures that are additive at that grain: quantity, gross amount, discount, net amount",
+  "Uses surrogate keys and decides SCD handling (e.g. Type 2 for customer region, Type 1 for corrections)",
+  "Keeps order number as a degenerate dimension and considers partitioning or clustering by date",
+]
+answer = """- **Grain**: `fact_sales` has one row per order line. Returns go in `fact_returns`, one row per returned line, because they happen at a different time.
+- **Dimensions**: `dim_date` (role-playing as order date and ship date), `dim_product` (SKU, brand, category, department, denormalized), `dim_customer`, `dim_channel` (web, app, store), and `dim_promotion`.
+- **Measures**: `quantity`, `gross_amount`, `discount_amount`, `net_amount`, all additive at line grain. Order-level shipping is allocated to lines or kept in an order-grain fact.
+- `order_number` stays in the fact as a **degenerate dimension**.
+- Surrogate keys everywhere; `dim_customer` is SCD Type 2 for region and segment, Type 1 for name corrections; facts point to the version valid at order time.
+- Physical: cluster `fact_sales` by order date (and product if filtered often), plus a daily aggregate table for dashboards."""
+study = "dimensional-modeling"

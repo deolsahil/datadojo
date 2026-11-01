@@ -1,0 +1,140 @@
+title = "Metrics and KPIs"
+order = 2
+desc = "DAU/MAU, retention and churn, ARPU and LTV, north star and guardrails, metric trees, diagnosing drops."
+
+[[questions]]
+id = "metric-dau-mau"
+q = "What are DAU and MAU, and what does the DAU/MAU ratio tell you? What decisions go into defining them?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "DAU is distinct active users in a day; MAU is distinct active users over a month or trailing 28/30 days",
+  "DAU/MAU measures stickiness: roughly the share of days the average monthly user is active",
+  "Says 'active' must be defined, ideally by a meaningful action rather than just an app open",
+  "Notes what is 'good' depends on the product's natural usage frequency",
+  "Mentions distinct counts do not add up (summing DAU does not give MAU)",
+]
+answer = """- **DAU**: distinct users who were active on a given day. **MAU**: distinct users active in a month, usually a trailing 28 or 30 days.
+- **DAU/MAU** is stickiness: 0.5 means the average monthly user shows up about half the days of the month.
+- The key decision is what 'active' means: an app open (easy to inflate with push notifications) or a value action like sending a message or completing a lesson.
+- Other choices: the unit (user, account, device), time zone for the day boundary, and whether bots and internal users are excluded.
+- Benchmarks depend on the product: a chat app should be near-daily, a travel app will not be.
+- Distinct counts do not add: summing 30 DAUs is not MAU, so always recompute from raw activity."""
+study = "core-product-metrics"
+
+[[questions]]
+id = "metric-churn-retention"
+q = "How would you define and calculate monthly churn for a subscription product? What mistakes do people make?"
+level = "entry"
+kind = "concept"
+rubric = [
+  "Churn = customers who cancelled or lapsed during the month / customers active at the start of the month",
+  "Excludes customers acquired during the month from the denominator",
+  "Retention for the period is 1 minus churn",
+  "Distinguishes customer (logo) churn from revenue churn",
+  "Notes the definition of 'churned' must be explicit (cancel date vs end of paid period vs payment failure)",
+]
+answer = """- Monthly churn = customers who churned during the month / customers active on the first day of the month. Monthly retention = 1 minus churn.
+- Do not put customers who joined mid-month in the denominator; during fast growth that makes churn look lower than it is.
+- Define 'churned' precisely: cancellation clicked, paid period ended, or payment failed and was not recovered. Involuntary churn (failed cards) is often a big, fixable share.
+- Track **customer churn** and **revenue churn** separately; losing ten small accounts and one large account tell different stories.
+- Look at churn by cohort and tenure: new customers usually churn much faster than long-tenured ones, so a blended rate hides the shape."""
+study = "retention-churn"
+
+[[questions]]
+id = "metric-ltv"
+q = "Marketing wants to know how much they can spend to acquire a customer. How would you estimate customer lifetime value, and what are the pitfalls?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Gives the simple formula: ARPU x gross margin / churn rate (expected lifetime about 1 / churn)",
+  "Prefers a cohort-based approach: cumulative margin per customer by cohort over time, extrapolated",
+  "Uses margin, not revenue, when comparing against acquisition cost (CAC)",
+  "Mentions comparing LTV to CAC and payback period, and segmenting LTV by channel",
+  "Names a pitfall: constant-churn assumption, skew from a few large customers, long horizons needing a cap or discount",
+]
+answer = """- Simple version: LTV = monthly ARPU x gross margin / monthly churn. With 20 dollars ARPU, 60 percent margin and 4 percent churn: 20 x 0.6 / 0.04 = 300 dollars.
+- Better: follow cohorts and plot cumulative margin per acquired customer by month, then extrapolate the curve; churn is usually high early and flattens, which the simple formula misses.
+- Compare **margin** LTV to CAC, and look at payback period (months until margin covers CAC), which matters for cash.
+- Segment by acquisition channel: paid social customers may have half the LTV of referral customers, so their max CAC differs.
+- Pitfalls: a few whales skew averages, long horizons are speculative (cap at 24 to 36 months or discount), and new channels lack history."""
+study = "arpu-ltv"
+
+[[questions]]
+id = "metric-north-star-guardrail"
+q = "What is a north star metric, and why do teams pair it with guardrail metrics? Give an example for a food delivery app."
+level = "mid"
+kind = "concept"
+rubric = [
+  "North star reflects the core value delivered to customers and predicts long-term business success",
+  "Guardrails are metrics that must not degrade while optimizing the north star",
+  "Gives a plausible north star for delivery (for example completed orders or orders delivered on time per week)",
+  "Gives plausible guardrails (delivery time, cancellation or refund rate, courier earnings, contribution margin)",
+  "Mentions Goodhart's law or gaming: optimizing one number alone invites harmful shortcuts",
+]
+answer = """- A north star is one metric that captures the value customers get and predicts long-term revenue; it aligns teams on a shared direction.
+- Guardrails are metrics you watch so you do not win the north star by damaging something else.
+- Delivery app north star: completed orders per week (or orders delivered on time), which needs both demand and reliable fulfilment.
+- Guardrails: average and p90 delivery time, cancellation and refund rate, customer complaints, courier earnings per hour, and contribution margin per order.
+- Why pair them: Goodhart's law. Heavy discounts would raise orders while destroying margin; pushing couriers to stack orders would raise volume but slow deliveries.
+- In experiments: north star or its input as the primary metric, guardrails as must-not-regress checks."""
+study = "north-star-guardrails"
+
+[[questions]]
+id = "metric-drop-diagnosis"
+q = "Weekly active users fell 8 percent week over week. Walk me through how you would investigate."
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Starts by clarifying the definition, time window and baseline, and checking whether the drop is outside normal variation",
+  "Checks data issues first: tracking changes, pipeline delays, logging bugs, bot filter or definition changes",
+  "Checks seasonality and external causes: holidays, outages, competitor launches, marketing changes",
+  "Segments by platform, app version, country, channel, new vs returning to localize the drop",
+  "Decomposes via funnel or metric tree and mentions mix shift; ends with a hypothesis, sized impact and next step",
+]
+answer = """- Clarify: how WAU is defined, which week vs which, and whether 8 percent is unusual (compare to the same week last year and normal week-to-week swings).
+- Rule out data problems: late or partial pipeline loads, a tracking change in a new release, a new bot filter, a changed active definition.
+- Check the calendar and outside world: a holiday, an outage, a competitor launch, a paused marketing campaign or email send.
+- Segment: iOS vs Android vs web, app version, country, acquisition channel, new vs returning. A drop in one app version points to a release bug; an even drop everywhere points to seasonality or top of funnel.
+- Decompose: WAU = new + retained + resurrected users; see which component fell. Watch for mix shift.
+- Close with the most likely cause, how many users it explains, and the action (rollback, fix, or monitor)."""
+study = "diagnosing-metric-drops"
+
+[[questions]]
+id = "metric-simpsons-paradox"
+q = "Checkout conversion went up on both desktop and mobile this quarter, but overall conversion went down. Leadership thinks the dashboard is broken. Explain what is happening."
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Identifies Simpson's paradox / mix shift: overall rate is a weighted average of segment rates",
+  "Explains traffic shifted toward the lower-converting segment (mobile), pulling the overall rate down",
+  "Shows or describes a numeric example or a decomposition into rate effect and mix effect",
+  "Asks why the mix shifted (mobile growth, new channel, app push) and whether that is good for the business",
+  "Recommends reporting conversion by segment alongside the blended number",
+]
+answer = """- The dashboard is fine; this is Simpson's paradox. Overall conversion is a weighted average of segment rates, and the weights changed.
+- Example: desktop 60 percent of traffic at 10 percent, mobile 40 percent at 2 percent gives 6.8 percent. Next quarter desktop improves to 11 percent and mobile to 3 percent, but mobile is now 70 percent of traffic: overall is 0.3 x 11 + 0.7 x 3 = 5.4 percent.
+- Decompose the change into a **rate effect** (segments improved, positive) and a **mix effect** (traffic moved to mobile, negative).
+- Then ask why the mix moved: a mobile ad campaign, app growth, a desktop SEO loss. More mobile visitors may still mean more total orders, which is what the business cares about.
+- Recommend showing segment conversion and traffic share next to the blended rate, and judging teams on their segment rates."""
+study = "simpsons-paradox-mix-shift"
+
+[[questions]]
+id = "metric-tree-revenue"
+q = "How would you build a metric tree for an ecommerce company's revenue, and how would you use it when revenue misses target?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Breaks revenue into an exact identity, for example buyers x orders per buyer x average order value",
+  "Further splits branches (buyers into new and returning, new buyers into visitors x conversion; AOV into items x price)",
+  "Explains using the tree to locate which branch moved when the top metric misses",
+  "Distinguishes multiplicative splits (mechanism) from additive splits by segment (where)",
+  "Mentions mapping leaves to owning teams and keeping definitions consistent so the tree reconciles",
+]
+answer = """- Start with an exact identity: revenue = active buyers x orders per buyer x average order value.
+- Split further: buyers = new + returning; new buyers = visitors x signup rate x first-purchase rate; AOV = items per order x average item price (and discounts).
+- When revenue misses, walk down: compute each factor's change versus target. For multiplicative trees, percent changes roughly add (log changes add exactly), so you can attribute the miss, for example 70 percent from lower AOV.
+- Use additive splits (country, channel, platform) to find **where** the change is, and the multiplicative tree to find **which mechanism**.
+- Map each leaf to an owning team (growth owns visitors, product owns conversion, merchandising owns AOV) so the miss turns into actions.
+- Keep definitions consistent across branches so leaves reconcile to the top number."""
+study = "metric-trees"

@@ -1,0 +1,125 @@
+title = "Production GenAI"
+order = 6
+desc = "Prototype to production, observability, caching, feedback loops, and cost and latency optimization."
+
+[[questions]]
+id = "ai-prototype-to-production"
+q = "Your team has an LLM prototype that demos well: prompt in, answer out. What does it take to turn it into a production system?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "RAG (or application data) so the model has the right, current, private information",
+  "Evals to know whether it works and whether a change broke something, run on every change",
+  "Observability: traces of each stage with latency, cost and versions to explain failures",
+  "Caching and cost control to stay fast and affordable at scale",
+  "Guardrails and business rules in code to keep it safe, plus user feedback loops that turn failures into new evals",
+]
+answer = """- A prototype is prompt -> LLM -> response. Production wraps the model in engineering; the model is only one component.
+- **RAG** and application data give it the right, current, private information. **Fine-tuning** (or better prompts) shapes behaviour where needed.
+- **Evals** tell us whether it works and catch regressions on every prompt, model or retrieval change.
+- **Observability** traces each stage with inputs, outputs, latency, cost and versions, so we can explain why an answer failed.
+- **Caching** across embeddings, retrieval, responses and APIs keeps it fast and affordable at 10x traffic.
+- **Guardrails** check inputs and outputs, and business rules live in code.
+- **Feedback loops** close it: production failures -> feedback -> evals -> improvements -> fewer future failures."""
+study = "production-genai"
+
+[[questions]]
+id = "ai-caching-layers"
+q = "Where would you add caching in a RAG chatbot, and how would you invalidate each layer?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Names several layers: embedding cache, retrieval cache, exact response cache, semantic response cache, external API cache, provider prompt caching",
+  "Keys caches on everything that affects the result, including model, prompt and index versions",
+  "Invalidation strategies: TTL, event-based on source change, version keys",
+  "Scopes cache keys by user or tenant and permissions to avoid leaking data",
+  "Notes semantic caching needs a carefully tuned similarity threshold or it returns answers to different questions",
+]
+answer = """- **Embeddings:** cache document embeddings by content hash; invalidate when the content or embedding model changes.
+- **Retrieval:** cache query -> chunk ids; invalidate when the index is rebuilt or the documents change (event-based or index version in the key).
+- **Responses:** exact cache keyed on prompt, model, parameters, context and user scope; a semantic cache for paraphrases, with a strict similarity threshold so different questions don't share answers.
+- **External APIs:** cache with a TTL matching freshness needs.
+- **Provider prompt caching:** put the long, stable system prompt first so the prefix is reused.
+- Invalidation: TTL for time-sensitive data, events when sources change, and version keys (model, prompt, index) so deploys miss old entries.
+- Always include user or tenant and permissions in the key, or one user can get another's answer."""
+study = "caching"
+
+[[questions]]
+id = "ai-quality-drop"
+q = "Your assistant's answer quality, measured by sampled evals, dropped from 90% to 75% overnight. Walk me through the investigation."
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Checks what changed using versioned traces: prompt, model, index or code deploys aligned with the drop",
+  "Checks for an external model change (provider update or different version)",
+  "Checks retrieval: similarity scores, which documents are returned, stale or missing documents after re-indexing",
+  "Checks latency, timeouts and tool or API errors that may truncate context or answers",
+  "Segments by version, query type and user group to find the broken slice, then fixes and adds failing cases to evals",
+]
+answer = """- Confirm it's real: enough samples, same judge and judge version, not a grading change.
+- Line up the drop with changes using version fields on traces: prompt version, model version, index version, code deploys. A drop starting exactly at a deploy is the strongest lead.
+- Check the model: did the provider update the model behind an alias, or did someone switch versions?
+- Check retrieval: falling similarity scores, different documents returned, stale timestamps, or a failed re-index.
+- Check operations: latency spikes, timeouts truncating context, and tool or API error spans.
+- Segment by version, query type and user group; a global average often hides one broken slice.
+- Fix or roll back, then add the failing cases to the regression suite."""
+study = "observability"
+
+[[questions]]
+id = "ai-cache-tenant-leak"
+q = "A customer of your multi-tenant AI support product reports seeing a reply that mentioned another company's order details. You recently added a response cache. What happened and what do you do?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Identifies that the cache key likely lacked tenant or user scope (or a semantic cache matched across tenants), serving one tenant's answer to another",
+  "Treats it as a security incident: disable or flush the cache immediately and assess which tenants and data were exposed",
+  "Fixes by including tenant, user and permission scope in every cache key, or partitioning caches per tenant",
+  "Avoids caching personalized responses, or caches only non-personalized content",
+  "Adds tests and evals for cross-tenant isolation and reviews other layers (retrieval, semantic cache) for the same flaw",
+]
+answer = """- Most likely the response cache key was the prompt text only (or the semantic cache matched similar questions across tenants), so tenant A's personalized answer was served to tenant B.
+- Treat it as a security incident: disable and flush the cache now, find from logs which requests were served from cache across tenants, and follow the incident and disclosure process.
+- Fix the key: include tenant id, user id where answers are personal, permission scope, and model, prompt and index versions. Better, partition caches per tenant.
+- Don't cache personalized responses at all; cache generic content (public FAQ answers) and shared, non-sensitive work like document embeddings.
+- Add automated cross-tenant isolation tests, and audit the retrieval and semantic cache layers for the same mistake."""
+study = "caching"
+
+[[questions]]
+id = "ai-thumbs-down-doubled"
+q = "The thumbs-down rate on your assistant doubled this week. How do you investigate, and what do you do with the findings?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Treats feedback as a signal, not ground truth: a thumbs-down can mean wrong answer, wrong retrieval, missing info, bad UX or user misunderstanding",
+  "Pulls the traces linked to the negative feedback and checks for changes (deploys, versions, data, traffic mix)",
+  "Segments by version, query type, user group or feature to find where the increase comes from",
+  "Classifies root causes by failing stage and fixes the main one",
+  "Adds confirmed failures as new eval cases for regression protection, rather than training directly on raw feedback",
+]
+answer = """- A thumbs-down is a signal, not a diagnosis: it can mean a wrong answer, bad retrieval, missing information, a UX issue, or the user misunderstanding.
+- Check what changed this week: prompt, model or index versions, new documents, a new feature, a shift in traffic (new customer or new query types). Also check implicit signals like retries and escalations.
+- Segment the negative feedback by version, query type, feature and user group to find the slice that grew.
+- Read a sample of the linked traces and label each by failing stage: retrieval, generation, tool error, latency, UX.
+- Fix the dominant root cause, verify with evals, and add the confirmed failures as eval tasks so they're protected.
+- Don't feed raw thumbs data into training; it's sparse, biased and ambiguous."""
+study = "feedback-loops"
+
+[[questions]]
+id = "ai-cost-cut"
+q = "Your LLM bill tripled after launch and finance wants it cut in half without hurting quality. What do you do?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Measures first: cost per request broken down by feature, model, stage, input vs output tokens, from traces",
+  "Model routing or cascades: send easy requests to a smaller, cheaper model and escalate hard ones",
+  "Caching: exact and semantic response caching, provider prompt caching for long stable prefixes",
+  "Token reduction: trim prompts and history, fewer reranked chunks, cap output length; batch APIs for non-real-time work",
+  "Guards quality by running the eval suite before and after each change and watching online quality signals",
+]
+answer = """- Measure first: from traces, break cost down by feature, model, pipeline stage and input vs output tokens. Usually a few hot paths dominate.
+- **Route:** a small model or classifier handles easy requests; escalate only hard ones to the large model. Consider distilling or fine-tuning a small model for a high-volume narrow task.
+- **Cache:** exact and carefully thresholded semantic caching for repeated questions; provider prompt caching for long, stable system prompts and documents.
+- **Fewer tokens:** trim prompts and history, send 5 reranked chunks instead of 20, cap output length, ask for concise formats.
+- **Batch:** move non-real-time work (summaries, backfills) to discounted batch processing where the provider offers it.
+- Run the eval suite before and after each change and watch online quality, so savings don't quietly cost accuracy."""
+study = "cost-latency"

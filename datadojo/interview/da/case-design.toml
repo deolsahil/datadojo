@@ -1,0 +1,84 @@
+title = "Analytics Case Design"
+order = 8
+desc = "Bigger open cases: experiment plans, churn analyses, marketplace dashboards and pricing changes."
+
+[[questions]]
+id = "case-onboarding-experiment"
+q = "The product team built a new onboarding flow for a meditation app. Design the experiment to decide whether to launch it."
+level = "mid"
+kind = "design"
+rubric = [
+  "States a hypothesis and a primary metric tied to the goal (for example week-1 activation or day-30 retention), with guardrails like onboarding completion and subscription conversion",
+  "Randomizes new users at the user level, assigned at signup, so each user sees one flow consistently",
+  "Plans sample size and duration from baseline, MDE and power, covering full weeks and enough time for the retention metric to mature",
+  "Includes quality checks: sample ratio mismatch, A/A or instrumentation checks, no early stopping",
+  "Defines the decision rule and segments to check (platform, channel) before launch",
+]
+answer = """- Hypothesis: the new flow helps users finish a first session faster, raising week-1 activation (3 or more sessions in the first 7 days) and, downstream, day-30 retention.
+- Primary metric: week-1 activation. Secondary: day-30 retention, trial-to-paid. Guardrails: onboarding completion rate, crash rate, refund rate.
+- Unit: new users, randomized at signup by user ID, 50/50, so each sees one consistent flow. Exclude existing users.
+- Size: baseline activation 30 percent, MDE 2 points, alpha 0.05, power 0.8 gives about 8,400 users per arm; enroll for at least two full weeks, then wait for the 7-day window (and later 30 days) to mature.
+- Checks: SRM on assignment counts, event logging verified in both flows, no stopping early.
+- Decision rule: ship if activation is significantly up and guardrails hold; review platform and channel segments for harm, not for fishing."""
+study = "ab-test-design"
+
+[[questions]]
+id = "case-churn-analysis"
+q = "Subscription churn has risen from 4 to 5 percent a month over two quarters. Design the analysis you would run to explain it and recommend actions."
+level = "mid"
+kind = "design"
+rubric = [
+  "Confirms the definition and data first (voluntary vs involuntary churn, definition or billing changes)",
+  "Breaks churn down by cohort and tenure, plan, acquisition channel, region and platform to find where it rose",
+  "Separates mix shift (more customers from high-churn segments) from rate changes within segments",
+  "Uses behavioural signals before churn (usage decline, support tickets, failed payments) and cancellation reasons or surveys",
+  "Ends with sized, prioritized recommendations and a way to test them (experiment or holdout)",
+]
+answer = """- Confirm the number: same churn definition across quarters? Split voluntary (cancelled) from involuntary (failed payment); billing changes often create involuntary churn spikes.
+- Cut churn by tenure and signup cohort, plan, price point, acquisition channel, country and platform. Find whether rates rose within segments or the customer mix moved toward high-churn segments (for example a big promo brought low-intent users).
+- Look at leading behaviour: usage in the 30 days before cancelling, feature adoption, support tickets, payment failures. Compare churners with retained customers of the same tenure.
+- Add qualitative input: cancellation reasons, exit surveys, support themes.
+- Size each driver: for example, involuntary churn explains 0.4 of the 1 point rise.
+- Recommend in impact order (payment retry and card updater, onboarding for the promo cohort, a save offer) and test each with an experiment or holdout."""
+study = "retention-churn"
+
+[[questions]]
+id = "case-marketplace-dashboard"
+q = "Design the core metrics dashboard for a two-sided marketplace connecting home cleaners with customers. Leadership will review it weekly."
+level = "senior"
+kind = "design"
+rubric = [
+  "Defines a north star reflecting value to both sides (for example completed bookings) and explains why",
+  "Covers both demand and supply metrics (searchers, booking conversion, repeat rate; active cleaners, utilization, earnings, churn)",
+  "Includes marketplace health and liquidity metrics (fill rate, time to match, cancellations, ratings) and economics (GMV, take rate, contribution margin)",
+  "Organizes as a metric tree or top-down layout with comparisons to target and prior periods, and drill-downs by city and segment",
+  "Addresses data foundations: consistent metric definitions, a semantic layer or certified tables, freshness, and owners",
+]
+answer = """- North star: completed bookings per week, since a booking only completes when both sides got value.
+- Top row: completed bookings, GMV, net revenue (take rate), contribution margin, each vs target and vs last year.
+- Demand: active customers, search-to-booking conversion, repeat booking rate, new customer CAC.
+- Supply: active cleaners, hours available vs hours booked (utilization), earnings per hour, cleaner churn.
+- Liquidity and quality: fill rate (requests matched), time to match, cancellation rate by side, average rating, complaints. Imbalance shows up here first.
+- Layout as a tree: bookings = customers x bookings per customer, with drill-downs by city, since marketplaces are local and one city can be oversupplied while another starves.
+- Foundations: certified tables in a semantic layer, documented definitions, freshness stamp, an owner per metric."""
+study = "dashboard-design"
+
+[[questions]]
+id = "case-pricing-change"
+q = "The company raised subscription prices 10 percent for all customers in the US last month. Design the analysis to tell leadership whether it worked."
+level = "senior"
+kind = "design"
+rubric = [
+  "Defines success as net revenue or margin impact, balancing higher price against lost subscribers, not just revenue per user",
+  "Recognizes no randomized control exists and proposes a counterfactual (difference-in-differences vs unaffected markets, synthetic control, or time series forecast)",
+  "Measures effects on new subscriber conversion, existing subscriber churn, and downgrades, with appropriate time horizons",
+  "Names threats: seasonality, other launches, announcement effects, pull-forward of cancellations",
+  "Recommends future pricing tests (geo or new-user price tests) and reports results with uncertainty",
+]
+answer = """- Success: net revenue (or margin) over a meaningful horizon, since a 10 percent higher price is only a win if lost and unconverted subscribers cost less than that.
+- Counterfactual: no A/B test, so use difference-in-differences against markets without the change (for example Canada or the UK), checking parallel pre-trends; or synthetic control, or a pre-period forecast of the US.
+- Break impact down: new-user trial-to-paid conversion, existing-subscriber churn in the months after notice, downgrades to cheaper plans, and revenue per subscriber.
+- Horizon: churn often spikes at notice and at the first higher bill, then settles; track at least two or three billing cycles.
+- Threats: seasonality, other launches, competitor moves, people cancelling early in anticipation.
+- Report the estimate with a range and assumptions, and recommend future price tests on new users or by region."""
+study = "quasi-experiments"

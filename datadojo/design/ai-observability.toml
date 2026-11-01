@@ -1,0 +1,70 @@
+title = "Observability: Understanding What Happened"
+section = "ai-systems"
+order = 5
+kind = "lesson"
+difficulty = "medium"
+big_idea = "Evals answer 'did it work?'; observability answers 'why did it work or fail?', by tracing every stage of every request."
+summary = """When answer quality drops from 90% to 75%, "the AI got worse" is not a diagnosis. Something specific changed: retrieval, the prompt, the model, the data, latency, or an external API.
+
+**Observability** means capturing a **trace** for each request, with a span for every stage, its inputs, outputs, timing, cost and the versions involved, so you can follow one bad answer back to its cause and see trends across thousands of requests.
+
+The goal is to make the AI system **debuggable rather than mysterious**."""
+diagram = """flowchart LR
+  R[Request] --> QP[Query processing] --> E[Embedding] --> RT[Retrieval] --> RR[Reranking] --> L[LLM] --> S[Response]"""
+
+[[blocks]]
+heading = "A production trace"
+body = """```
+Request → Query processing → Embedding → Retrieval → Reranking → LLM → Response
+```
+For each stage, capture what it received, what it produced, how long it took, what it cost and which version ran. Tools: OpenTelemetry-based tracing, LangSmith, Langfuse, Arize Phoenix, MLflow Tracing, or your own spans in a log table."""
+
+[[blocks]]
+heading = "Important signals"
+body = """- **Latency:** p50, p95, p99. Averages hide the slow tail users actually feel.
+- **Cost:** input tokens, output tokens, cost per request.
+- **Quality:** eval scores on sampled traffic, user feedback, task completion.
+- **RAG:** retrieved documents, similarity scores, context size.
+- **Versioning:** model version, prompt version, retrieval/index version. Without these you can't correlate a drop with a change."""
+
+[[blocks]]
+heading = "Why this matters"
+body = """Suppose answer quality drops from 90% to 75%. Observability should let you determine whether:
+- **Retrieval changed?** Similarity scores fell, or different documents are being returned.
+- **Prompt changed?** The drop starts exactly at a prompt version deploy.
+- **Model changed?** The provider updated the model, or someone switched versions.
+- **Data became stale?** Retrieved documents have old timestamps.
+- **Latency increased?** Timeouts are truncating context or answers.
+- **External API failed?** Tool-call spans show errors.
+
+Segment by version, user group and query type: a global average often hides one broken slice."""
+
+key_points = [
+  "Evals = did it work; observability = why.",
+  "Trace every stage of a request with inputs, outputs, latency, cost and versions.",
+  "Watch p50/p95/p99 latency, token cost per request, quality signals and retrieval scores.",
+  "Version model, prompt and retrieval so changes can be correlated with quality shifts.",
+]
+common_mistakes = [
+  "Logging only the final answer, not retrieval and intermediate steps.",
+  "Tracking average latency instead of p95/p99.",
+  "Not recording prompt and model versions.",
+  "Logging full prompts with personal data without redaction.",
+]
+interview_questions = [
+  "Answer quality fell from 90% to 75% overnight. Walk me through the investigation.",
+  "What would you capture in a trace for a RAG request?",
+  "How do you monitor cost per request for an LLM product?",
+]
+
+[[quiz]]
+q = "Quality dropped exactly when a deploy went out. Which logged field lets you confirm the cause fastest?"
+options = ["Average latency", "Prompt and model version on each trace", "Total token count", "Number of users"]
+answer = 1
+why = "Versioned traces let you compare quality before and after a specific prompt or model change."
+
+[[quiz]]
+q = "Why track p95/p99 latency rather than the average?"
+options = ["It is cheaper", "Averages hide the slow tail that many users experience", "Providers only report p99", "It improves retrieval"]
+answer = 1
+why = "A fine average can hide that 1 in 20 requests takes 15 seconds."

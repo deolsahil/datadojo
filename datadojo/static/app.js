@@ -257,16 +257,25 @@ const dailyQuote = quotes => {
 };
 
 function heatmap(days) {
-  const today = new Date(), start = new Date(today);
-  start.setDate(today.getDate() - 52 * 7 - today.getDay());
-  let cells = '', i = 0;
-  for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1), i++) {
-    const key = dayKey(d), n = days[key] || 0;
-    const lvl = n === 0 ? '' : n < 3 ? 'l1' : n < 6 ? 'l2' : n < 10 ? 'l3' : 'l4';
-    cells += `<i class="${lvl}" style="--w:${Math.floor(i / 7)}" title="${key}: ${n} run${n === 1 ? '' : 's'}"></i>`;
+  const today = new Date(), cols = [];
+  let labels = '', cells = '', col = 1;
+  const pad = n => '<i class="pad"></i>'.repeat(n);
+  for (let k = -11; k <= 0; k++) {
+    const first = new Date(today.getFullYear(), today.getMonth() + k, 1);
+    const last = k ? new Date(today.getFullYear(), today.getMonth() + k + 1, 0) : today;
+    const weeks = Math.ceil((first.getDay() + last.getDate()) / 7);
+    labels += `<span style="grid-column:${col}">${first.toLocaleString('en', { month: 'short' })}</span>`;
+    cells += pad(first.getDay());
+    for (const d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+      const key = dayKey(d), n = days[key] || 0;
+      const lvl = n === 0 ? '' : n < 3 ? 'l1' : n < 6 ? 'l2' : n < 10 ? 'l3' : 'l4';
+      cells += `<i class="${lvl}" style="--w:${col + Math.floor((first.getDay() + d.getDate() - 1) / 7)}" data-tip="${d.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} · ${n ? `${n} run${n === 1 ? '' : 's'}` : 'no activity'}"></i>`;
+    }
+    cells += pad(weeks * 7 - first.getDay() - last.getDate()) + (k ? pad(7) : '');  // fill the last week, then the gap column
+    cols.push(`repeat(${weeks}, minmax(0, 1fr))`); col += weeks + 1;
   }
-  const months = [...Array(12)].map((_, k) => new Date(today.getFullYear(), today.getMonth() - 11 + k, 1).toLocaleString('en', { month: 'short' }));
-  return `<div class="months">${months.map(m => `<span>${m}</span>`).join('')}</div><div class="heat">${cells}</div>`;
+  const tpl = `grid-template-columns:${cols.join(' 4px ')}`;
+  return `<div class="months" style="${tpl}">${labels}</div><div class="heat" style="${tpl}">${cells}</div>`;
 }
 
 function patternTiles(cat, lang) {
@@ -411,13 +420,17 @@ async function workspace(id) {
         ${hints.length ? `<div class="hints"><div class="h">💡 Hints <button id="more-hint">Show a hint (${hints.length})</button></div><ol id="hint-list"></ol></div>` : ''}
         ${p.source_url ? `<div class="faint">Inspired by: <a href="${esc(p.source_url)}" target="_blank" rel="noreferrer" style="text-decoration:underline">${esc(new URL(p.source_url).hostname)}</a></div>` : ''}
       </div></section>
+      <div class="gutter" id="g1" title="Drag to resize · double-click to reset"></div>
       <section class="col"><div class="col-h"># Editor</div>
         <div class="toolbar"><select id="engine" title="Engine / version"></select>${p.function ? `<code>${esc(p.function)}()</code>` : ''}<span class="sp"></span>
           <button class="ghost" id="fs-dn">A-</button><span class="faint" id="fs">${fontSize}</span><button class="ghost" id="fs-up">A+</button>
           <button id="reset">Reset</button><button id="sol">Solution</button><button class="primary" id="run" title="Run tests (⌘/Ctrl + Enter)">▶ Run</button></div>
         <div id="editor-wrap"><div id="editor"></div><textarea id="fallback" spellcheck="false"></textarea></div>
-        <div id="out"><div class="faint">Test results will appear here. Run with ⌘/Ctrl + Enter.</div></div>
+        <div class="gutter h" id="g-out" title="Drag to resize · double-click to reset"></div>
+        <div id="out-box"><div class="col-h out-h"># Results<button class="out-x" id="out-x" title="Close results (Run opens them again)">✕</button></div>
+          <div id="out"><div class="faint">Test results will appear here. Run with ⌘/Ctrl + Enter.</div></div></div>
       </section>
+      <div class="gutter" id="g2" title="Drag to resize · double-click to reset"></div>
       <section class="col">
         <div class="coach-head"><div id="coach">${blob(coach.seed, { size: 58, live: true, cls: 'live' })}</div>
           <div><b>${coach.name}</b><div class="dim" style="font-size:11.5px">${coach.role}</div></div><span class="sp"></span>
@@ -443,6 +456,30 @@ async function workspace(id) {
   awake();
   $('#say').onfocus = () => gz && gz.lookAt($('#say'));
   $('#say').onblur = () => gz && gz.lookAt('pointer');
+
+  // resizable panes, remembered across problems
+  const layout = JSON.parse(localStorage.getItem('layout') || '{}'), cols = $('.cols');
+  const applyLayout = () => {
+    ['w1', 'w3'].forEach(k => layout[k] ? cols.style.setProperty('--' + k, layout[k] + 'px') : cols.style.removeProperty('--' + k));
+    $('#out-box').style.height = layout.out ? layout.out + 'px' : '';
+    localStorage.setItem('layout', JSON.stringify(layout));
+  };
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const gutter = (el, key, size) => {
+    el.onpointerdown = e => {
+      e.preventDefault(); el.setPointerCapture(e.pointerId); document.body.classList.add('dragging');
+      el.onpointermove = e => { layout[key] = size(e); applyLayout(); };
+      el.onpointerup = () => { el.onpointermove = null; document.body.classList.remove('dragging'); };
+    };
+    el.ondblclick = () => { delete layout[key]; applyLayout(); };
+  };
+  const box = () => cols.getBoundingClientRect(), MID = 340;
+  gutter($('#g1'), 'w1', e => clamp(e.clientX - box().left, 220, box().width - (layout.w3 || 260) - MID));
+  gutter($('#g2'), 'w3', e => clamp(box().right - e.clientX, 240, box().width - (layout.w1 || 220) - MID));
+  gutter($('#g-out'), 'out', e => { const c = $('#out-box').parentElement.getBoundingClientRect(); return clamp(c.bottom - e.clientY, 60, c.height - 160); });
+  applyLayout();
+  const showOut = on => { $('#out-box').hidden = $('#g-out').hidden = !on; };
+  $('#out-x').onclick = () => showOut(false);
 
   // timer
   const tick = setInterval(() => {
@@ -475,7 +512,7 @@ async function workspace(id) {
       if ($('#spark-go')) $('#spark-go').onclick = async () => { draw(await api('/api/setup/pyspark', {})); poll(); };
     };
     const poll = () => { const t = setInterval(async () => { const a = await api('/api/engines');
-      if (a.pyspark.length) { clearInterval(t); route(); } else draw(a.spark_install); }, 2500); cleanups.push(() => clearInterval(t)); };
+      if (a.pyspark.length) { clearInterval(t); route(); } else if (JSON.stringify(a.spark_install) !== JSON.stringify(all.spark_install)) draw((all = a).spark_install); }, 2500); cleanups.push(() => clearInterval(t)); };
     draw(all.spark_install);
     if (!['idle', 'error', 'done'].includes(all.spark_install.status)) poll();
   }
@@ -501,12 +538,23 @@ async function workspace(id) {
     $('#fs').textContent = fontSize; inst && inst.updateOptions({ fontSize }); };
   $('#fs-dn').onclick = () => setFont(fontSize - 1);
   $('#fs-up').onclick = () => setFont(fontSize + 1);
-  $('#reset').onclick = () => confirm('Replace your code with the starter?') && setCode(p.starter || '');
+  $('#reset').onclick = async () => await ask('Replace your code with the starter?', { ok: 'Replace', seed: coach.seed, mood: 'unsure' }) && setCode(p.starter || '');
+  let sawSolution = false;
   $('#sol').onclick = async () => {
     react('shy', 2500);
-    if (!confirm(`Peek at the reference solution? ${coach.name} thinks a hint might be enough!`)) return;
-    const r = await api(`/api/problems/${id}/solution`);
-    modal(`<h3>Reference solution</h3><pre>${esc(r.solution.trim())}</pre>`);
+    if (!await ask(`Peek at the reference solution? ${coach.name} thinks a hint might be enough!`,
+      { ok: 'Show solution', cancel: 'Keep trying', seed: coach.seed })) return;
+    const sol = (await api(`/api/problems/${id}/solution`)).solution.trim();
+    sawSolution = true;
+    modal(`<h3>Reference solution</h3>
+      <div class="sol-code"><button class="copy" id="sol-copy">Copy</button><pre>${esc(sol)}</pre></div>
+      <div class="lbl">Explanation</div>
+      <div class="sol-exp" id="sol-exp"><span class="dim"><span class="spinner"></span>${coach.name} is writing a walkthrough…</span></div>
+      <div class="sol-ask"><span class="dim">Still not clear?</span><button class="primary" id="sol-ask">Ask ${coach.name} about it</button></div>`);
+    $('#sol-copy').onclick = () => navigator.clipboard.writeText(sol).then(() => { $('#sol-copy').textContent = 'Copied ✓'; });
+    $('#sol-ask').onclick = () => { closeModal(); send("I've read the reference solution but don't fully understand it. Can you walk me through it?"); };
+    const e = await api('/api/explain', { id });
+    if ($('#sol-exp')) $('#sol-exp').innerHTML = e.error ? `<p class="fail">${esc(e.error)}</p>` : md(e.explanation);
   };
 
   // hints
@@ -549,7 +597,7 @@ async function workspace(id) {
     $('#chat').insertAdjacentHTML('beforeend', `<div class="line them" id="typing">${blob(coach.seed, { size: 30, mood: 'thinking' })}<div class="msg assistant"><span class="typing"><i></i><i></i><i></i></span></div></div>`);
     $('#chat').scrollTop = 1e9;
     status('thinking…', 'thinking');
-    const r = await api('/api/coach', { id, code: code(), result: last, stage: STAGES[stage][0],
+    const r = await api('/api/coach', { id, code: code(), result: last, stage: STAGES[stage][0], solution: sawSolution,
       messages: messages.filter(m => m.role !== 'sys').map(({ role, content }) => ({ role, content })) });
     status('listening', resting);
     say(r.reply || r.error, last?.passed ? 'happy' : 'idle');
@@ -560,6 +608,7 @@ async function workspace(id) {
 
   // run
   async function runTests() {
+    showOut(true);
     $('#run').disabled = true; $('#run').innerHTML = '<span class="spinner"></span>Running';
     status('watching…', 'thinking');
     $('#out').innerHTML = `<div class="dim"><span class="spinner"></span>Running${p.lang === 'pyspark' ? ' (Spark needs ~10s to start)' : ''}…</div>`;
@@ -817,23 +866,37 @@ async function designHome() {
   load();
   const d = await api('/api/design'), total = d.lessons.length, done = d.lessons.filter(l => l.done).length;
   const groups = [...new Set(d.sections.map(s => s.group))];
-  $('#app').innerHTML = `<div class="page enter"><a class="back" href="#/">← Home</a>
+  const count = s => { const ls = d.lessons.filter(l => l.section === s.id); return `${ls.filter(l => l.done).length}/${ls.length}`; };
+  $('#app').innerHTML = `<div class="ds-home enter">
+    <aside class="ds-side"><div class="kicker">Sections</div>
+      ${groups.map(g => `<div class="ds-side-g">${esc(g)}</div>` + d.sections.filter(s => s.group === g).map(s =>
+        `<button data-sec="${s.id}"><span>${esc(s.title)}</span><small>${count(s)}</small></button>`).join('')).join('')}</aside>
+    <div class="page"><a class="back" href="#/">← Home</a>
     <div class="list-head">${blob(CAST.sensei.seed, { size: 72, live: true, mood: done ? 'happy' : 'idle' })}
-      <div><div class="kicker" style="color:var(--acc2)">Industry level</div><h1 style="margin:4px 0">Data System Design</h1>
-      <div class="dim">From first principles to fully worked case studies: clarify, estimate, design, then defend the trade-offs, the way strong candidates do.</div></div></div>
+      <div><div class="kicker" style="color:var(--acc2)">Industry level</div><h1 style="margin:4px 0">System Design</h1>
+      <div class="dim">Data systems and production AI, from first principles to fully worked case studies: clarify, estimate, design, then defend the trade-offs, the way strong candidates do.</div></div></div>
     <div class="dim" style="display:flex;margin-top:22px;font-size:12px"><span>${done} of ${total} completed</span><span class="sp"></span><span>${total ? Math.round(100 * done / total) : 0}%</span></div>
     <div class="bar"><i style="width:${total ? 100 * done / total : 0}%"></i></div>
     ${total ? '' : `<div class="empty">${blob(CAST.sensei.seed, { size: 64, mood: 'thinking' })}<p>Lessons are being written. Check back soon!</p></div>`}
     ${groups.map(g => `<div class="section-title">${esc(g)}</div>` + d.sections.filter(s => s.group === g).map(s => {
       const ls = d.lessons.filter(l => l.section === s.id);
-      return `<div class="ds-section"><div class="ds-sec-head"><h3>${esc(s.title)}</h3><span class="dim">${esc(s.desc)}</span><span class="sp"></span>
+      return `<div class="ds-section" id="sec-${s.id}"><div class="ds-sec-head"><h3>${esc(s.title)}</h3><span class="dim">${esc(s.desc)}</span><span class="sp"></span>
         <span class="faint">${ls.filter(l => l.done).length}/${ls.length}</span></div>
         <div class="grid">${ls.map(l => `<a class="card tile ds-tile" href="#/design/${l.id}"><span class="check ${l.done ? 'done' : ''}">${l.done ? '✓' : ''}</span>
           <div class="t"><h4>${esc(l.title)}</h4><p>${esc(l.big_idea)}</p>
           <div class="ds-tags"><span class="tag ${l.kind === 'case_study' ? 'medium' : ''}">${l.kind === 'case_study' ? 'Case study' : 'Lesson'}</span>
           ${l.difficulty ? diffTag(l.difficulty) : ''}${(l.companies || []).slice(0, 2).map(c => `<span class="tag">${esc(c)}</span>`).join('')}</div></div></a>`).join('')}</div></div>`;
-    }).join('')).join('')}</div>`;
+    }).join('')).join('')}</div></div>`;
   follow($('.list-head svg'));
+  // left rail: jump to a section, and highlight the one you're reading
+  const mark = id => document.querySelectorAll('.ds-side [data-sec]').forEach(b => b.classList.toggle('on', b.dataset.sec === id));
+  let jumping = 0;  // a clicked section stays highlighted while we scroll to it (the last ones can't reach the top)
+  $('.ds-side').onclick = e => { const b = e.target.closest('[data-sec]'); if (!b) return;
+    mark(b.dataset.sec); jumping = Date.now() + 1000; $('#sec-' + b.dataset.sec).scrollIntoView({ behavior: 'smooth' }); };
+  const spy = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && Date.now() > jumping && mark(e.target.id.slice(4))),
+    { rootMargin: '-20% 0px -70% 0px' });
+  document.querySelectorAll('.ds-section').forEach(el => spy.observe(el));
+  cleanups.push(() => spy.disconnect());
 }
 
 async function designLesson(id) {
@@ -845,7 +908,7 @@ async function designLesson(id) {
   let messages = JSON.parse(localStorage.getItem(key) || '[]'), quizRight = 0, quizDone = 0;
   $('#app').innerHTML = `<div class="ds-wrap enter">
     <article class="ds-article">
-      <a class="back" href="#/design">← Data System Design</a>
+      <a class="back" href="#/design">← System Design</a>
       <div class="kicker" style="margin-top:14px;color:var(--acc2)">${d.kind === 'case_study' ? 'Case study' : 'Lesson'}</div>
       <h1>${esc(d.title)}</h1>
       <div class="ds-tags">${d.difficulty ? diffTag(d.difficulty) : ''}${(d.companies || []).map(c => `<span class="tag">${esc(c)}</span>`).join('')}</div>
@@ -1088,7 +1151,11 @@ async function setupPage() {
           <button class="primary" id="su-save" ${o.running && has ? '' : 'disabled'}>Use ${localModel} →</button></div>`);
       document.querySelectorAll('.su-model').forEach(b => b.onclick = () => { localModel = b.dataset.m; render(); });
       $('#su-back').onclick = () => { step = 1; render(); };
-      const refresh = async () => { st = await api('/api/setup'); if (step === 2 && path === 'local') render(); };
+      const refresh = async () => {
+        const next = await api('/api/setup');
+        if (JSON.stringify(next) === JSON.stringify(st)) return;  // unchanged: don't redraw (and replay animations)
+        st = next; if (step === 2 && path === 'local') render();
+      };
       $('#su-recheck').onclick = refresh;
       if ($('#su-pull')) $('#su-pull').onclick = async () => { await api('/api/setup/pull', { model: localModel }); refresh(); };
       if (!(o.running && has)) poll = setInterval(refresh, 2500);
@@ -1112,9 +1179,321 @@ async function setupPage() {
   render();
 }
 
+// ---------- interview ----------
+const LEVEL_INFO = { entry: ['Entry level', 'Fundamentals: explain the core ideas clearly and correctly.'],
+  mid: ['Mid level', 'More depth: trade-offs, failure modes and real scenarios.'],
+  senior: ['Senior', 'System design and judgment: defend decisions under follow-up.'] };
+const KIND_LABEL = { concept: 'Concept', scenario: 'Scenario', design: 'System design', behavioral: 'Behavioral' };
+const STATUS_ICON = { covered: ['✓', 'pass', 'Covered'], partial: ['~', 'partial', 'Partly'], missed: ['✗', 'fail', 'Missed'] };
+
+async function interviewHome() {
+  load();
+  const d = await api('/api/interview');
+  const title = id => d.tracks.find(t => t.id === id)?.title || id;
+  $('#app').innerHTML = `<div class="page enter"><a class="back" href="#/">← Home</a>
+    <div class="list-head">${blob(CAST.sensei.seed, { size: 72, live: true, mood: 'happy' })}
+      <div><div class="kicker" style="color:var(--acc2)">Interviews</div><h1 style="margin:4px 0">Practice like it's the real thing</h1>
+      <div class="dim">Pick a role and a level, then answer out loud or by typing. Sensei, your head coach, grades every answer against what a strong answer covers, shows what to improve, and gives you a suggested answer.</div></div></div>
+    <div class="grid two iv-tracks">${d.tracks.map((t, i) => `<a class="card game-card" href="#/interview/${t.id}">
+      <div class="gc-top"><span class="gc-n">0${i + 1}</span>${blob(CAST[['pyspark', 'sensei', 'python', 'sql'][i % 4]].seed, { size: 54 })}</div>
+      <div class="kicker">Solo · guided</div><h3>${esc(t.title)} Interview</h3><p class="dim">${esc(t.desc)}</p>
+      <div class="gc-foot"><span>${t.count ? `<b>${t.count}</b> questions · ${t.topics.length} topics` : 'Questions coming soon'}</span><span class="sp"></span><button class="primary">Start</button></div></a>`).join('')}</div>
+    <div class="section-title iv-hist-head">Past interviews${d.history.length ? '<button class="ghost" id="iv-clear">Clear all</button>' : ''}</div>
+    ${d.history.length ? `<div class="iv-history">${d.history.map(h => `<a class="card iv-hist" href="#/interview/review/${h.id}" data-id="${h.id}">
+      ${h.score != null ? ring(h.score, 100, 40, h.score >= 70 ? 'var(--easy)' : h.score >= 45 ? 'var(--medium)' : 'var(--hard)') : '<span class="faint">-</span>'}
+      <div><b>${esc(title(h.track))}</b> · ${esc(LEVEL_INFO[h.level]?.[0] || h.level)} · ${h.mode === 'drill' ? 'Drill' : 'Mock interview'}
+      <div class="faint">${esc(h.ts)} UTC</div></div><span class="sp"></span>
+      <button class="ghost iv-del" data-del="${h.id}" title="Delete this interview" aria-label="Delete this interview">✕</button><span class="go">→</span></a>`).join('')}</div>`
+      : `<div class="faint">No interviews yet. Your reports will show up here.</div>`}</div>`;
+  if ($('#iv-clear')) $('#iv-clear').onclick = async () => {
+    if (!await ask(`Delete all ${d.history.length} past interviews? Their reports can't be recovered.`, { ok: 'Delete all', seed: CAST.sensei.seed, mood: 'unsure' })) return;
+    await api('/api/interview/delete', { all: true }); route();
+  };
+  if ($('.iv-history')) $('.iv-history').onclick = async e => {
+    const b = e.target.closest('[data-del]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();  // the button sits inside the row's link
+    if (!await ask('Delete this interview and its report?', { ok: 'Delete', seed: CAST.sensei.seed, mood: 'unsure' })) return;
+    await api('/api/interview/delete', { session: +b.dataset.del });
+    const row = b.closest('.iv-hist'); row.remove();
+    if (!$('.iv-hist')) route();
+  };
+}
+
+function voiceCallout(voice, onReady) {  // one-time local speech-to-text setup
+  const box = document.createElement('div');
+  const draw = v => {
+    box.className = 'callout iv-voice';
+    box.innerHTML = v.ready ? '' : `<b>🎙 Answer out loud (optional)</b>
+      <p class="dim">Voice answers are transcribed on this computer with Whisper, so audio never leaves it. One-time download, about 300 MB.</p>
+      ${v.status === 'error' ? `<p class="fail">${esc(v.error)}</p>` : ''}
+      ${['idle', 'error', 'done'].includes(v.status) ? '<button id="voice-go">Set up voice answers</button>'
+        : `<p><span class="spinner"></span>${esc(v.status)}… a minute or two.</p>`}`;
+    if (v.ready) { box.remove(); onReady(); }
+    if ($('#voice-go', box)) $('#voice-go', box).onclick = async () => { draw(await api('/api/setup/whisper', {})); poll(); };
+  };
+  const poll = () => { const t = setInterval(async () => { const v = (await api('/api/interview')).voice; draw(v); if (v.ready || v.status === 'error') clearInterval(t); }, 2500);
+    cleanups.push(() => clearInterval(t)); };
+  draw(voice);
+  if (!['idle', 'error', 'done'].includes(voice.status) && !voice.ready) poll();
+  return box;
+}
+
+async function interviewTrack(tid) {
+  load();
+  const t = await api('/api/interview/' + tid);
+  if (t.error) return $('#app').innerHTML = '<div class="empty">Track not found</div>';
+  let level = localStorage.getItem('iv-level') || 'mid';
+  $('#app').innerHTML = `<div class="page enter"><a class="back" href="#/interview">← Interviews</a>
+    <div class="kicker" style="color:var(--acc2);margin-top:18px">Solo interview</div><h1 style="margin:4px 0">${esc(t.title)} interview with Sensei</h1>
+    <div class="dim">${esc(t.desc)}</div>
+    ${t.count ? '' : `<div class="callout warn" style="margin-top:18px">Questions for this track are still being written.</div>`}
+    <div class="iv-step">1. Choose a level</div>
+    <div class="iv-levels">${Object.entries(LEVEL_INFO).map(([k, [name, desc]]) => `<button class="card iv-opt" data-l="${k}"><b>${name}</b><span class="dim">${desc}</span></button>`).join('')}</div>
+    <div class="iv-step">2. Mock interview</div>
+    <div class="card iv-mock"><div><b>Six questions, like the real thing</b><div class="dim">Concepts, scenarios and design at your level, each graded, with a report at the end.</div></div>
+      <span class="sp"></span><button class="primary" id="iv-start" ${t.count ? '' : 'disabled'}>Start interview</button></div>
+    <div class="iv-step">Or drill one topic</div>
+    <div class="chips iv-topics">${t.topics.map(x => `<button data-t="${x.id}" title="${esc(x.desc)}">${esc(x.title)} <span class="faint">${x.count}</span></button>`).join('')}</div>
+    <div class="iv-step">Study</div>
+    <a class="card tile" href="#/interview/${tid}/cheatsheet" ${t.sheet ? '' : 'style="pointer-events:none;opacity:.5"'}><span style="font-size:22px">📒</span>
+      <div class="t"><h4>${esc(t.title)} cheatsheet</h4><p>${t.sheet} sections in plain English, with how it works, real-world use and the interview-ready details. Every question links here.</p></div><span class="go">→</span></a>
+    <div id="iv-voice-slot"></div></div>`;
+  const mark = () => document.querySelectorAll('.iv-opt').forEach(b => b.classList.toggle('on', b.dataset.l === level));
+  document.querySelectorAll('.iv-opt').forEach(b => b.onclick = () => { level = b.dataset.l; localStorage.setItem('iv-level', level); mark(); });
+  mark();
+  $('#iv-start').onclick = () => location.hash = `#/interview/${tid}/mock/${level}`;
+  $('.iv-topics').onclick = e => { const b = e.target.closest('[data-t]'); if (b) location.hash = `#/interview/${tid}/drill/${level}/${b.dataset.t}`; };
+  if (!t.voice.ready) $('#iv-voice-slot').append(voiceCallout(t.voice, () => {}));
+}
+
+function sheetSection(s) {
+  return `<section class="card cs-sec" id="cs-${s.id}"><div class="kicker">${esc(s.group)}</div><h2>${esc(s.title)}</h2>
+    ${s.plain ? `<div class="cs-plain"><div class="lbl">In plain English</div>${inline(s.plain)}</div>` : ''}
+    ${s.how || s.uses ? `<div class="cs-cols">${s.how ? `<div><div class="lbl">How it works</div><ol class="cs-how">${s.how.map(x => `<li>${inline(x)}</li>`).join('')}</ol></div>` : ''}
+      ${s.uses ? `<div><div class="lbl">Real-world use</div><ul class="cs-uses">${s.uses.map(x => `<li>${inline(x)}</li>`).join('')}</ul></div>` : ''}</div>` : ''}
+    ${s.picture ? `<div class="cs-pic"><div class="lbl">Picture it</div>${inline(s.picture)}</div>` : ''}
+    ${s.diagram ? `<div class="mermaid-src">${esc(s.diagram)}</div>` : ''}
+    ${s.body ? `<div class="cs-body">${md(s.body)}</div>` : ''}</section>`;
+}
+
+async function interviewCheatsheet(tid, focus) {
+  load();
+  const d = await api(`/api/interview/${tid}/cheatsheet`);
+  if (d.error) return $('#app').innerHTML = '<div class="empty">Cheatsheet not found</div>';
+  const groups = [...new Set(d.sheet.map(s => s.group))];
+  $('#app').innerHTML = `<div class="ds-home enter">
+    <aside class="ds-side"><div class="kicker">Sections</div>
+      ${groups.map(g => `<div class="ds-side-g">${esc(g)}</div>` + d.sheet.filter(s => s.group === g).map(s =>
+        `<button data-sec="${s.id}"><span>${esc(s.title)}</span></button>`).join('')).join('')}</aside>
+    <div class="page"><a class="back" href="#/interview/${tid}">← ${esc(d.title)} interview</a>
+      <div class="kicker" style="color:var(--acc2);margin-top:18px">Cheatsheet</div><h1 style="margin:4px 0">${esc(d.title)}</h1>
+      <div class="dim">Everything the interview asks about, explained simply first and then in interview-ready depth.</div>
+      ${d.sheet.length ? d.sheet.map(sheetSection).join('') : '<div class="empty">Being written. Check back soon!</div>'}</div></div>`;
+  const mark = id => document.querySelectorAll('.ds-side [data-sec]').forEach(b => b.classList.toggle('on', b.dataset.sec === id));
+  let jumping = 0;
+  $('.ds-side').onclick = e => { const b = e.target.closest('[data-sec]'); if (!b) return;
+    mark(b.dataset.sec); jumping = Date.now() + 1000; $('#cs-' + b.dataset.sec).scrollIntoView({ behavior: 'smooth' }); };
+  const spy = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && Date.now() > jumping && mark(e.target.id.slice(3))),
+    { rootMargin: '-20% 0px -70% 0px' });
+  document.querySelectorAll('.cs-sec').forEach(el => spy.observe(el));
+  cleanups.push(() => spy.disconnect());
+  renderDiagrams($('#app'));
+  if (focus && $('#cs-' + focus)) { mark(focus); jumping = Date.now() + 1000; requestAnimationFrame(() => $('#cs-' + focus).scrollIntoView()); }
+}
+
+function gradeView(g) {
+  if (!g) return '';
+  const rubric = g.rubric_points.map((p, i) => {
+    const r = g.rubric?.[i], [icon, cls, label] = STATUS_ICON[r?.status] || ['•', 'faint', ''];
+    return `<li class="iv-pt ${cls}"><span class="iv-ico" title="${label}">${icon}</span><div>${inline(p)}${r?.note ? `<div class="faint">${inline(r.note)}</div>` : ''}</div></li>`;
+  }).join('');
+  const s = g.stats || {};
+  return `<div class="iv-grade">
+    ${g.error ? `<div class="callout warn">${esc(g.error)}</div>`
+      : `<div class="iv-score">${ring(g.score, 10, 64, g.score >= 7 ? 'var(--easy)' : g.score >= 4 ? 'var(--medium)' : 'var(--hard)')}
+        <div><b style="font-size:16px">${g.score >= 8 ? 'Strong answer' : g.score >= 6 ? 'Good, with gaps' : g.score >= 4 ? 'Partly there' : 'Needs work'}</b>
+        ${g.structure ? `<div class="dim">${inline(g.structure)}</div>` : ''}</div></div>`}
+    <div class="lbl">What a strong answer covers</div><ul class="iv-rubric">${rubric}</ul>
+    ${g.strengths?.length ? `<div class="lbl">What you did well</div><ul>${g.strengths.map(x => `<li>${inline(x)}</li>`).join('')}</ul>` : ''}
+    ${g.improve?.length ? `<div class="lbl">What to improve</div><ul class="iv-improve">${g.improve.map(x => `<li>${inline(x)}</li>`).join('')}</ul>` : ''}
+    ${s.notes?.length || s.wpm ? `<div class="lbl">Delivery</div><div class="iv-stats faint">${s.words} words${s.wpm ? ` · ${s.wpm} words/min` : ''}${Object.keys(s.fillers || {}).length ? ` · fillers: ${Object.entries(s.fillers).map(([k, n]) => `${esc(k)} ×${n}`).join(', ')}` : ''}</div>
+      ${s.notes.length ? `<ul>${s.notes.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}` : ''}
+    <details class="iv-model"><summary>Suggested answer</summary>${md(g.answer)}</details></div>`;
+}
+
+async function interviewSession(tid, mode, level, topic) {
+  load();
+  const [t, start] = await Promise.all([api('/api/interview/' + tid), api('/api/interview/start', { track: tid, level, mode, topic })]);
+  if (t.error || !start.questions?.length) return $('#app').innerHTML = `<div class="empty">No questions here yet. <a href="#/interview/${tid}" style="text-decoration:underline">Back</a></div>`;
+  const qs = start.questions, items = [];
+  let i = 0, secs = 0, spoken = 0, voiceReady = t.voice.ready, rec = null;
+  const tick = setInterval(() => { secs++; const c = $('#iv-clock'); if (c) c.textContent = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`; }, 1000);
+  cleanups.push(() => { clearInterval(tick); if (rec && rec.state !== 'inactive') { rec.onstop = null; rec.stop(); } rec?.stream?.getTracks().forEach(x => x.stop()); });
+
+  const finish = async () => {
+    if (!items.length) return location.hash = `#/interview/${tid}`;
+    const r = await api('/api/interview/finish', { track: tid, level, mode, topic, items });
+    location.hash = `#/interview/review/${r.id}`;
+  };
+
+  const draw = () => {
+    const q = qs[i], it = items[i];
+    secs = 0; spoken = 0;
+    $('#app').innerHTML = `<div class="page iv-page enter">
+      <div class="iv-bar"><span class="kicker">${mode === 'drill' ? `Drill · ${esc(q.topic_title)}` : `${KIND_LABEL[q.kind]} question`} · ${i + 1} of ${qs.length}</span>
+        <span class="iv-dots">${qs.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</span><span class="sp"></span>
+        <span class="faint">⏱ <span id="iv-clock">00:00</span></span><button class="ghost" id="iv-end">${mode === 'drill' ? 'Finish drill' : 'End interview'}</button></div>
+      <div class="card iv-card">
+        <div class="iv-q">${blob(CAST.sensei.seed, { size: 54, live: true, cls: 'live', mood: it?.grade ? (it.grade.score >= 7 ? 'love' : it.grade.score >= 4 ? 'happy' : 'unsure') : 'idle' })}
+          <div><div class="faint" style="font-size:11px">${esc(LEVEL_INFO[q.level][0])} · ${esc(q.topic_title)} · ${KIND_LABEL[q.kind]}</div><h2>${esc(q.q)}</h2></div></div>
+        <textarea id="iv-ans" placeholder="Answer in your own words, like you're speaking to an interviewer. Type here, or press the mic and talk." ${it?.grade ? 'readonly' : ''}>${esc(it?.answer || '')}</textarea>
+        <div class="iv-ctrl" id="iv-ctrl"></div>
+        <div id="iv-mic-msg"></div>
+        <div id="iv-result">${it?.grade ? gradeView(it.grade) : ''}</div>
+        ${it?.grade && it.grade.study ? `<button class="ghost" id="iv-study">📒 Study this in the cheatsheet</button>` : ''}
+      </div></div>`;
+    $('#iv-end').onclick = async () => { if (items.length || await ask('End now? Nothing has been graded yet.', { ok: 'End', seed: CAST.sensei.seed })) finish(); };
+    if ($('#iv-study')) $('#iv-study').onclick = async () => {
+      const d = await api(`/api/interview/${tid}/cheatsheet`), s = d.sheet.find(x => x.id === it.grade.study);
+      if (s) { modal(sheetSection(s)); renderDiagrams($('#modal-body')); }
+    };
+    controls();
+  };
+
+  const controls = () => {
+    const it = items[i], last = i === qs.length - 1;
+    if (it?.grade) {
+      $('#iv-ctrl').innerHTML = `<button id="iv-retry">Try again</button><span class="sp"></span>
+        <button class="primary" id="iv-next">${last ? (mode === 'drill' ? 'Finish drill' : 'See your report') : 'Next question →'}</button>`;
+      $('#iv-retry').onclick = () => { items[i] = { ...it, grade: null }; draw(); $('#iv-ans').focus(); };
+      $('#iv-next').onclick = () => { if (last) finish(); else { i++; draw(); } };
+      return;
+    }
+    const mic = localStorage.getItem('iv-mic');
+    $('#iv-ctrl').innerHTML = `${mic === 'off' ? `<button class="ghost" id="iv-mic-again" title="Use your voice instead of typing">🎙 Try microphone again</button>`
+        : `<button id="iv-mic" class="iv-mic">🎙 Speak</button>`}
+      <span class="faint" id="iv-rec-state"></span><span class="sp"></span>
+      <button class="ghost" id="iv-skip">Skip</button><button class="primary" id="iv-submit">Submit answer</button>`;
+    if ($('#iv-mic-again')) $('#iv-mic-again').onclick = () => { localStorage.removeItem('iv-mic'); controls(); $('#iv-mic').click(); };
+    if ($('#iv-mic')) $('#iv-mic').onclick = toggleMic;
+    $('#iv-skip').onclick = () => { items[i] = { ...qs[i], answer: '', grade: null, skipped: true }; if (i === qs.length - 1) finish(); else { i++; draw(); } };
+    $('#iv-submit').onclick = submit;
+    $('#iv-ans').onkeydown = e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit(); };
+  };
+
+  const typeInstead = why => {  // the microphone was declined: fall back to typing, gently
+    localStorage.setItem('iv-mic', 'off');
+    controls();
+    $('#iv-mic-msg').innerHTML = `<div class="callout iv-note">${esc(why)} No problem: type your answer in the box above, Sensei grades it the same way.</div>`;
+    $('#iv-ans').focus();
+  };
+
+  async function toggleMic() {
+    if (rec && rec.state === 'recording') return rec.stop();
+    if (!voiceReady) {
+      const box = voiceCallout((await api('/api/interview')).voice, () => { voiceReady = true; $('#iv-mic-msg').innerHTML = ''; });
+      $('#iv-mic-msg').replaceChildren(box);
+      return;
+    }
+    if (localStorage.getItem('iv-mic') !== 'on') {
+      const yes = await ask('Sensei would like to hear your answer. Allow the microphone? Your recording is transcribed on this computer and never uploaded.',
+        { ok: 'Allow microphone', cancel: 'Type instead', seed: CAST.sensei.seed, mood: 'happy' });
+      if (!yes) return typeInstead('You chose to type.');
+    }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { return typeInstead(e.name === 'NotAllowedError' ? 'Microphone access was blocked.' : "Couldn't find a microphone."); }
+    localStorage.setItem('iv-mic', 'on');
+    const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find(x => window.MediaRecorder?.isTypeSupported?.(x)) || '';
+    const chunks = [], t0 = Date.now(), before = $('#iv-ans').value.trim();
+    const send = async b => { try { return await (await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': b.type }, body: b })).json(); }
+      catch { return { error: "Couldn't reach DataDojo." }; } };
+    // live preview: Whisper works on whole recordings, so re-transcribe everything so far about once a second
+    // (one request in flight at a time); the final pass on Stop replaces it with the exact text
+    let busy = false;
+    const preview = async () => {
+      if (busy || rec.state !== 'recording') return;
+      busy = true;
+      const r = await send(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }));
+      busy = false;
+      if (rec.state === 'recording' && r.text && $('#iv-ans')) $('#iv-ans').value = (before + ' ' + r.text).trim();
+    };
+    rec = new MediaRecorder(stream, type ? { mimeType: type } : {});
+    rec.ondataavailable = e => { if (e.data.size) { chunks.push(e.data); preview(); } };
+    $('#iv-ans').readOnly = true;
+    const tickRec = setInterval(() => { if ($('#iv-rec-state')) $('#iv-rec-state').textContent = `● recording ${Math.round((Date.now() - t0) / 1000)}s · press Stop when done`; }, 500);
+    rec.onstop = async () => {
+      clearInterval(tickRec); stream.getTracks().forEach(x => x.stop());
+      $('#iv-mic').classList.remove('on'); $('#iv-mic').textContent = '🎙 Speak'; $('#iv-mic').disabled = true;
+      $('#iv-rec-state').innerHTML = '<span class="spinner"></span>transcribing…';
+      const r = await send(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }));
+      if (!$('#iv-ans')) return;
+      $('#iv-mic').disabled = false; $('#iv-rec-state').textContent = ''; $('#iv-ans').readOnly = false;
+      if (r.error) { $('#iv-ans').value = before; return void ($('#iv-mic-msg').innerHTML = `<div class="callout warn">${esc(r.error)}</div>`); }
+      spoken += r.seconds || 0;
+      const a = $('#iv-ans'); a.value = (before + ' ' + r.text).trim();
+      $('#iv-rec-state').textContent = 'Check the text, fix anything misheard, then submit.';
+    };
+    rec.start(1000);  // a chunk every second feeds the live preview
+    $('#iv-mic').classList.add('on'); $('#iv-mic').textContent = '■ Stop'; $('#iv-mic-msg').innerHTML = '';
+  }
+
+  async function submit() {
+    if (rec && rec.state === 'recording') return;
+    const answer = $('#iv-ans').value.trim();
+    if (!answer) return $('#iv-ans').focus();
+    $('#iv-submit').disabled = true; $('#iv-ans').readOnly = true;
+    $('#iv-result').innerHTML = `<div class="dim iv-wait"><span class="spinner"></span>Sensei is reviewing your answer…</div>`;
+    const grade = await api('/api/interview/grade', { track: tid, id: qs[i].id, answer, seconds: spoken || null });
+    items[i] = { ...qs[i], answer, grade, time: secs };
+    draw();
+  }
+  draw();
+}
+
+async function interviewReview(id) {
+  load();
+  const [d, cat] = await Promise.all([api('/api/interview/session/' + id), api('/api/interview')]);
+  if (d.error) return $('#app').innerHTML = '<div class="empty">Interview not found</div>';
+  const t = cat.tracks.find(x => x.id === d.track) || { title: d.track }, r = d.report;
+  $('#app').innerHTML = `<div class="page enter"><a class="back" href="#/interview">← Interviews</a>
+    <div class="card iv-report">
+      ${r.score != null ? ring(r.score, 100, 96, r.score >= 70 ? 'var(--easy)' : r.score >= 45 ? 'var(--medium)' : 'var(--hard)') : ''}
+      <div><div class="kicker">Interview report</div><h1 style="margin:4px 0">${esc(t.title)} · ${esc(LEVEL_INFO[d.level]?.[0] || d.level)}</h1>
+        <div class="dim">${d.mode === 'drill' ? 'Topic drill' : 'Mock interview'} · ${r.answered} of ${r.total} answered and graded · ${esc(d.ts)} UTC</div></div>
+      <span class="sp"></span>${blob(CAST.sensei.seed, { size: 80, live: true, mood: r.score >= 70 ? 'love' : r.score >= 45 ? 'happy' : 'unsure' })}</div>
+    ${r.fixes.length ? `<div class="section-title">Your top things to work on</div><ol class="card iv-fixes">${r.fixes.map(x => `<li>${inline(x)}</li>`).join('')}</ol>` : ''}
+    ${r.weak_topics.length ? `<div class="section-title">Weakest topics</div><div class="chips">${r.weak_topics.map(w => `<span class="tag">${esc(w.topic)} · ${w.score}/10</span>`).join(' ')}</div>` : ''}
+    <div class="section-title">Question by question</div>
+    ${d.items.map((it, k) => `<details class="card iv-item" ${k ? '' : 'open'}><summary><b>${k + 1}.</b> ${esc(it.q)}
+      <span class="sp"></span>${it.grade?.score != null ? `<span class="tag ${it.grade.score >= 7 ? 'easy' : it.grade.score >= 4 ? 'medium' : 'hard'}">${it.grade.score}/10</span>` : `<span class="tag">${it.skipped ? 'skipped' : 'not graded'}</span>`}</summary>
+      ${it.answer ? `<div class="lbl">Your answer</div><p class="iv-your">${esc(it.answer)}</p>` : ''}${gradeView(it.grade)}</details>`).join('')}
+    <div class="row-end" style="margin-top:20px"><button class="ghost" id="iv-del-one">Delete this interview</button>
+      <a href="#/interview/${d.track}/cheatsheet"><button>📒 Open the cheatsheet</button></a>
+      <a href="#/interview/${d.track}"><button class="primary">Practice again</button></a></div></div>`;
+  $('#iv-del-one').onclick = async () => {
+    if (!await ask('Delete this interview and its report?', { ok: 'Delete', seed: CAST.sensei.seed, mood: 'unsure' })) return;
+    await api('/api/interview/delete', { session: d.id }); location.hash = '#/interview';
+  };
+  if (r.score >= 80) confetti($('.iv-report'));
+}
+
 // ---------- modal + router ----------
-function modal(html) { $('#modal-body').innerHTML = html; $('#modal').hidden = false; }
-function closeModal() { $('#modal').hidden = true; }
+let onModalClose = null;
+function modal(html) { onModalClose = null; $('.modal-box').className = 'modal-box'; $('#modal-body').innerHTML = html; $('#modal').hidden = false; }
+function closeModal() { $('#modal').hidden = true; const f = onModalClose; onModalClose = null; f && f(); }
+// themed replacement for confirm(); resolves false on Cancel, ✕, Esc or a click outside
+function ask(text, { ok = 'OK', cancel = 'Cancel', seed, mood = 'shy' } = {}) {
+  return new Promise(res => {
+    modal(`<div class="ask">${seed ? blob(seed, { size: 64, mood }) : ''}<p>${esc(text)}</p>
+      <div class="row"><button id="ask-no">${esc(cancel)}</button><button class="primary" id="ask-ok">${esc(ok)}</button></div></div>`);
+    $('.modal-box').classList.add('narrow');
+    onModalClose = () => res(false);
+    $('#ask-no').onclick = closeModal;
+    $('#ask-ok').onclick = () => { res(true); closeModal(); };
+    $('#ask-ok').focus();
+  });
+}
 $('#modal-x').onclick = closeModal;
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
@@ -1124,28 +1503,56 @@ async function setupDone() {
   if (!setupKnown) setupKnown = (await api('/api/setup')).settings.setup_done;
   return setupKnown;
 }
+// The browser can't restore scroll itself: the page is empty until its data loads, so it lands at the top and
+// then jumps back down later. We restore it in the same frame the page renders instead.
+history.scrollRestoration = 'manual';
+let firstRoute = true;
+addEventListener('pagehide', () => sessionStorage.setItem('scroll:' + location.hash, scrollY));
 async function route() {
   cleanups.forEach(f => f()); cleanups = [];
   closeModal();
   await blobReady;
-  let [, page, arg] = location.hash.replace(/^#/, '').split('/');
+  let [, page, arg, ...rest] = location.hash.replace(/^#/, '').split('/');
   if (page !== 'setup' && !(await setupDone())) { location.replace('#/setup'); page = 'setup'; }
-  document.body.classList.toggle('ws', page === 'p');
-  document.body.classList.toggle('setup-mode', page === 'setup');
+  const swap = new MutationObserver(() => {  // runs right after the page writes #app, before the browser paints
+    swap.disconnect();
+    document.body.classList.toggle('ws', page === 'p');
+    document.body.classList.toggle('setup-mode', page === 'setup');
+    // a refresh reopens where you left off; any other navigation starts at the top
+    window.scrollTo(0, firstRoute ? +sessionStorage.getItem('scroll:' + location.hash) || 0 : 0);
+    firstRoute = false;
+  });
+  swap.observe($('#app'), { childList: true });
+  cleanups.push(() => swap.disconnect());
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('on',
-    a.dataset.nav === (page === 'lang' ? arg : page === 'design' || page === 'games' ? page : page ? '' : 'home')));
-  window.scrollTo(0, 0);
+    a.dataset.nav === (page === 'lang' ? arg : ['design', 'games', 'interview'].includes(page) ? page : page ? '' : 'home')));
+  document.querySelectorAll('.dd').forEach(dd => { dd.classList.toggle('on', !!dd.querySelector('.dd-menu a.on')); dd.classList.remove('open'); });
   if (page === 'setup') await setupPage();
   else if (page === 'p') await workspace(arg);
   else if (page === 'feedback') await feedbackPage();
   else if (page === 'design') await (arg ? designLesson(arg) : designHome());
   else if (page === 'games') await (arg ? gamePlay(arg) : gamesHome());
+  else if (page === 'interview') await (!arg ? interviewHome() : arg === 'review' ? interviewReview(rest[0])
+    : rest[0] === 'cheatsheet' ? interviewCheatsheet(arg, rest[1]) : ['mock', 'drill'].includes(rest[0]) ? interviewSession(arg, rest[0], rest[1] || 'mid', rest[2])
+    : interviewTrack(arg));
   else if (page === 'lang' && LANGS[arg]) await langPage(arg);
   else if (page === 'pattern' || page === 'list') await problemList(page, arg);
   else await home();
   stagger($('#app')); countUp($('#app'));
 }
 window.onhashchange = route;
+// themed tooltip for anything with data-tip (heatmap days)
+const tip = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'tip', hidden: true }));
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest('[data-tip]'); tip.hidden = !t; if (!t) return;
+  const r = t.getBoundingClientRect(); tip.textContent = t.dataset.tip;
+  tip.style.left = r.left + r.width / 2 + 'px'; tip.style.top = r.top + 'px';
+});
+document.querySelectorAll('.dd-btn').forEach(b => b.onclick = () => {  // click/tap; hover is CSS
+  const dd = b.parentElement, open = !dd.classList.contains('open');
+  document.querySelectorAll('.dd').forEach(x => x.classList.remove('open')); dd.classList.toggle('open', open);
+});
+document.addEventListener('click', e => { if (!e.target.closest('.dd')) document.querySelectorAll('.dd').forEach(x => x.classList.remove('open')); });
 renderThemeToggle();
 blobReady.then(renderMe);
 api('/api/version').then(v => { if (v.update) $('#nav-update').outerHTML = `<a class="pill-update" href="${esc(v.url)}" target="_blank" rel="noreferrer"

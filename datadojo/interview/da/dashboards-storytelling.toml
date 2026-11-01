@@ -1,0 +1,81 @@
+title = "Dashboards and Storytelling"
+order = 6
+desc = "Choosing charts, designing dashboards for an audience, presenting insights and data caveats."
+
+[[questions]]
+id = "dash-chart-choice"
+q = "How do you choose which chart to use? Name some charts you avoid or use carefully, and why."
+level = "entry"
+kind = "concept"
+rubric = [
+  "Starts from the question being answered (trend, comparison, composition, distribution, relationship)",
+  "Maps correctly: line for trends over time, bar for comparing categories, histogram or box plot for distributions, scatter for relationships",
+  "Says bar charts should start at zero; truncated axes exaggerate differences",
+  "Names a chart to use carefully with a reason: pie with many slices, dual axes, 3D charts",
+  "Mentions using a takeaway title and highlighting the key data with colour",
+]
+answer = """- Start from the question, not the chart type.
+- Trend over time: line chart. Comparing categories: bar chart, sorted. Distribution: histogram or box plot. Relationship between two numbers: scatter plot. One headline number: a big number with a comparison to last period or target.
+- Bar charts must start at zero; a truncated axis makes a 2 percent difference look like 2x.
+- Use carefully: pie charts beyond two or three slices (people compare angles badly), dual-axis charts (you can make any two lines look related), 3D effects (distort size).
+- Title with the takeaway ('Mobile conversion fell 12 percent after the October release'), and use one highlight colour for what matters with the rest in grey."""
+study = "chart-choice"
+
+[[questions]]
+id = "dash-store-manager"
+q = "Design a daily dashboard for grocery store managers. What would you put on it and how would you lay it out?"
+level = "entry"
+kind = "design"
+rubric = [
+  "Starts from the audience and the decisions they make daily (staffing, restocking, waste, customer issues)",
+  "Picks a small set of relevant metrics such as sales vs target, out-of-stocks, shrink or waste, labour hours vs plan, checkout wait time",
+  "Gives every metric a comparison (yesterday, same day last year, target)",
+  "Lays out top-down: headline KPIs, then trends, then actionable lists or drill-downs (for example top out-of-stock items)",
+  "Mentions data freshness, simple filters (store, department, date), and mobile or quick-glance usability",
+]
+answer = """- Audience: a busy store manager with a few minutes in the morning, deciding staffing, restocking, markdowns and what to fix today.
+- Headline row: yesterday's sales vs target and vs same day last year, transactions, average basket, labour hours vs plan.
+- Trends: sales by day for the last 4 weeks, by department, so they can spot a sliding category.
+- Action lists: top out-of-stock items, items near expiry to mark down, departments with high waste or shrink, checkout wait time peaks by hour to set staffing.
+- Every number has a comparison and a red/green status against target.
+- Filters: store (for district managers), department, date. Show the last refresh time; design for a tablet and a two-minute read."""
+study = "dashboard-design"
+
+[[questions]]
+id = "dash-exec-presentation"
+q = "You have 10 minutes with a non-technical VP to present the results of a churn analysis. How do you structure it?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "Leads with the answer and recommendation first (pyramid / bottom line up front), not the methodology",
+  "Supports with two or three key findings, each with one simple chart",
+  "Quantifies impact in business terms (customers, revenue, dollars at risk)",
+  "States caveats and confidence plainly without jargon",
+  "Ends with a clear ask or decision and next steps",
+]
+answer = """- Open with the answer: 'Most churn happens in the first 60 days among customers who never set up auto-pay. Fixing onboarding could save about 400 customers a month. I recommend we test an auto-pay prompt.'
+- Then two or three supporting findings, each with one clear chart: churn by tenure, churn for auto-pay vs not, the main cancellation reasons.
+- Translate impact into dollars and customers, not coefficients or p-values.
+- State caveats in plain words: 'This is correlation; the auto-pay group may just be more committed, so we should test before rolling out.'
+- Close with the decision you need (approve the test, assign an owner) and the timeline.
+- Keep the method and extra cuts in an appendix for questions."""
+study = "presenting-insights"
+
+[[questions]]
+id = "dash-data-quality-caveat"
+q = "The night before presenting a quarterly report, you notice that iOS purchase events were under-logged for 10 days during the quarter. What do you do?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Sizes the problem: how many events were missed and how much it affects the key numbers",
+  "Checks whether the gap changes the conclusions (sensitivity analysis, for example excluding the days or estimating from another source like payment records)",
+  "Corrects or adjusts where possible using a reliable source of truth",
+  "Discloses the issue clearly in the presentation and to the stakeholder before the meeting rather than hiding it",
+  "Follows up on the root cause with the data owner and adds monitoring to prevent recurrence",
+]
+answer = """- Size it: compare iOS purchase events to a source of truth such as payment or order records for those 10 days to estimate how many were missed.
+- Check if it changes the story: recompute key numbers with the gap filled from order records, or excluding the 10 days for both platforms. If the conclusion holds, say so; if it flips, the conclusion changes.
+- Use the corrected figures where you can, and mark which charts were adjusted.
+- Tell the stakeholder before the meeting, not during it, and add one plain caveat slide: what happened, how big, what we did, whether it affects the recommendation.
+- Afterwards, raise it with the data engineering owner, get the root cause fixed, and add a volume check alerting when platform event counts diverge from orders."""
+study = "presenting-insights"

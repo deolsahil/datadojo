@@ -1,0 +1,78 @@
+title = "RAG: Giving the Model the Right Knowledge"
+section = "ai-systems"
+order = 2
+kind = "lesson"
+difficulty = "medium"
+big_idea = "RAG is primarily a knowledge problem, not a model-training problem: retrieve the right facts at question time and put them in front of the model."
+summary = """An LLM learns broad patterns from its training data, but it was never trained on your private documents, today's inventory or last week's policy change, and its knowledge stops at a cutoff date. Asked about those things, it guesses, and a guess delivered fluently is a **hallucination**.
+
+**Retrieval-augmented generation (RAG)** fixes this without retraining: search a trusted collection of documents, bring the most relevant passages into the prompt, and have the model write an answer **grounded in those passages**. Think of it as giving the model a trusted cheat sheet for each question.
+
+Because the knowledge lives in the index rather than the weights, updating it is as cheap as re-indexing a document, and answers can cite their sources."""
+diagram = """flowchart LR
+  subgraph Indexing
+    D[Documents] --> P[Parsing] --> C[Chunking] --> E[Embeddings] --> V[(Vector DB)]
+  end
+  subgraph Query time
+    Q[User query] --> R[Retrieval] --> RR[Reranking] --> CX[Context] --> L[LLM] --> A[Answer]
+  end
+  V --> R"""
+
+[[blocks]]
+heading = "How RAG works"
+body = """**Offline (indexing):** documents are **parsed** (PDF, HTML, tables to text), split into **chunks**, each chunk is turned into an **embedding** vector, and vectors plus text plus metadata are stored in a **vector database**.
+
+**Online (per query):** the user's question is embedded the same way, the nearest chunks are **retrieved**, a **reranker** reorders them by true relevance, the top few become the **context** in the prompt, and the **LLM** answers using them, ideally citing which chunk each claim came from."""
+
+[[blocks]]
+heading = "Important concepts"
+body = """- **Chunking:** how documents are divided. Too small and a chunk loses the context needed to answer; too large and it dilutes the embedding and wastes context window. Split on structure (headings, paragraphs), typically a few hundred tokens with some overlap.
+- **Embeddings:** a model converts text into a vector so that texts with similar meaning land close together, so "parental leave" can match "maternity and paternity policy" with no shared words.
+- **Vector databases:** store vectors and find nearest neighbours fast with approximate indexes (HNSW, IVF). Examples: pgvector, Pinecone, Weaviate, Qdrant, Databricks Vector Search.
+- **Hybrid search:** combine semantic (vector) search with keyword search (BM25). Keywords catch exact terms such as product codes, error IDs and names that embeddings blur.
+- **Reranking:** a cross-encoder scores each (query, chunk) pair directly. Retrieve 50 cheaply, rerank, keep the best 5.
+- **Metadata filtering:** restrict retrieval by document type, geography, department, version or access rights, so a user in India doesn't get the US policy and nobody retrieves documents they aren't allowed to see."""
+
+[[blocks]]
+heading = "Common RAG failures"
+body = """- **Correct document not retrieved:** bad chunking, weak embeddings, or the query uses different words; fix with hybrid search, query rewriting, better chunks.
+- **Wrong document ranked first:** add a reranker and metadata filters.
+- **Stale documents:** the index wasn't refreshed; build incremental re-indexing with versioning.
+- **Poor chunking:** a table split in half, an answer split across chunks.
+- **Too much context:** stuffing 30 chunks buries the answer and raises cost; models attend worse to the middle of long contexts.
+- **Hallucination despite correct context:** the right chunk was there but the model ignored or embellished it; instruct it to answer only from context, require citations, and evaluate faithfulness.
+
+Debug retrieval and generation **separately**: first check whether the right chunk was in the context at all."""
+
+key_points = [
+  "RAG is a knowledge problem, not a model-training problem.",
+  "Pipeline: parse → chunk → embed → store; then query → retrieve → rerank → context → LLM → answer.",
+  "Hybrid search (vector + keyword) catches exact terms embeddings miss.",
+  "Reranking and metadata filtering fix 'right document, wrong rank' and access/version problems.",
+  "Evaluate retrieval and generation separately.",
+]
+common_mistakes = [
+  "Fine-tuning to teach the model frequently changing facts instead of using RAG.",
+  "Ignoring access control in retrieval, leaking documents users can't see.",
+  "Stuffing as many chunks as fit into the prompt.",
+  "Never re-indexing, so answers cite outdated policy.",
+  "Blaming the LLM before checking whether the right chunk was retrieved.",
+]
+interview_questions = [
+  "Design a RAG assistant over 50,000 internal documents. How do you chunk, retrieve and keep it fresh?",
+  "Users say answers are wrong even though the document exists. How do you debug it?",
+  "When would you use hybrid search instead of pure vector search?",
+  "How do you stop a RAG system from leaking documents a user isn't allowed to see?",
+]
+
+[[quiz]]
+q = "The answer is in your documents but the assistant never finds it when users type a product code like 'XR-450'. Best first fix?"
+options = ["Fine-tune the model on the docs", "Add keyword (hybrid) search alongside vector search", "Increase the temperature", "Use a bigger context window"]
+answer = 1
+why = "Embeddings blur exact identifiers; BM25 keyword search matches them exactly. Hybrid search combines both."
+
+[[quiz]]
+q = "The right chunk was retrieved and in the prompt, but the answer still contradicts it. What kind of failure is this?"
+options = ["Retrieval failure", "Chunking failure", "Hallucination despite correct context (generation failure)", "Stale index"]
+answer = 2
+why = "Retrieval did its job; the model ignored the context. Fix with grounding instructions, citations and faithfulness evals."

@@ -1,0 +1,1111 @@
+# AI Engineer cheatsheet. Field-note style: plain -> how -> uses -> picture, then deeper interview notes.
+
+# ---------------------------------------------------------------- LLM Foundations
+
+[[sections]]
+id = "tokens"
+group = "LLM Foundations"
+title = "Tokens"
+plain = "Models don't read letters or whole words. They read tokens: small chunks of text, often a word or part of a word, and everything is counted and billed in them."
+how = [
+  "A tokenizer splits text into pieces from a fixed vocabulary, for example 'unbelievable' -> 'un' + 'believ' + 'able'",
+  "Each piece maps to an integer id, which is what the model actually sees",
+  "The model predicts the next token id, which is turned back into text",
+]
+uses = [
+  "Estimating cost: providers price input and output tokens separately, output usually costs more",
+  "Checking a prompt fits the context window before sending it",
+  "Explaining why a model miscounts letters in a word: it never saw the letters",
+]
+picture = "Like LEGO bricks: the model builds every sentence out of a fixed box of brick shapes, and you pay per brick."
+body = """Most modern tokenizers use subword schemes such as **byte-pair encoding (BPE)**: common words become one token, rare words split into several pieces.
+
+- Rough rule of thumb for English: about 4 characters, or three quarters of a word, per token. It varies by tokenizer.
+- Code, numbers and many non-English languages often need **more tokens** for the same meaning, so they cost more and fill the context faster.
+- Different model families use different tokenizers, so token counts are not comparable across them.
+- Tokenization explains classic quirks: weak character-level tasks (counting letters, reversing strings) and odd arithmetic on long numbers.
+
+```
+cost per request = input_tokens x input_price + output_tokens x output_price
+```"""
+
+[[sections]]
+id = "context-window"
+group = "LLM Foundations"
+title = "Context Window"
+plain = "The context window is how much text the model can look at in one go: your instructions, the conversation, any documents, and its own reply, all measured in tokens."
+how = [
+  "Everything you send (system prompt, history, retrieved documents, tool results) is tokenized",
+  "Input plus generated output must fit inside the window; output also has its own max-token limit",
+  "Anything that doesn't fit has to be dropped, truncated or summarized by your application",
+]
+uses = [
+  "Deciding how many RAG chunks to put in a prompt",
+  "Trimming or summarizing old turns in a long chat",
+  "Choosing a long-context model to read a whole contract at once",
+]
+picture = "Like a desk: you can only work with the papers that fit on it. A bigger desk helps, but a messy one still makes you miss things."
+body = """The model has **no memory between requests**. A chat feels continuous only because the application resends the history each turn.
+
+- Window sizes range from tens of thousands to a million or more tokens depending on the model.
+- **Bigger isn't free:** more input tokens means more cost and a longer time to first token.
+- **Lost in the middle:** models tend to use information at the start and end of a long context better than information buried in the middle. Fewer, better chunks often beat stuffing.
+- Strategies when it overflows: sliding window of recent turns, summarizing older turns, retrieving only relevant history, or RAG instead of pasting whole documents.
+
+```
+[system prompt][history][retrieved docs][user msg] + [reply]  <= context window
+```"""
+
+[[sections]]
+id = "inference"
+group = "LLM Foundations"
+title = "Inference"
+plain = "Inference is the model actually running: taking your prompt and producing an answer, one token at a time. It is where all the latency and serving cost comes from."
+how = [
+  "Prefill: the whole prompt is processed in one parallel pass, which sets the time to first token",
+  "Decode: the model generates the reply one token at a time, each step reusing cached attention state (the KV cache)",
+  "Generation stops at an end token, a stop sequence or the max-token limit",
+]
+uses = [
+  "Streaming tokens to the UI so users see the answer start quickly",
+  "Explaining why long answers are slow even when prompts are short",
+  "Sizing GPU serving for an open-weight model",
+]
+picture = "Like a reader who skims the whole question at once, then writes the answer word by word by hand."
+body = """Two phases with different bottlenecks:
+
+```
+prefill  -> all prompt tokens in parallel, compute-bound   -> drives TTFT
+decode   -> one token per step, memory-bandwidth-bound   -> drives tokens/sec
+```
+
+- **TTFT (time to first token)** grows with prompt length. **Total latency is roughly TTFT + output tokens / decode speed**, so output length usually dominates.
+- The **KV cache** stores attention keys and values for tokens already processed so decode doesn't recompute them; it costs GPU memory and grows with context length and concurrent requests.
+- Levers: shorter outputs, smaller or faster models, streaming (better perceived latency, same total), provider prompt caching (cuts prefill on repeated prefixes), batching on the server for throughput.
+- Reasoning models spend extra output tokens thinking before answering, trading latency and cost for quality."""
+
+[[sections]]
+id = "models"
+group = "LLM Foundations"
+title = "Models"
+plain = "A model is the trained network that turns tokens in into tokens out. They come in sizes and flavours, and picking one is a trade-off between quality, speed, cost and control."
+how = [
+  "Pretraining on huge text corpora teaches general language and knowledge",
+  "Post-training (instruction tuning, preference tuning) makes it follow instructions and behave helpfully",
+  "You call it through a hosted API or run open weights yourself",
+]
+uses = [
+  "A large frontier model for complex reasoning or agent planning",
+  "A small, cheap model for high-volume classification or routing",
+  "An open-weight model when data must stay on your own infrastructure",
+]
+picture = "Like hiring: a senior expert is brilliant but expensive and slow to book; an intern is cheap and fast for routine work. Match the person to the job."
+body = """Rough families:
+- **Frontier hosted models:** strongest general quality, pay per token, no access to weights.
+- **Small or mini models:** much cheaper and faster, good for narrow, well-defined tasks.
+- **Open-weight models:** self-host or fine-tune freely; you own the serving, scaling and safety work.
+- **Reasoning models:** spend extra tokens thinking; better at multi-step problems, slower and pricier.
+- **Embedding models:** output vectors, not text; used for search.
+
+How to choose:
+```
+quality on YOUR eval set   (not leaderboards alone)
+latency budget             (TTFT and total)
+cost at expected volume
+context length needed
+data privacy and residency
+tool calling and structured output support
+```
+Start with a strong model to prove the task is possible, then try smaller ones against the same evals. Pin model versions in production so behaviour doesn't change underneath you."""
+
+[[sections]]
+id = "sampling"
+group = "LLM Foundations"
+title = "Sampling: Temperature and Top-p"
+plain = "At each step the model produces a probability for every possible next token. Sampling settings decide how adventurous it is when picking one."
+how = [
+  "The model outputs a score for every token in its vocabulary",
+  "Temperature reshapes those scores: low makes the top choice dominate, high flattens the odds",
+  "Top-p keeps only the most likely tokens whose probabilities add up to p, then samples from them",
+]
+uses = [
+  "Low temperature for extraction, classification and code",
+  "Higher temperature for brainstorming or varied marketing copy",
+]
+picture = "Like a dice roll weighted toward the obvious answer: temperature controls how heavily it is weighted."
+body = """- **Temperature 0** is close to greedy decoding (always the most likely token). It reduces variation but does **not guarantee identical outputs**: batching and floating-point effects on serving hardware can still change results.
+- **Top-p (nucleus sampling)** cuts off the long tail of unlikely tokens. **Top-k** keeps a fixed number of candidates.
+- Usually tune one of temperature or top-p, not both aggressively.
+- Lower temperature does not fix hallucination; a confidently wrong token can still be the most likely one.
+- Some models, particularly reasoning models, limit which sampling parameters you can change.
+- Because outputs vary, evaluate with several trials per task (see pass@k vs pass^k)."""
+
+[[sections]]
+id = "prompt-engineering"
+group = "LLM Foundations"
+title = "Prompt Engineering"
+plain = "Writing the instructions and examples you give the model so it reliably does the job. Usually the cheapest, fastest lever you have."
+how = [
+  "State the role, the task, the constraints and the output format clearly",
+  "Add a few examples of good input and output (few-shot)",
+  "Test against an eval set, change one thing, test again",
+]
+uses = [
+  "Making a support bot answer only from provided documents",
+  "Getting consistent JSON from an extraction prompt",
+]
+picture = "Like briefing a smart new contractor: the clearer the brief and the examples, the less they guess."
+body = """Practical habits:
+- **Be specific** about format, length, audience and what to do when unsure ('If the answer is not in the context, say you don't know').
+- **Separate instructions from data** with clear delimiters, and tell the model that content inside them is data, not instructions.
+- **Few-shot examples** teach format and edge cases better than long descriptions; make them diverse so the model doesn't copy one pattern.
+- **Let it think** on hard tasks (ask for reasoning before the answer, or use a reasoning model), but keep the final answer in a parseable place.
+- **Break big tasks into steps** (prompt chaining) when one prompt tries to do too much.
+- **Version prompts like code** and test every change against the eval suite; a 'small wording tweak' can regress other cases.
+
+Order: prompting first, then RAG for missing knowledge, then fine-tuning for behaviour prompts can't fix."""
+
+[[sections]]
+id = "structured-outputs"
+group = "LLM Foundations"
+title = "Structured Outputs"
+plain = "Getting the model to return machine-readable data, usually JSON matching a schema, so code can use the result instead of a human reading it."
+how = [
+  "Define the schema: fields, types, required keys, allowed values",
+  "Ask for it with the provider's structured-output or JSON mode, or via a tool definition",
+  "Parse and validate in code; retry or fail safely when it doesn't match",
+]
+uses = [
+  "Extracting invoice fields into a database",
+  "Classifying tickets into a fixed set of categories",
+]
+picture = "Like handing someone a form with labelled boxes instead of a blank page."
+body = """Three levels of strictness:
+```
+prompt only        'reply in JSON'          -> usually works, sometimes breaks
+JSON mode          valid JSON guaranteed    -> shape not guaranteed
+schema-constrained decoding restricted      -> matches schema
+```
+- Many providers can **constrain decoding to a JSON schema**; open-weight servers can do the same with grammar-constrained decoding.
+- Even when the shape is guaranteed, the **values** can be wrong: validate enums, ranges, and business rules in code.
+- Keep schemas simple; use enums for categories; include a field for 'unknown' or 'not found' so the model isn't forced to invent a value.
+- Log and count validation failures as a quality metric."""
+
+[[sections]]
+id = "hallucination"
+group = "LLM Foundations"
+title = "Hallucination"
+plain = "When a model states something false or made up, fluently and confidently. It predicts plausible text, and plausible is not the same as true."
+how = [
+  "The model generates the most likely continuation given its training and context",
+  "If the facts are missing, stale or ambiguous, a plausible-sounding guess is still likely text",
+  "Nothing inside the model checks the claim against reality",
+]
+uses = [
+  "Explaining why a chatbot invented a refund policy",
+  "Justifying RAG with citations for factual questions",
+]
+picture = "Like a confident student who never says 'I don't know' and fills the exam with nicely written guesses."
+body = """Common causes:
+- **Missing knowledge:** private data, events after the training cutoff, niche facts.
+- **Bad or missing context:** retrieval returned the wrong chunk, or none.
+- **Pressure to answer:** the prompt or training rewards an answer over 'I don't know'.
+- **Ignoring context:** the right chunk was present but the model embellished or contradicted it.
+- **Long contexts** where the relevant fact is buried.
+
+Mitigations: ground answers with RAG, instruct it to answer only from context and allow 'I don't know', require citations, validate outputs in code, use faithfulness evals, and keep a human in the loop for high-stakes outputs. You reduce hallucination; you don't eliminate it."""
+
+# ---------------------------------------------------------------- Retrieval
+
+[[sections]]
+id = "embeddings"
+group = "Retrieval"
+title = "Embeddings"
+plain = "An embedding turns text (or images) into a list of numbers so that things with similar meaning end up close together in space."
+how = [
+  "An embedding model reads the text and outputs a fixed-length vector, often hundreds to a few thousand numbers",
+  "Similar meanings produce vectors that point in similar directions",
+  "Closeness is measured with cosine similarity or dot product",
+]
+uses = [
+  "Semantic search and RAG retrieval",
+  "Clustering or deduplicating support tickets",
+  "Semantic caching: spotting that two questions mean the same thing",
+]
+picture = "Like a map where every sentence gets a pin; 'parental leave' and 'maternity policy' are pinned on the same street even though they share no words."
+body = """- Queries and documents must be embedded with the **same model**; vectors from different models are not comparable.
+- Changing the embedding model means **re-embedding the whole corpus**, so version the index.
+- Embeddings capture meaning, which makes them **weak on exact identifiers** (product codes, error IDs, names); pair with keyword search.
+- Domain matters: a general model may blur specialist terms; test with your own queries before choosing.
+- Cache embeddings by a hash of the content so unchanged documents are never re-embedded.
+
+```
+'reset my password'      -> [0.12, -0.40, 0.88, ...]
+'how do I change my pwd' -> [0.10, -0.38, 0.85, ...]   cosine ~ high
+'quarterly revenue'      -> [-0.70, 0.22, 0.05, ...]   cosine ~ low
+```"""
+
+[[sections]]
+id = "semantic-search"
+group = "Retrieval"
+title = "Semantic Search"
+plain = "Search by meaning instead of by matching words, so a question finds the right passage even when it is phrased differently."
+how = [
+  "Embed every document chunk ahead of time and store the vectors",
+  "Embed the user's query with the same model",
+  "Return the chunks whose vectors are nearest to the query vector",
+]
+uses = [
+  "Internal knowledge-base search",
+  "Finding similar past tickets or bug reports",
+  "The retrieval step of RAG",
+]
+picture = "Like asking a librarian who understands what you mean, rather than one who only checks the index for your exact words."
+body = """Compared with keyword search (BM25):
+```
+                 keyword (BM25)          semantic (vectors)
+matches          exact terms             meaning, synonyms
+good at          codes, names, IDs       paraphrases, vague questions
+weak at          synonyms                exact identifiers, rare terms
+needs            inverted index          embedding model + vector index
+```
+In practice most production systems use **hybrid search** (both, fused) plus a reranker. Measure retrieval with recall@k or hit rate on a labelled set of query -> correct chunk pairs."""
+
+[[sections]]
+id = "rag"
+group = "Retrieval"
+title = "RAG (Retrieval-Augmented Generation)"
+plain = "Instead of hoping the model memorized your facts, look up the relevant documents first and hand them to the model with the question, so it answers from them."
+how = [
+  "Retrieve: search your documents for passages relevant to the question",
+  "Augment: put the best passages into the prompt as context",
+  "Generate: the model writes an answer grounded in that context, ideally with citations",
+]
+uses = [
+  "An HR assistant answering from current policy documents",
+  "Customer support over product manuals",
+  "Search over private company data the model was never trained on",
+]
+picture = "Like an open-book exam: the student doesn't need to memorize the textbook, just find the right page and answer from it."
+body = """RAG is a **knowledge problem, not a training problem**. Knowledge lives in the index, so updating it means re-indexing a document, not retraining a model, and answers can cite their sources.
+
+```
+Offline:  documents -> parse -> chunk -> embed -> vector DB (+ text + metadata)
+Online:   query -> embed -> retrieve -> rerank -> top chunks -> LLM -> answer + citations
+```
+Key decisions: parsing quality, chunking, embedding model, hybrid search, reranking, metadata and permission filters, how many chunks to include, and refresh strategy. Evaluate **retrieval** (was the right chunk found?) separately from **generation** (was the answer faithful to it?)."""
+diagram = """flowchart LR
+  D[Documents] --> C[Chunk and embed] --> V[Vector index]
+  Q[Question] --> R[Retrieve] --> RR[Rerank] --> L[LLM] --> A[Answer with citations]
+  V --> R"""
+
+[[sections]]
+id = "chunking"
+group = "Retrieval"
+title = "Chunking"
+plain = "Splitting documents into pieces small enough to embed and retrieve precisely, but big enough to still make sense on their own."
+how = [
+  "Parse the source into clean text, keeping structure such as headings and tables",
+  "Split on natural boundaries (sections, paragraphs), with a size limit and some overlap",
+  "Attach metadata to each chunk: source, title, section, date, permissions",
+]
+uses = [
+  "Splitting a 200-page policy manual so each answer cites the right clause",
+  "Keeping a table intact so a price isn't separated from its product",
+]
+picture = "Like cutting a newspaper into clippings: cut mid-sentence and nobody understands them; keep whole pages and you can't find anything."
+body = """- **Too small:** the chunk loses context ('it applies after 90 days': what does?).
+- **Too large:** the embedding averages many topics, matching gets fuzzy, and you waste context window.
+- Typical starting point: a few hundred tokens with modest overlap, split on structure. Tune with retrieval evals, not intuition.
+- **Prepend context** to each chunk (document title, section heading) so it stands alone.
+- Keep tables, code blocks and lists intact; parse PDFs carefully, as bad parsing is a silent failure.
+- Advanced: small chunks for matching but return the larger parent section to the model (parent-child retrieval)."""
+
+[[sections]]
+id = "vector-databases"
+group = "Retrieval"
+title = "Vector Databases and ANN Indexes"
+plain = "A database built to find the nearest vectors quickly among millions, by trading a little accuracy for a lot of speed."
+how = [
+  "Store each vector with its text and metadata",
+  "Build an approximate nearest neighbour (ANN) index such as HNSW or IVF",
+  "At query time, walk the index to find close vectors without comparing against every one",
+]
+uses = [
+  "Retrieval for RAG over millions of chunks",
+  "Recommendation and similar-item lookup",
+]
+picture = "Like finding a house by asking for directions from town to neighbourhood to street, instead of knocking on every door in the country."
+body = """Exact search compares the query with every vector; fine for thousands, too slow for many millions. ANN indexes trade a little **recall** for big speed-ups.
+
+- **HNSW (Hierarchical Navigable Small World):** a layered graph. Upper layers are sparse long-range links, lower layers dense local links. Search starts at the top and greedily moves closer, layer by layer. Fast with high recall, but memory-hungry. Knobs: connections per node (M), build effort (efConstruction), and search breadth (efSearch): higher means better recall, slower queries.
+- **IVF:** cluster vectors, then search only the few nearest clusters (nprobe). Less memory, recall depends on probes.
+- **Quantization (PQ, scalar):** compress vectors to save memory at some accuracy cost.
+
+Options range from extensions to existing databases (for example pgvector in Postgres) to dedicated vector databases and search engines with vector support. Check: metadata filtering, hybrid search, updates and deletes, scale, and operational cost."""
+
+[[sections]]
+id = "hybrid-search"
+group = "Retrieval"
+title = "Hybrid Search"
+plain = "Run keyword search and vector search together and merge the results, so you catch both exact terms and paraphrases."
+how = [
+  "Run BM25 keyword search and vector search for the same query",
+  "Fuse the two ranked lists, commonly with reciprocal rank fusion (RRF) or weighted scores",
+  "Pass the merged candidates to a reranker",
+]
+uses = [
+  "Queries containing product codes, SKUs, error messages or people's names",
+  "Domain jargon a general embedding model doesn't know",
+]
+picture = "Like two detectives, one matching fingerprints exactly and one reading motives; together they miss less."
+body = """**BM25** scores documents by term matches, weighting rare terms higher and normalizing for length. It is exact and needs no model.
+
+**Reciprocal rank fusion** combines lists by rank, not raw score, so you don't have to calibrate BM25 scores against cosine similarities:
+```
+score(doc) = sum over lists of 1 / (k + rank_in_list)     k is a constant, often 60
+```
+When pure vector search fails on 'XR-450' or 'ERR_CONN_RESET', hybrid search is usually the first fix."""
+
+[[sections]]
+id = "reranking"
+group = "Retrieval"
+title = "Reranking"
+plain = "A second, more careful pass that re-scores the retrieved candidates against the question and keeps only the best few."
+how = [
+  "Retrieve a generous candidate set cheaply, for example the top 50",
+  "Score each (query, chunk) pair with a cross-encoder or LLM reranker",
+  "Keep the top few, for example 5, for the prompt",
+]
+uses = [
+  "Fixing 'right document retrieved but ranked 12th'",
+  "Cutting the number of chunks sent to the LLM, saving tokens",
+]
+picture = "Like a hiring funnel: a quick CV screen for 50 candidates, then proper interviews for the top few."
+body = """- A **bi-encoder** (embedding model) encodes query and document separately, so document vectors are precomputed: fast, but coarse.
+- A **cross-encoder** reads query and document together and outputs a relevance score: far more accurate, but too slow to run over the whole corpus.
+- So: bi-encoder for recall, cross-encoder for precision.
+
+```
+retrieve top 50 (fast, recall)  ->  rerank  ->  top 5 to LLM (precision)
+```
+Cost: an extra model call per query, adding some latency. Measure with ranking metrics (MRR, nDCG, precision@k) before and after."""
+
+[[sections]]
+id = "rag-debugging"
+group = "Retrieval"
+title = "RAG Failure Modes and Debugging"
+plain = "When a RAG answer is wrong, first find out whether retrieval failed or generation failed. They need completely different fixes."
+how = [
+  "Look at the trace: was the correct chunk in the retrieved context at all?",
+  "If not, it's a retrieval problem: parsing, chunking, embeddings, query wording, filters, freshness",
+  "If yes, it's a generation problem: the model ignored, misread or embellished the context",
+]
+uses = [
+  "Triaging 'the bot is wrong but the answer is in our docs' complaints",
+  "Building separate retrieval and faithfulness evals",
+]
+picture = "Like a wrong exam answer: did the student open the wrong page, or read the right page and still get it wrong?"
+body = """```
+Symptom                               Likely cause                 Fix
+right doc never retrieved             chunking, parsing, wording   hybrid search, query rewrite, rechunk
+right doc retrieved, ranked low       weak ranking                 reranker, metadata filters
+outdated answer                       stale index                  incremental re-indexing, dates
+wrong region or version               no metadata filter           filter by region, version, product
+answer contradicts retrieved chunk    generation                   grounding prompt, citations, faithfulness eval
+answer buried in 30 chunks            too much context             fewer, reranked chunks
+```
+Metrics: **retrieval** with recall@k or hit rate on a labelled query set; **generation** with faithfulness (claims supported by context) and answer relevance, often via a calibrated LLM judge."""
+
+# ---------------------------------------------------------------- Tools & Agents
+
+[[sections]]
+id = "tool-calling"
+group = "Tools & Agents"
+title = "Tool Calling"
+plain = "Letting a model ask your code to do things it can't do itself, like look up an order or check the weather. The model asks; your application actually does it."
+how = [
+  "You describe available tools to the model: name, description and a JSON schema for arguments",
+  "The model replies with a structured request to call a tool with specific arguments",
+  "Your application validates and runs it, sends the result back, and the model continues or answers",
+]
+uses = [
+  "A support bot checking order status in your database",
+  "An assistant creating calendar events",
+  "Getting live data such as prices or exchange rates",
+]
+picture = "Like a manager who can't leave the office: they write a request slip, an assistant runs the errand, and brings back the result."
+body = """The model **never executes anything**. It only outputs text shaped like a function call. That makes your application the security boundary.
+
+```
+user msg + tool definitions -> model -> tool_call(get_order, {id: 123})
+app validates + runs get_order(123) -> result appended -> model -> final answer
+```
+- Good tool **names and descriptions** matter as much as prompts; the model chooses tools from them.
+- Validate arguments against the schema and against permissions before running.
+- Models can request several calls at once (parallel tool calls) or chain them over several turns.
+- Return concise, structured results; huge tool outputs eat the context window.
+- Treat tool results as **untrusted data**: they can contain injected instructions.
+- Risky actions (payments, deletes, emails) need limits in code and often human confirmation."""
+diagram = """flowchart LR
+  U[User] --> M[Model] --> TC[Tool call request]
+  TC --> A[App validates and executes] --> R[Tool result] --> M
+  M --> F[Final answer]"""
+
+[[sections]]
+id = "mcp"
+group = "Tools & Agents"
+title = "MCP (Model Context Protocol)"
+plain = "An open standard for plugging tools and data into AI applications, so one integration works with any app that supports the protocol. Often described as USB-C for AI tools."
+how = [
+  "An MCP server wraps a system (GitHub, a database, a file store) and exposes tools, resources and prompts",
+  "An AI application (the host) runs an MCP client that connects to the server and discovers what it offers",
+  "The model sees the discovered tools; when it calls one, the client forwards the call to the server and returns the result",
+]
+uses = [
+  "Giving a coding assistant access to your issue tracker and docs",
+  "Exposing an internal API once and using it from several AI apps",
+]
+picture = "Like a universal power adapter: build the plug once and it fits every socket that follows the standard."
+body = """Before MCP every app wrote a custom integration for every tool: N apps x M tools. MCP turns that into N + M: each tool ships one server, each app ships one client.
+
+What a server can expose:
+- **Tools:** actions the model can invoke (create_issue, run_query).
+- **Resources:** data the application can read into context (files, records).
+- **Prompts:** reusable prompt templates.
+
+Messages use JSON-RPC; servers run locally (over stdio) or remotely (over HTTP). Originally introduced by Anthropic and now supported across many AI clients and vendors.
+
+MCP standardizes the **connection**, not the **trust**: a malicious or compromised server can return injected instructions or over-broad tools. Use trusted servers, least-privilege credentials, and confirmations for risky actions."""
+diagram = """flowchart LR
+  H[Host app with MCP client] --> S1[MCP server for issue tracker]
+  H --> S2[MCP server for database]
+  H --> S3[MCP server for files]"""
+
+[[sections]]
+id = "agents"
+group = "Tools & Agents"
+title = "Agents and the Agent Loop"
+plain = "An agent is a model in a loop: it decides the next step, uses a tool, looks at the result, and repeats until the goal is done."
+how = [
+  "Give the model a goal, tools and instructions",
+  "Loop: the model picks an action, the app executes it, the result is added to context",
+  "Stop when the model gives a final answer or a limit (steps, time, budget) is hit",
+]
+uses = [
+  "Coding agents that edit, run tests and fix failures",
+  "Research agents that search, read and summarize",
+  "Support agents that look up accounts and take actions",
+]
+picture = "Like a new employee given a goal and a toolbox: try something, check the result, adjust, repeat, and ask for help when stuck."
+body = """```
+while not done and steps < max_steps:
+    action = model(goal, history, tools)
+    if action is final_answer: done
+    result = execute(action)        # validated, permissioned, logged
+    history.append(action, result)
+```
+Production essentials:
+- **Hard limits:** max steps, timeouts, token and cost budgets.
+- **Loop detection:** stop repeating the same failing call; surface errors to the model clearly so it can change approach.
+- **Context management:** summarize or trim history so long runs don't overflow.
+- **Checkpoints and human approval** before irreversible actions.
+- **Traces** of every step for debugging and evals.
+
+Errors compound: if each step is 95% reliable, a 20-step task is far less reliable than any single step. Fewer, well-designed tools beat many vague ones."""
+diagram = """flowchart LR
+  G[Goal] --> M[Model decides] --> A[Act with tool] --> O[Observe result] --> M
+  M --> D[Done]"""
+
+[[sections]]
+id = "agent-design-choices"
+group = "Tools & Agents"
+title = "Workflows vs Agents, Single vs Multi-Agent"
+plain = "Not everything needs an agent. Use the simplest pattern that works: a single call, then a fixed workflow, and only then a free-running agent."
+how = [
+  "Single LLM call: one prompt, one answer",
+  "Workflow: your code fixes the steps (chain, route, parallelize); the model fills in each step",
+  "Agent: the model decides the steps dynamically",
+]
+uses = [
+  "Workflow for a known invoice-processing sequence",
+  "Agent for open-ended debugging where the steps can't be known in advance",
+]
+picture = "Like a recipe versus a chef: a recipe is predictable and cheap; a chef handles surprises but costs more and sometimes improvises badly."
+body = """When **not** to use an agent:
+- The steps are known in advance: a deterministic workflow is cheaper, faster, easier to test.
+- The task is high-stakes and needs predictable, auditable behaviour.
+- Latency or cost budgets are tight: agents make many calls.
+
+**Multi-agent** (an orchestrator delegating to specialist sub-agents):
+```
+pros   parallel work, smaller focused contexts, separation of tools and permissions
+cons   more tokens and cost, harder debugging, lost context in handoffs,
+       coordination failures, errors compounding across agents
+```
+Start with one agent and good tools. Add sub-agents when there is real parallelism or context isolation to gain, and evaluate whether it beats the single-agent baseline."""
+
+# ---------------------------------------------------------------- Fine-Tuning
+
+[[sections]]
+id = "fine-tuning"
+group = "Fine-Tuning"
+title = "Fine-Tuning vs RAG vs Prompting"
+plain = "Fine-tuning keeps training a model on your examples so it behaves the way you want. It changes behaviour, not what the model knows today."
+how = [
+  "Collect input -> ideal output examples for your task",
+  "Continue training the model (or an adapter) on them",
+  "Evaluate on a held-out set against the prompting baseline",
+]
+uses = [
+  "High-volume ticket classification with a small, cheap model",
+  "Always producing a fixed output format or brand voice",
+]
+picture = "Like training a new hire on how your team writes reports, versus handing them the latest handbook (RAG) every time they answer."
+body = """```
+                     Prompting      RAG                   Fine-tuning
+changes              instructions   context / knowledge   model behaviour
+fresh knowledge      no             easy (re-index)       hard (retrain)
+style and format     some           limited               strong
+cost to start        lowest         medium                highest
+citations            no             yes                   no
+```
+Order of attack: **prompting first**, **RAG** for missing or changing knowledge, **fine-tuning** when prompts get long, brittle or expensive at scale, or a small model must match a big one on a narrow task. They combine well: fine-tune for format and tone, RAG for facts.
+
+Biggest mistake: fine-tuning because the model doesn't know frequently changing information (prices, policies). It goes stale immediately and can't cite sources."""
+
+[[sections]]
+id = "lora-peft"
+group = "Fine-Tuning"
+title = "LoRA, PEFT and QLoRA"
+plain = "Instead of retraining every weight, freeze the model and train a tiny add-on. Much cheaper, and the result is a small file you can swap in and out."
+how = [
+  "Freeze the base model's weights",
+  "Add small low-rank matrices beside selected weight matrices",
+  "Train only those matrices; at inference add their effect to the frozen weights",
+]
+uses = [
+  "Fine-tuning a large open-weight model on one GPU",
+  "Serving one base model with a different adapter per customer or task",
+]
+picture = "Like adding a clip-on lens to a camera instead of building a new camera."
+body = """**PEFT (parameter-efficient fine-tuning)** is the family; **LoRA** is the most common method.
+
+```
+W_new = W_frozen + B x A      A: r x d, B: d x r, rank r small (e.g. 8-64)
+```
+- Trains a tiny fraction of the parameters, often well under 1%, so far less GPU memory (no optimizer state for the frozen weights).
+- Adapter files are megabytes, not gigabytes; many adapters can share one base model.
+- Adapters can be **merged** into the weights for zero extra inference latency, or kept separate to hot-swap.
+- **QLoRA** also quantizes the frozen base model to 4-bit, so larger models fit on a single GPU, with small quality cost.
+- Touching fewer weights also tends to reduce, but does not eliminate, catastrophic forgetting."""
+
+[[sections]]
+id = "fine-tuning-data"
+group = "Fine-Tuning"
+title = "Training Data and Catastrophic Forgetting"
+plain = "Fine-tuning quality is mostly data quality. And training hard on a narrow task can make a model worse at everything else."
+how = [
+  "Gather real inputs, write or verify ideal outputs, keep labels consistent",
+  "Hold out an eval set before training; deduplicate and check for leakage",
+  "Train, then test on both the target task and general abilities",
+]
+uses = [
+  "Building a labelled set from historical support tickets",
+  "Checking a tuned model still follows general instructions",
+]
+picture = "Like cramming one subject for weeks and forgetting the others."
+body = """Data:
+- Hundreds to a few thousand **high-quality, consistent** examples often beat a large noisy set; the model learns your inconsistencies too.
+- Cover the real distribution, including edge cases and 'none of these' examples.
+- Format training examples exactly as production prompts will look.
+- Remove PII and secrets; check the licence and terms for any data you use.
+
+**Catastrophic forgetting:** weights shift toward the new task and away from general skills (instruction following, reasoning, safety behaviour). Mitigations:
+- Use LoRA/PEFT instead of full fine-tuning.
+- Fewer epochs, lower learning rate, early stopping on a validation set.
+- Mix some general instruction data into training.
+- Always evaluate general capabilities and safety alongside the target task, compared with the base model."""
+
+[[sections]]
+id = "distillation"
+group = "Fine-Tuning"
+title = "Distillation"
+plain = "Teach a small, cheap model to imitate a large, expensive one on your task, so you get most of the quality at a fraction of the cost and latency."
+how = [
+  "Run the large teacher model on many real inputs",
+  "Filter or grade its outputs to keep only good ones",
+  "Fine-tune the small student model on those input -> output pairs",
+]
+uses = [
+  "Replacing a frontier model with a small model for a high-volume classifier",
+  "Running a capable model on-device or on cheap hardware",
+]
+picture = "Like a master chef writing down exactly how they'd cook each dish so an apprentice can run the kitchen at night."
+body = """- Classic distillation trains the student on the teacher's full output probabilities (soft labels); with API models you usually only have the generated text, so it becomes **fine-tuning on teacher outputs**.
+- The student is only as good as the filtered data: grade teacher outputs with evals and drop failures.
+- Works best on **narrow tasks**; a small model won't match the teacher's general ability.
+- Compare against the teacher on the same eval set and decide if the quality gap is worth the savings.
+- Check the provider's **terms of use**: some restrict using outputs to train competing models."""
+
+# ---------------------------------------------------------------- Evals
+
+[[sections]]
+id = "evals-vocabulary"
+group = "Evals"
+title = "Evals: The Vocabulary"
+plain = "Evals are the test suite for an AI system. Because outputs vary and many answers can be right, you measure quality across many tasks and trials instead of asserting one exact output."
+how = [
+  "Define tasks with inputs and success criteria",
+  "Run trials, capture transcripts, apply graders",
+  "Record outcomes and compare with a baseline",
+]
+uses = [
+  "Checking whether a prompt change helped or hurt",
+  "Deciding whether a cheaper model is good enough",
+]
+picture = "Like a driving test: not one fixed answer, but a set of situations with clear criteria for passing."
+body = """```
+Task -> Trial -> Transcript -> Grader -> Outcome
+```
+- **Task:** one test case with inputs and success criteria.
+- **Trial:** one execution of a task. Outputs vary, so run several.
+- **Transcript:** everything that happened: prompts, outputs, tool calls, retrieved documents, intermediate steps.
+- **Outcome:** the actual end state of the system or environment (row written, ticket closed), not what the model **said** it did.
+- **Grader:** decides success by checking the outcome, the transcript, or both.
+- **Evaluation harness:** the infrastructure that runs tasks, captures transcripts, applies graders and reports results.
+- **Evaluation suite:** a collection of tasks for one capability or behaviour, such as 'refund handling'."""
+diagram = """flowchart LR
+  T[Task] --> TR[Trial] --> TS[Transcript] --> G[Grader] --> O[Outcome]"""
+
+[[sections]]
+id = "graders"
+group = "Evals"
+title = "Graders: Code, Model, Human"
+plain = "A grader decides whether a trial passed. Use code wherever you can, a model where judgment is needed, and humans to check both."
+how = [
+  "Code-based: deterministic checks such as exact match, regex, schema, database state",
+  "Model-based: an LLM judge applies a rubric, assertion or comparison",
+  "Human: experts label hard cases and calibrate the other graders",
+]
+uses = [
+  "Code grader: did the refund row get written with the right amount?",
+  "Model grader: did the reply apologize and give a timeline?",
+]
+picture = "Like marking an exam: a machine scores the multiple choice, a trained marker grades essays, and a senior examiner spot-checks the markers."
+body = """```
+             code-based              model-based               human
+examples     exact match, regex,     rubric score, NL          expert review,
+             schema, DB state        assertion, pairwise       gold labels
+pros         fast, cheap,            flexible, handles          most trusted,
+             reproducible            open-ended text            nuanced
+cons         rigid for subjective    inconsistent, biased,      slow, expensive,
+             tasks                   needs calibration          hard to scale
+```
+They are complementary: one task can have a code check on the outcome and a model check on the tone of the reply."""
+
+[[sections]]
+id = "llm-as-judge"
+group = "Evals"
+title = "LLM-as-Judge"
+plain = "Using a model to grade another model's output against a rubric. Scales like code, judges like a person, but it has biases you must measure."
+how = [
+  "Write a specific rubric or yes/no assertions for the judge",
+  "Have it reason briefly, then give a verdict in a structured format",
+  "Compare its verdicts with human labels and fix the rubric until they agree",
+]
+uses = [
+  "Scoring helpfulness and tone of support replies",
+  "Checking RAG answers are faithful to retrieved context",
+]
+picture = "Like a teaching assistant who grades fast but must be checked against the professor before you trust their marks."
+body = """Known biases:
+- **Position bias:** prefers the first (or second) answer in pairwise comparisons.
+- **Verbosity bias:** prefers longer answers.
+- **Self-preference:** favours outputs in its own style or from its own model family.
+- **Leniency and inconsistency:** vague rubrics give noisy scores.
+
+Make it trustworthy:
+- Prefer **binary, specific criteria** over 1-10 scales.
+- **Swap the order** in pairwise comparisons and count only consistent wins.
+- Give reference answers or retrieved context when grading correctness or faithfulness.
+- **Calibrate:** label a sample by hand, measure agreement with the judge, iterate on the rubric, re-check periodically.
+- Pin the judge model and prompt version; a judge change shifts every score."""
+
+[[sections]]
+id = "capability-regression"
+group = "Evals"
+title = "Capability vs Regression Evals"
+plain = "Capability evals ask what the system can do yet; regression evals ask whether something that used to work just broke."
+how = [
+  "Capability suite: hard tasks, low pass rates expected, shows room to improve",
+  "Regression suite: tasks that already pass, pass rate should stay near 100%",
+  "When a capability task becomes reliably solved, promote it to the regression suite",
+]
+uses = [
+  "Tracking progress on a new agent skill",
+  "Blocking a deploy that breaks existing behaviour",
+]
+picture = "Like a gym: capability evals are your personal-best attempts, regression evals check you can still lift last month's weight."
+body = """```
+Capability evals -> improve system -> regression evals -> protect existing behaviour
+```
+- A low capability score is useful information, not a failure.
+- Any drop in regression score is a signal to investigate before shipping.
+- Keep both: only capability evals and you break old things silently; only regression evals and you can't see progress."""
+
+[[sections]]
+id = "pass-at-k"
+group = "Evals"
+title = "Non-Determinism: pass@k vs pass^k"
+plain = "LLMs can succeed on one run and fail the next, so run each task several times and decide whether you care about 'can it ever' or 'does it always'."
+how = [
+  "Run each task k times",
+  "pass@k: at least one of the k trials succeeds",
+  "pass^k: all k trials succeed",
+]
+uses = [
+  "pass@k for a tool where a human picks the best of several drafts",
+  "pass^k for a user-facing agent that must work every time",
+]
+picture = "Like a penalty taker: pass@k asks if they score at least once in five tries; pass^k asks if they score all five."
+body = """With a per-trial success rate p, assuming independent trials:
+```
+pass@k = 1 - (1 - p)^k
+pass^k = p^k
+
+p = 0.8, k = 5:
+pass@5 = 1 - 0.2^5 = 1 - 0.00032 = about 99.97%
+pass^5 = 0.8^5                   = about 32.8%
+```
+The same system looks almost perfect by one measure and fails two times in three by the other. Report which one you use, and for customer-facing reliability prefer pass^k (or per-trial rate with enough trials)."""
+
+[[sections]]
+id = "eval-suite-design"
+group = "Evals"
+title = "Designing an Eval Suite and Evals in CI/CD"
+plain = "Start small with real failures, test both what the system should and should not do, grade the end result, and run the suite on every change."
+how = [
+  "Collect 20-50 realistic tasks, especially from real failures",
+  "Add should and should-not cases, with clear success criteria graded on outcomes",
+  "Run the suite in CI on every prompt, model or retrieval change and compare with the baseline",
+]
+uses = [
+  "Gating a prompt change before deploy",
+  "Comparing two models on the same tasks",
+]
+picture = "Like a smoke detector that is tested every time you rewire the house, not once at installation."
+body = """Good tasks are **clear, solvable, reproducible, representative and easy to grade**.
+
+- **Start small:** 20 to 50 real tasks beat 1,000 synthetic ones. Grow the suite from production failures.
+- **Should and should-not:** an agent that refunds everyone passes every 'should refund' task. Negative cases catch over-triggering.
+- **Grade outcomes, not paths:** there are often several valid tool sequences; check the end state unless the path itself matters (for example a required approval step).
+- **Read transcripts:** a grader can pass a task for the wrong reason.
+- **Version everything:** prompts, models, retrieval settings, the judge.
+
+```
+change -> run eval suite -> compare with baseline -> regression? yes: investigate / no: deploy
+```"""
+
+[[sections]]
+id = "online-evaluation"
+group = "Evals"
+title = "Offline vs Online Evaluation"
+plain = "Offline evals test a fixed set of tasks before you ship. Online evaluation measures quality on real traffic after you ship. You need both."
+how = [
+  "Offline: run the eval suite on a curated dataset in CI before deploy",
+  "Online: score sampled production traces, watch user signals, run A/B tests or canaries",
+  "Feed failures found online back into the offline suite",
+]
+uses = [
+  "Offline gate on every prompt change",
+  "Online LLM-judge scoring of 1% of live conversations",
+]
+picture = "Like a flight simulator versus real flights with a black box: the simulator catches known problems, the black box catches the ones you never imagined."
+body = """```
+              offline                         online
+data          curated, fixed tasks            real, changing traffic
+when          before deploy (CI)              after deploy, continuously
+strengths     reproducible, comparable,       real distribution, real
+              blocks regressions              outcomes, finds the unknown
+limits        only covers what you thought    noisy, delayed, no labels,
+              of                              users see failures first
+```
+Online methods: sampled LLM-judge scoring, implicit and explicit feedback, task completion and escalation rates, A/B tests on business metrics, shadow deployments and canaries. Online findings become new offline tasks: that's the loop."""
+
+# ---------------------------------------------------------------- Production
+
+[[sections]]
+id = "production-genai"
+group = "Production"
+title = "From Prototype to Production GenAI"
+plain = "A demo is prompt, model, response. A product is the engineering around the model that makes it know your data, measurable, debuggable, affordable and safe."
+how = [
+  "Request path: input guardrails -> retrieval and app data -> LLM -> output guardrails -> user",
+  "Learning path: feedback and observability -> evals -> failure analysis -> fixes",
+  "Caching across the expensive parts: embeddings, retrieval, responses, API results",
+]
+uses = [
+  "Explaining the whole GenAI stack in one minute",
+  "Planning what to build after a successful prototype",
+]
+picture = "Like a race car: the engine (model) matters, but without brakes, instruments, a pit crew and a test track you won't finish the race."
+body = """The one-minute summary:
+- **RAG** gives the model the right information.
+- **Fine-tuning** teaches it specialized behaviour.
+- **Evals** tell us whether it works.
+- **Observability** tells us what happened.
+- **Caching** makes it faster and cheaper.
+- **User feedback** tells us what we're missing.
+- **Guardrails** keep the system within acceptable boundaries.
+
+```
+BUILD -> EVAL -> DEPLOY -> OBSERVE -> COLLECT FEEDBACK
+  ^                                        |
+IMPROVE <- CREATE NEW EVALS <- ANALYZE FAILURES
+```
+The core loop: production failures -> feedback -> evals -> improvements -> fewer future failures."""
+
+[[sections]]
+id = "observability"
+group = "Production"
+title = "Observability"
+plain = "Evals tell you whether it worked; observability tells you why. Capture a trace of every stage of every request so a bad answer can be followed back to its cause."
+how = [
+  "Create a trace per request with a span for each stage: query processing, embedding, retrieval, reranking, LLM, tools",
+  "Record each span's inputs, outputs, latency, tokens, cost and versions",
+  "Aggregate into dashboards and alerts, and segment by version and user group",
+]
+uses = [
+  "Finding why quality dropped from 90% to 75% overnight",
+  "Tracking cost per request and the slow tail of latency",
+]
+picture = "Like a flight data recorder: when something goes wrong you replay exactly what each system did."
+body = """Signals to capture:
+- **Latency:** p50, p95, p99 per stage. Averages hide the slow tail users feel.
+- **Cost:** input and output tokens, cost per request, per feature, per customer.
+- **Quality:** sampled eval scores, user feedback, task completion.
+- **RAG:** retrieved document ids, similarity scores, context size.
+- **Versions:** model, prompt, index, code. Without them you can't correlate a drop with a change.
+
+Tools: OpenTelemetry-based tracing or LLM-specific tracing platforms, or your own spans in a log table. **Redact PII** before logging prompts and outputs, and control who can read traces."""
+diagram = """flowchart LR
+  R[Request] --> QP[Query processing] --> E[Embedding] --> RT[Retrieval] --> RR[Reranking] --> L[LLM] --> S[Response]"""
+
+[[sections]]
+id = "caching"
+group = "Production"
+title = "Caching"
+plain = "Don't pay twice for the same work. Cache embeddings, retrieval, responses and API results, and design invalidation first, because a stale or wrongly scoped cache is a bug."
+how = [
+  "Pick the layer: embeddings, retrieval, full responses, external API results, provider prompt prefix",
+  "Build a key from everything that affects the result, including user or tenant scope and versions",
+  "Decide invalidation: TTL, event-based on source change, or version keys",
+]
+uses = [
+  "Answering a popular FAQ instantly from cache",
+  "Skipping re-embedding of unchanged documents",
+]
+picture = "Like a restaurant prepping popular dishes in advance, as long as it throws them out before they go off and never gives one table's order to another."
+body = """- **Exact cache:** same request, reuse the response. Key on a hash of prompt, model, parameters, context and permissions.
+- **Semantic cache:** different wording, same intent, found by embedding similarity above a threshold. Too loose a threshold returns an answer to a different question.
+- **Embedding cache:** key by content hash.
+- **Retrieval cache:** reuse results until the index changes.
+- **API cache:** reuse external results within their freshness window.
+- **Provider prompt caching:** many APIs cache a repeated prompt prefix to cut cost and latency; put stable content first, variable content last.
+
+Invalidation:
+```
+TTL           simple, stale until expiry
+event-based   invalidate when the source changes
+version keys  include model, prompt and index versions so a deploy misses old entries
+```
+**Scope keys by user, tenant and permissions**, or one customer gets another's answer."""
+
+[[sections]]
+id = "feedback-loops"
+group = "Production"
+title = "User Feedback Loops"
+plain = "Real users find failures your evals never imagined. The value isn't in collecting thumbs-down; it's turning each confirmed failure into a fix and a new eval."
+how = [
+  "Collect explicit signals (thumbs, ratings, corrections) and implicit ones (retries, rephrasing, escalations, abandonment, edits)",
+  "Triage with the trace attached: find which stage failed and why",
+  "Fix it and add the case to the eval suite so it never silently returns",
+]
+uses = [
+  "Investigating a doubled thumbs-down rate",
+  "Growing the regression suite from real production failures",
+]
+picture = "Like a restaurant reading complaint cards: the card says something was wrong, the kitchen still has to find out what."
+body = """Feedback isn't ground truth. It is **sparse** (most users never click), **biased** toward severe failures, and **ambiguous**: a thumbs-down could mean wrong answer, wrong retrieval, missing information, bad UX, or user misunderstanding.
+
+So never train directly on raw feedback. Triage first.
+```
+User feedback -> Failure analysis -> Root cause -> Fix -> New eval -> Regression protection
+```
+Implicit signals are plentiful; explicit ones are clearer. Always store feedback **linked to the trace id** so you can see what the system actually did."""
+
+[[sections]]
+id = "cost-latency"
+group = "Production"
+title = "Cost and Latency Optimization"
+plain = "Most LLM cost and latency comes from which model you call, how many tokens go in and out, and how often you call it. Attack those, and measure quality while you do."
+how = [
+  "Measure: cost and latency per request and per stage from traces",
+  "Reduce work: caching, fewer and shorter tokens, fewer calls",
+  "Route: send easy requests to small models, hard ones to big models, and re-check quality with evals",
+]
+uses = [
+  "Cutting an LLM bill that tripled after launch",
+  "Making a chat UI feel fast",
+]
+picture = "Like a hospital triage desk: not every patient needs the senior surgeon."
+body = """Levers:
+- **Model routing / cascades:** a cheap model or classifier handles easy requests, escalates hard ones.
+- **Caching:** exact, semantic, and provider prompt caching for long stable prefixes.
+- **Fewer tokens:** trim prompts and history, fewer but reranked RAG chunks, cap output length, ask for concise formats.
+- **Batching:** many providers offer cheaper asynchronous batch processing for work that isn't real-time; self-hosted servers batch requests for throughput.
+- **Streaming:** shows tokens as they're generated, improving perceived latency (time to first token) without reducing total time.
+- **Parallelize** independent calls; **distill or fine-tune** a small model for a high-volume narrow task.
+
+Every optimization is a quality risk: run the eval suite before and after, and watch online quality signals."""
+
+# ---------------------------------------------------------------- Safety
+
+[[sections]]
+id = "guardrails"
+group = "Safety"
+title = "Guardrails: The Model Proposes, the Application Enforces"
+plain = "Guardrails are checks around the model. The model can suggest anything; deterministic code decides what actually happens."
+how = [
+  "Input guardrails: injection detection, PII, validation, authentication, authorization",
+  "Output guardrails: schema, safety, PII, policy and business-rule checks",
+  "Business rules in application code that no prompt can override",
+]
+uses = [
+  "Capping automated refunds at a fixed limit",
+  "Blocking replies that contain another customer's data",
+]
+picture = "Like a bank teller who can recommend anything, but the vault only opens within the limits set in the system."
+body = """```
+User -> input guardrails -> LLM -> output guardrails -> application -> business rule check
+LLM:            'Refund customer 50,000'
+Business rule:  max automated refund = 10,000  -> block or route to human approval
+```
+- Important rules must not live only in the prompt: prompts are followed probabilistically and can be overridden by injection.
+- **Least privilege:** give agents only the tools and scopes they need.
+- **Human approval** for risky or irreversible actions.
+- On output validation failure: retry, fall back to a safe reply, or escalate; never pass unvalidated output to a system."""
+diagram = """flowchart TD
+  U[User] --> IG[Input guardrails] --> L[LLM] --> OG[Output guardrails] --> A[Application]
+  A --> BR{Business rule check}
+  BR -- within limits --> OK[Execute]
+  BR -- over limit --> H[Block or human approval]"""
+
+[[sections]]
+id = "prompt-injection"
+group = "Safety"
+title = "Prompt Injection"
+plain = "Prompt injection is text that tries to hijack the model's instructions. Direct injection comes from the user; indirect injection hides in content the model reads, like a webpage, email or tool result."
+how = [
+  "The model can't reliably tell trusted instructions from untrusted text in its context",
+  "An attacker places instructions in the input or in content the system will retrieve",
+  "The model follows them, for example leaking data or calling a tool it shouldn't",
+]
+uses = [
+  "Threat-modelling an email assistant that reads inbound mail",
+  "Reviewing an agent that browses the web with tool access",
+]
+picture = "Like a forged note slipped into a stack of paperwork saying 'also wire 10,000 to this account', and a clerk who follows every note in the stack."
+body = """There is **no complete fix** at the model level, so defend in depth and limit the blast radius:
+- Treat retrieved documents, web pages, emails and tool outputs as **untrusted data**, clearly delimited from instructions.
+- **Least privilege:** the agent's tools and credentials only allow what this user may do.
+- **Authorization and limits in code**, not in the prompt.
+- **Human confirmation** for sensitive actions (sending email, payments, deleting data).
+- Restrict outbound channels that can exfiltrate data (arbitrary URLs, images with query strings, unknown recipients).
+- Use injection classifiers as one layer, not the only one.
+- Red-team with injection cases in the eval suite.
+
+The dangerous combination: access to **private data** + exposure to **untrusted content** + the ability to **send data out**. Break at least one leg."""
+
+[[sections]]
+id = "authorization-pii"
+group = "Safety"
+title = "Authorization and PII"
+plain = "Who can see and do what must be enforced by your code and data layer, not by asking the model. And personal data must be minimized and redacted everywhere it flows."
+how = [
+  "Authenticate the user and carry their identity and permissions through every call",
+  "Filter retrieval and scope tools by those permissions before the model sees anything",
+  "Detect and redact PII in inputs, outputs, logs and traces; keep only what you need",
+]
+uses = [
+  "A RAG assistant over HR documents where employees see only their own records",
+  "Redacting card numbers before prompts are logged",
+]
+picture = "Like a library where the restricted shelves are locked; you don't rely on asking the librarian nicely not to read them out."
+body = """Authorization:
+- Store **access-control metadata** on every chunk and apply it as a **pre-filter** in retrieval; a document the user can't see must never reach the prompt.
+- Tools run with the **user's** permissions, not a powerful service account.
+- Scope caches by user or tenant.
+- Keep ACLs in sync with the source system; deleted or revoked documents must leave the index.
+
+PII:
+- Minimize: send only fields the task needs.
+- Redact or mask before logging; set retention limits; restrict who can view traces.
+- Check provider data-retention and training terms, and data residency requirements.
+- Output checks for leaking other people's data."""
+
+# ---------------------------------------------------------------- Interview Playbook
+
+[[sections]]
+id = "ai-system-design"
+group = "Interview Playbook"
+title = "AI System Design: A Framework"
+plain = "A repeatable way to answer 'design an AI system' questions: clarify, sketch the request path, then cover evals, observability, cost, safety and failure handling."
+how = [
+  "Clarify users, tasks, data, scale, latency, accuracy and risk",
+  "Draw the request path: guardrails, retrieval or tools, model, validation",
+  "Cover the learning path and operations: evals, tracing, feedback, caching, fallbacks",
+]
+uses = [
+  "Design a RAG assistant, a support agent, an eval pipeline or a semantic cache",
+]
+picture = "Like an architect's walkthrough: who lives here, the floor plan, then plumbing, wiring and fire exits."
+body = """Checklist:
+```
+1. requirements   users, use cases, data sources, volume, latency, quality bar, risk
+2. baseline       simplest design: prompt, RAG, workflow before agent
+3. data path      ingestion, chunking, embeddings, index, freshness, ACLs
+4. request path   input guardrails -> retrieve / tools -> LLM -> output checks
+5. evals          offline suite from real failures, should / should-not, CI gate
+6. observability  traces per stage, p95 latency, cost, versions
+7. cost           routing, caching, token budgets
+8. safety         authz in code, injection defense, PII, human approval
+9. failures       timeouts, fallbacks, 'I don't know', escalation
+10. iteration     feedback -> new evals -> improvements
+```
+State trade-offs out loud (quality vs cost vs latency) and say what you would build first."""
+
+[[sections]]
+id = "behavioral-stories"
+group = "Interview Playbook"
+title = "Behavioral Stories (STAR)"
+plain = "Behavioral questions want a real story told in order: the situation, your task, what you did, the measurable result, and what you learned."
+how = [
+  "Situation and task: the context and your responsibility, in two sentences",
+  "Action: what you personally did, with specifics",
+  "Result and reflection: numbers if possible, then what you'd do differently",
+]
+uses = [
+  "Tell me about an AI feature that failed in production",
+  "Tell me about a time you pushed back on a stakeholder",
+]
+picture = "Like a short case study: setup, decision, outcome, lesson."
+body = """Strong AI-engineering stories show:
+- **Measurement:** you built or used evals rather than eyeballing outputs.
+- **Root cause:** you traced the failure to a stage (retrieval, prompt, model change, data).
+- **Prevention:** the failure became a new eval, alert or guardrail.
+- **Ownership:** say 'I', not just 'we', for your part.
+- **Honest reflection:** what you would do earlier next time.
+
+Prepare three or four stories (a failure, a disagreement, learning something fast, a big win) and adapt them to the question."""

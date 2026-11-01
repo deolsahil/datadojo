@@ -1,0 +1,101 @@
+title = "Features and Data"
+order = 4
+desc = "Feature stores, point-in-time correctness, leakage, training-serving skew, label quality and freshness."
+
+[[questions]]
+id = "ml-feature-store"
+q = "What is a feature store, what problems does it solve, and how do its offline and online stores differ?"
+level = "mid"
+kind = "concept"
+rubric = [
+  "A shared system where features are defined once and served for both training and inference",
+  "Offline store keeps full timestamped history for building training sets; online store keeps the latest value per entity for low-latency serving",
+  "Solves training-serving skew by reusing one definition for both paths",
+  "Enables point-in-time correct training sets to avoid leakage",
+  "Mentions feature reuse and discovery across teams, and freshness via batch or streaming materialization",
+]
+answer = """- A **feature store** lets teams define a feature once (entity key, source, transformation, freshness) and use it for both training and live inference.
+- **Offline store** (lake or warehouse tables): full timestamped history, used to build training sets and batch scores.
+- **Online store** (Redis, DynamoDB, Cassandra): only the latest value per entity, read in single-digit milliseconds by the serving path.
+- It cuts **training-serving skew**, since both paths use the same definition rather than separate SQL and Java versions.
+- It supports **point-in-time joins**, so each training row only sees values known at its event time.
+- It enables **reuse and discovery** and tracks **freshness**: batch jobs for daily features, streaming jobs for features that must be seconds fresh.
+- Overkill for one batch model; worth it once several real-time models share features."""
+study = "feature-stores"
+
+[[questions]]
+id = "ml-point-in-time-join"
+q = "Explain point-in-time correctness when building a training set. How would you implement it for 50 features and 100 million labeled events?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Each label row has an event timestamp, and each feature must use the latest value with timestamp at or before that moment",
+  "Joining on the current or latest feature value leaks future information and inflates offline metrics",
+  "Implements an as-of join: features stored with valid-from timestamps, joined by entity key with the largest timestamp not after the event time",
+  "Handles scale: partition or bucket by entity, use the engine's as-of join support (Spark, warehouse, Feast), and process in time ranges",
+  "Accounts for real availability delays (data that lands hours late) and feature TTLs so stale values are treated as missing",
+]
+answer = """- Every label row has an **event time**. A correct row uses, for each feature, the most recent value whose timestamp is **at or before** that time.
+- Joining to today's feature table leaks the future: a user's 'orders last 30 days' may include orders after the label.
+- Store features as history: `(entity_id, feature_ts, value)`. Then do an **as-of join**: for each event, pick the row with max `feature_ts <= event_ts`.
+- At 100M events: use Feast or the platform's point-in-time API, or in Spark union labels and features per entity, sort by timestamp and forward-fill within a window partitioned by entity. Bucket by entity and process in date ranges to keep shuffles manageable.
+- Use **availability time**, not just event time: if a daily batch lands at 06:00, a 03:00 event must use the day before.
+- Apply a **TTL**: values older than the feature's max age become null, matching what serving would see."""
+study = "data-leakage"
+
+[[questions]]
+id = "ml-leakage-scenario"
+q = "A new churn model hits 0.98 AUC offline. The top feature by importance is days_since_last_support_call. What do you suspect, and how do you confirm it?"
+level = "mid"
+kind = "scenario"
+rubric = [
+  "Suspects data leakage because the AUC is implausibly high and one feature dominates",
+  "Checks when the feature was computed relative to the prediction time: it may include calls made after the snapshot, such as cancellation calls",
+  "Confirms by rebuilding the feature as of the prediction timestamp (point-in-time) and retraining to see whether AUC drops",
+  "Also checks the split (random vs time, same customers in train and test) and preprocessing fitted on all data",
+  "Proposes prevention: define the prediction moment explicitly and use point-in-time feature generation",
+]
+answer = """- 0.98 AUC for churn plus one dominant feature strongly suggests **leakage**.
+- Likely cause: the feature was computed from the **current** support log, so for churned users it includes the **cancellation call** itself, made after the prediction date. The feature encodes the label.
+- Confirm: pick a few churned customers and compare call dates with the snapshot date; then rebuild the feature **as of each row's prediction time** and retrain. If AUC falls to something like 0.75, that was the leak.
+- Also check the split (time-based? same customers in train and test?) and that encoders or scalers were fitted only on training data.
+- Prevent it: define the prediction moment for every row, generate features with **point-in-time joins**, and treat any near-perfect offline score as a bug until proven otherwise."""
+study = "data-leakage"
+
+[[questions]]
+id = "ml-training-serving-skew"
+q = "A model with strong offline metrics performs noticeably worse in production from day one, with no sign of drift. How do you track down training-serving skew?"
+level = "senior"
+kind = "scenario"
+rubric = [
+  "Day-one degradation without drift points at skew between how features are computed offline and online, not world change",
+  "Logs the features actually sent to the model at serving and compares them with offline values for the same entities and timestamps",
+  "Compares feature by feature (distributions, null rates, exact row-level mismatches) to find the culprits",
+  "Names common causes: separate code paths, different missing-value defaults, units or timezones, feature freshness or lag, preprocessing not shipped with the model",
+  "Fixes at the root with a shared feature definition or feature store, training on logged serving features, and automated skew checks",
+]
+answer = """- Bad from day one with no drift usually means the model sees **different inputs online** than in training.
+- Log the **exact feature vector and score** for each prediction. Take a sample of served requests, recompute the same features through the offline pipeline as of the same timestamps, and **diff row by row**.
+- Rank features by mismatch rate and by importance; also compare score distributions between offline replay and production.
+- Usual culprits: two implementations (Spark SQL offline, Java online), **missing values** defaulting to 0 online but NaN offline, units or **timezones**, categorical encodings out of sync, online features **lagging** hours behind, or a scaler not shipped with the model.
+- Fix the root: one shared definition (feature store or shared library), package preprocessing with the model, train future models on **logged serving features**, and add automated skew checks to monitoring and CI."""
+study = "training-serving-skew"
+
+[[questions]]
+id = "ml-label-quality"
+q = "Your fraud labels come from chargebacks that arrive up to 90 days later, and only for transactions you approved. What problems does this create and how do you handle them?"
+level = "senior"
+kind = "concept"
+rubric = [
+  "Delayed labels: recent transactions look like non-fraud until their window closes, so training must only use matured examples or account for immaturity",
+  "Selection bias: declined transactions never receive outcome labels, so the model learns only from what the previous policy approved",
+  "Mitigates selection bias with a small random exploration or holdout slice, analyst-reviewed labels, or reject inference",
+  "Uses leading indicators or proxy labels (early disputes, analyst decisions) for monitoring while chargebacks mature",
+  "Mentions label noise (friendly fraud, misreported disputes) and auditing labels",
+]
+answer = """- **Delay**: a transaction from last week with no chargeback is not yet 'legit'. Train only on transactions whose **90-day window has closed**, or use a survival-style label with partial maturity. Otherwise recent data is mislabeled as clean.
+- **Selection bias**: declined transactions never get outcomes, so the model only learns from what the old policy let through and can lock in its blind spots.
+- Mitigate by approving a **tiny random slice** of would-be declines (with loss limits) to get unbiased labels, using **analyst review** labels for declined or held cases, or reject-inference techniques.
+- **Monitoring** cannot wait 90 days: track early signals such as first disputes, analyst decisions and flag rates as leading indicators.
+- **Noise**: friendly fraud and mislabeled disputes add noise; audit samples and keep a clear written label definition."""
+study = "label-quality"
