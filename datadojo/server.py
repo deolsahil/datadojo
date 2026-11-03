@@ -4,7 +4,7 @@ from collections import Counter
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from datadojo import content, interview, llm, rounds
+from datadojo import content, interview, llm, rounds, updater
 from datadojo.paths import DATA_HOME
 
 ROOT = Path(__file__).parent          # read-only app files (problems, static, ...)
@@ -743,6 +743,8 @@ class Handler(SimpleHTTPRequestHandler):
                                    "providers": {k: v | {"models": llm.catalog_models(k)} for k, v in llm.PROVIDERS.items()}})
         if parts[1:] == ["coach-brain"]:  # which model the coaches use, shown on home and in the coach panel
             return self.send_json(llm.coach_brain())
+        if parts[1:] == ["update", "status"]:  # in-app update progress
+            return self.send_json(updater.state | {"supported": updater.supported()})
         if parts[1:] == ["version"]:
             return self.send_json(latest_release())
         if parts[1:2] == ["rounds"] and len(parts) == 3:  # one past round's report
@@ -815,6 +817,20 @@ class Handler(SimpleHTTPRequestHandler):
             if res.get("url"):
                 webbrowser.open(res["url"])  # the system browser, also from the desktop app's window
             return self.send_json(res)
+        if self.path == "/api/update/start":  # the server picks the file from the latest release, never from the request
+            v = latest_release()
+            if not v.get("update"):
+                return self.send_json({"phase": "error", "error": "You already have the latest version."})
+            return self.send_json(updater.start(v.get("download"), (v.get("download") or "").rsplit("/", 1)[-1], v.get("url"), v.get("latest")))
+        if self.path == "/api/update/restart":  # "Restart to update": close; the staged installer swaps and reopens DataDojo
+            return self.send_json(updater.restart())
+        if self.path == "/api/update/open":  # fallback: open the downloaded installer, or the release page
+            target = updater.state.get("fallback") or latest_release().get("url") or ""
+            if target.startswith("https://"):
+                webbrowser.open(target)
+            elif target and os.path.exists(target):
+                os.startfile(target) if sys.platform == "win32" else subprocess.Popen(["open", target])
+            return self.send_json({"ok": bool(target)})
         if self.path == "/api/setup/skip":
             llm.save(llm.load() | {"setup_done": True, "coach_skipped": True})  # solve freely; coaches explain they are off
             return self.send_json({"ok": True})

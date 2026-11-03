@@ -1,4 +1,10 @@
-## What's new in 0.3.4
+## What's new in 0.3.5
+
+- **Update from inside the app.** A notification tells you when a new version is out. Click Update and DataDojo downloads it in the background with a progress bar (the coaches race to the finish line while you wait), then restarts when you're ready. Choose Later and it installs the next time you quit.
+- **Switch your coach model in one click.** Click the model label on the home page or next to a coach to pick another model from your plan or key: OpenAI, Claude, Gemini or a local model.
+- *Updating from 0.3.4 or earlier:* download this version once from the release page; from here on, updates install from inside the app.
+
+## New in 0.3.4
 
 - **See which model your coaches use.** A small label on the home page and next to every coach shows the model and how it's connected, for example "gpt-5.5 · ChatGPT plan". Click it to change.
 - When coaching is off, the label says so, and so does the coach's first message.

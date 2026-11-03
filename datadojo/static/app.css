@@ -521,7 +521,6 @@ select.field { max-width: none; padding: 10px 12px }
 .su-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width .4s }
 .nm-coach { display: block; margin: 0 0 14px; color: var(--acc); font-size: 12.5px }
 .gh-link { color: var(--acc); text-decoration: underline; font-weight: 700 }
-.pill-update { padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--on-acc); background: var(--acc); box-shadow: var(--glow); animation: pop .4s both }
 
 /* system design home: sticky section rail on the left */
 .ds-home { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; max-width: 1320px; margin: 0 auto; padding: 0 24px }
@@ -600,7 +599,7 @@ select.field { max-width: none; padding: 10px 12px }
 .up-how { margin: 16px 0; padding: 14px 16px; border: 1px solid var(--line2); border-radius: 12px; background: var(--card) }
 .up-notes { max-height: 42vh; overflow: auto; color: var(--text2); font-size: 13px; border-top: 1px solid var(--line); padding-top: 8px }
 .up-notes ul { padding-left: 18px; margin: 4px 0 10px }
-button.pill-update { border: 0; cursor: pointer; font-family: inherit }
+
 
 /* ---------- execution map ---------- */
 .map-btn { margin: 0 0 10px; display: inline-flex; align-items: center; gap: 8px }
@@ -806,3 +805,45 @@ button[hidden], .stages[hidden] { display: none }
   border: 1px solid var(--line2); background: var(--bg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle }
 .coach-brain::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--easy); margin-right: 6px; vertical-align: 1px }
 .coach-brain:hover { color: var(--text); border-color: var(--acc) } .coach-brain.off::before { background: var(--faint) } .coach-brain[hidden] { display: none }
+/* coach model picker */
+.bp-list { display: grid; gap: 6px; margin: 14px 0 6px; max-height: 46vh; overflow: auto }
+.bp-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line2); background: var(--card); font-family: inherit; cursor: pointer }
+.bp-item i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line2); flex: none }
+.bp-item.on { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 8%, var(--card)) } .bp-item.on i { border-color: var(--acc); background: radial-gradient(circle, var(--acc) 45%, transparent 50%) }
+.bp-item small { margin-left: auto; color: var(--dim); font-size: 11px }
+/* update notification (bottom right) */
+.upd-toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; width: min(380px, calc(100vw - 40px)); display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px 14px 14px 16px; border-radius: 14px; border: 1px solid var(--line2); background: color-mix(in srgb, var(--bg2) 92%, transparent);
+  backdrop-filter: blur(12px); box-shadow: 0 18px 40px -16px rgba(0,0,0,.55); animation: ut-in .35s cubic-bezier(.2,.8,.2,1) both }
+.upd-toast.out { animation: ut-out .25s ease forwards }
+@keyframes ut-in { from { opacity: 0; transform: translateY(16px) scale(.98) } } @keyframes ut-out { to { opacity: 0; transform: translateY(12px) } }
+.ut-ico { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--on-acc);
+  background: linear-gradient(135deg, var(--acc), color-mix(in srgb, var(--acc) 40%, var(--acc2))) }
+.upd-toast.downloading .ut-ico .ic { animation: pu-bob 1.6s ease-in-out infinite } @keyframes pu-bob { 0%, 100% { transform: translateY(-1px) } 50% { transform: translateY(2px) } }
+.upd-toast.error .ut-ico { background: color-mix(in srgb, var(--hard) 75%, var(--card)) }
+.ut-body { flex: 1; min-width: 0; display: grid; gap: 4px } .ut-body b { font-size: 13.5px; color: var(--text) } .ut-body span { font-size: 12.5px; color: var(--dim); line-height: 1.45 }
+.ut-actions { display: flex; gap: 8px; margin-top: 8px } .ut-actions button { padding: 6px 12px; font-size: 12.5px }
+.ut-bar { height: 6px; margin-top: 4px; border-radius: 999px; background: var(--track); overflow: hidden }
+.ut-bar i { display: block; height: 100%; border-radius: 999px; background: var(--acc); transition: width .35s ease }
+.ut-bar i.full { background: linear-gradient(90deg, var(--acc), var(--acc2), var(--acc)) 0 0 / 200% 100%; animation: shimmer 1.4s linear infinite }
+.ut-x { flex: none; background: none; border: 0; padding: 2px; color: var(--faint); cursor: pointer } .ut-x:hover { color: var(--text) }
+@media (prefers-reduced-motion: reduce) { .upd-toast, .upd-toast.out, .ut-bar i.full, .upd-toast .ut-ico .ic { animation: none } }
+/* update popup: a coach rides the bar to the finish line, the others cheer */
+.modal-box.ud { width: min(560px, 94vw) }
+.ud-stage { display: flex; align-items: flex-end; gap: 16px; margin: 26px 0 10px; padding: 52px 4px 0 24px }
+.ud-fans { flex: none; display: flex; gap: 2px; margin-bottom: -4px }
+.ud-fans span { display: block; animation: ud-cheer 1.2s ease-in-out var(--d) infinite }
+@keyframes ud-cheer { 0%, 100% { transform: translateY(0) } 30% { transform: translateY(-7px) rotate(-4deg) } 60% { transform: translateY(0) rotate(3deg) } }
+.ud-track { position: relative; flex: 1; height: 12px; margin-bottom: 6px; border-radius: 999px; background: var(--track) }
+.ud-fill { position: absolute; inset: 0 auto 0 0; width: var(--p, 2%); border-radius: inherit; transition: width .45s ease;
+  background: linear-gradient(90deg, var(--acc2), var(--acc)) }
+.ud[data-phase="installing"] .ud-fill, .ud[data-phase="restarting"] .ud-fill { background: linear-gradient(90deg, var(--acc), var(--acc2), var(--acc)) 0 0 / 200% 100%; animation: shimmer 1.2s linear infinite }
+.ud-rider { position: absolute; bottom: 4px; left: var(--p, 2%); transform: translateX(-50%); transition: left .45s ease; animation: ud-hop .55s ease-in-out infinite }
+@keyframes ud-hop { 0%, 100% { margin-bottom: 0 } 50% { margin-bottom: 7px } }
+.ud[data-phase="ready"] .ud-rider, .ud[data-phase="restarting"] .ud-rider { animation: ud-cheer 1s ease-in-out infinite }
+.ud-flag { position: absolute; right: -8px; top: -24px; font-size: 18px }
+.ud-steps { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--faint); margin-top: 12px }
+.ud-steps span.on { color: var(--text) } .ud-steps i { flex: 0 0 22px; height: 1px; background: var(--line2) }
+.ud-line { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; font-size: 13px; color: var(--text2); min-height: 20px }
+.ud-line b { color: var(--dim); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap }
+@media (prefers-reduced-motion: reduce) { .ud-fans span, .ud-rider, .ud-fill { animation: none !important } }

@@ -30,6 +30,7 @@ const blobReady = Promise.all(['internal', 'expression', 'gaze'].map(f => import
 const LINE = {
   history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>',
   flag: '<path d="M5 21V4"/><path d="M5 4h11l-2.5 4.5L16 13H5"/>',
+  update: '<path d="M12 4v10"/><path d="M7.5 9.5 12 14l4.5-4.5"/><path d="M5 18.5h14"/>',
   timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M9.5 2.5h5"/>',
   pause: '<path d="M9 5v14M15 5v14"/>',
   play: '<path d="M7 4.8v14.4a.8.8 0 0 0 1.2.7l11.3-7.2a.8.8 0 0 0 0-1.4L8.2 4.1A.8.8 0 0 0 7 4.8z" fill="currentColor"/>',
@@ -99,7 +100,29 @@ async function showBrain() {
     a.textContent = b.off ? (short ? 'Coaching off' : 'Coaching off · turn it on') : short ? b.model : `${b.model} · ${b.via}`;
     a.title = b.off ? 'Open coach setup to turn coaching on' : `Coaches use ${b.model} (${b.via}). Click to change.`;
     a.classList.toggle('off', !!b.off); a.hidden = !b.off && !b.model;
+    a.onclick = e => { e.preventDefault(); b.off ? (location.hash = '#/setup/brain') : brainPicker(b); };
   });
+}
+// switch model within the current provider and sign-in (a ChatGPT plan, an API key, local Ollama) without redoing setup
+async function brainPicker(b) {
+  modal(`<div class="kicker dot">Coach model</div><h3 style="margin:6px 0 2px">Which model should your coaches use?</h3>
+    <div class="faint">${esc(b.via)}</div><div id="bp-list" class="bp-list"><div class="dim"><span class="spinner"></span>Loading the models you can use…</div></div>
+    <div class="row-end"><a href="#/setup/brain" class="faint" style="margin-right:auto;text-decoration:underline">Change provider or sign-in</a>
+      <span id="bp-msg" class="dim"></span><button class="primary" id="bp-save" disabled>Use this model</button></div>`);
+  const r = b.provider === 'ollama' ? { models: (await api('/api/setup')).ollama?.models || [] } : await api('/api/setup/models', { provider: b.provider });
+  if (!$('#bp-list')) return;
+  const ids = [...new Set([b.model, ...(r.models || [])])].filter(Boolean);
+  let pick = b.model;
+  $('#bp-list').innerHTML = ids.map(m => `<button class="bp-item ${m === b.model ? 'on' : ''}" data-m="${esc(m)}"><i></i><span>${esc(m)}</span>${m === b.model ? '<small>in use</small>' : ''}</button>`).join('')
+    + (r.live ? '' : '<div class="faint" style="font-size:11.5px;margin-top:6px">Showing the usual models for this provider.</div>');
+  $('#bp-list').onclick = e => { const it = e.target.closest('.bp-item'); if (!it) return;
+    pick = it.dataset.m; $('#bp-list').querySelectorAll('.bp-item').forEach(x => x.classList.toggle('on', x === it)); $('#bp-save').disabled = pick === b.model; };
+  $('#bp-save').onclick = async () => {
+    $('#bp-save').disabled = true; $('#bp-msg').textContent = 'Checking…';
+    const res = await api('/api/setup/save', { provider: b.provider, model: pick, signin: b.signin });
+    if (res.error) { $('#bp-msg').textContent = res.error; $('#bp-save').disabled = false; return; }
+    closeModal(); showBrain();
+  };
 }
 function ring(done, total, size = 44, color = 'var(--acc)') {
   const h = size / 2, r = h - 4, c = 2 * Math.PI * r, f = total ? done / total : 0;
@@ -1532,8 +1555,8 @@ async function gamePlay(gid) {
 
 // ---------- first-run setup ("sign in" for the coaches' brain) ----------
 const coachLabel = s => s.provider === 'ollama' ? `Local · ${s.model}` : `${({ anthropic: 'Claude', openai: 'OpenAI', gemini: 'Gemini' })[s.provider]} · ${s.model}`;
-async function setupPage() {
-  let st = await api('/api/setup'), step = 0, path = null, provider = 'anthropic', localModel = st.settings.provider === 'ollama' ? st.settings.model : 'gemma2:9b';
+async function setupPage(start = 0) {  // start 1: straight to "what powers your coaches" (from the model label)
+  let st = await api('/api/setup'), step = start, path = null, provider = 'anthropic', localModel = st.settings.provider === 'ollama' ? st.settings.model : 'gemma2:9b';
   const P = st.providers, steps = ['Welcome', 'Coach brain', 'Connect', 'Ready'];
   let poll = null; cleanups.push(() => clearInterval(poll));
   const shell = body => `<div class="setup"><div class="setup-card card">
@@ -2092,7 +2115,7 @@ async function route() {
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('on',
     a.dataset.nav === (page === 'lang' ? arg : ['design', 'games', 'interview'].includes(page) ? page : page ? '' : 'home')));
   document.querySelectorAll('.dd').forEach(dd => { dd.classList.toggle('on', !!dd.querySelector('.dd-menu a.on')); dd.classList.remove('open'); });
-  if (page === 'setup') await setupPage();
+  if (page === 'setup') await setupPage(arg === 'brain' ? 1 : 0);
   else if (page === 'p') await workspace(arg, rest[0]);
   else if (page === 'feedback') await feedbackPage();
   else if (page === 'design') await (arg ? designLesson(arg) : designHome());
@@ -2120,17 +2143,123 @@ document.querySelectorAll('.dd-btn').forEach(b => b.onclick = () => {  // click/
 document.addEventListener('click', e => { if (!e.target.closest('.dd')) document.querySelectorAll('.dd').forEach(x => x.classList.remove('open')); });
 renderThemeToggle();
 blobReady.then(renderMe);
-api('/api/version').then(v => {
+api('/api/version').then(async v => {
   if (!v.update) return;
-  $('#nav-update').outerHTML = `<button class="pill-update" id="pill-update" title="You have ${esc(v.version)}">✨ Update to ${esc(v.latest)}</button>`;
-  $('#pill-update').onclick = () => updateModal(v);
+  const st = await api('/api/update/status');  // a download may already be under way (page reloaded)
+  if (sessionStorage.getItem('updLater:' + v.latest) && !['downloading', 'installing', 'ready'].includes(st.phase)) return;  // "Later": until next launch
+  updateToast(v, st);
 });
+
+
+// update notification, bottom right, like most desktop apps: Update -> downloads in the background with progress ->
+// "Restart to update" (or it installs the next time DataDojo quits). Later hides it until the next launch.
+const inAppUpdate = v => v.install === 'desktop' && v.download && (v.os === 'Mac' || v.os === 'Windows');
+function updateToast(v, st, go = false) {
+  let el = $('#upd-toast'), timer = null;
+  if (!el) { document.body.insertAdjacentHTML('beforeend', '<div class="upd-toast" id="upd-toast" role="status" aria-live="polite"></div>'); el = $('#upd-toast'); }
+  const first = (v.notes || '').split('\n').find(l => /^[-*] /.test(l)) || '';
+  const teaser = first.replace(/^[-*] /, '').replace(/\*\*/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').slice(0, 120);
+  const mb = n => (n / 1048576).toFixed(1);
+  const later = () => { sessionStorage.setItem('updLater:' + v.latest, '1'); hide(); };
+  const hide = () => { clearInterval(timer); el.classList.add('out'); setTimeout(() => el.remove(), 250); };
+  const draw = s => {
+    const ph = s?.phase || 'idle', pct = s?.total ? Math.round(100 * s.done / s.total) : 0;
+    const bar = w => `<div class="ut-bar"><i style="width:${w}%" class="${w >= 100 ? 'full' : ''}"></i></div>`;
+    const view = {
+      idle: [`DataDojo ${esc(v.latest)} is available`, esc(teaser) || "See what's new.", '',
+        inAppUpdate(v) ? `<button class="primary" data-a="go">Update</button><button class="ghost" data-a="notes">What's new</button>`
+                       : `<button class="primary" data-a="notes">How to update</button><button class="ghost" data-a="later">Later</button>`],
+      downloading: [`Downloading DataDojo ${esc(v.latest)}`, s?.total ? `${pct}% · ${mb(s.done)} of ${mb(s.total)} MB · keep practicing` : 'Starting the download…', bar(pct), ''],
+      installing: ['Preparing the update…', 'Almost there.', bar(100), ''],
+      ready: ['Update ready', `Restart to finish installing ${esc(v.latest)}. Or it installs the next time you quit DataDojo.`, '',
+        `<button class="primary" data-a="restart">Restart now</button><button class="ghost" data-a="later">Later</button>`],
+      restarting: ['Restarting DataDojo…', 'It will open again in a moment.', bar(100), ''],
+      error: ["The update couldn't finish", esc(s?.error || 'Something went wrong.'), '',
+        `<button class="primary" data-a="manual">Download it myself</button><button class="ghost" data-a="later">Dismiss</button>`],
+    }[ph] || null;
+    if (!view) return;
+    el.className = `upd-toast ${ph}`;
+    el.innerHTML = `<div class="ut-ico">${ic('update', 16)}</div><div class="ut-body"><b>${view[0]}</b><span>${view[1]}</span>${view[2]}
+      ${view[3] ? `<div class="ut-actions">${view[3]}</div>` : ''}</div>
+      <button class="ut-x" data-a="${['downloading', 'installing'].includes(ph) ? 'hide' : 'later'}" aria-label="${['downloading', 'installing'].includes(ph) ? 'Hide (keeps downloading)' : 'Later'}">${ic('x', 14)}</button>`;
+    if (['ready', 'error', 'restarting'].includes(ph)) clearInterval(timer);
+  };
+  const poll = () => { clearInterval(timer); timer = setInterval(async () => {
+    const s = await api('/api/update/status');
+    if (!$('#upd-toast')) { if (['ready', 'error'].includes(s.phase)) updateToast(v, s); else return; }  // hidden while downloading: come back when ready
+    draw(s); }, 400); };
+  el.onclick = async e => {
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (a === 'go') { clearInterval(timer); el.remove(); updatePopup(v, await api('/api/update/start', {})); }
+    if (a === 'notes') updateModal(v);
+    if (a === 'later') later();
+    if (a === 'hide') { el.remove(); poll(); }
+    if (a === 'restart') { clearInterval(timer); el.remove(); updatePopup(v, await api('/api/update/restart', {})); }
+    if (a === 'manual') api('/api/update/open', {});
+  };
+  draw(st);
+  if (go) el.querySelector('[data-a="go"]')?.click();
+  else if (['downloading', 'installing'].includes(st?.phase)) poll();
+}
+
+// the update popup: a coach rides the progress bar to the finish where the others cheer, with a line about what each
+// coach is "doing" so the wait feels short. Closing it keeps the download going; the small notification takes over.
+function updatePopup(v, st) {
+  const crew = [CAST.sensei, CAST.sql, CAST.python, CAST.pyspark];
+  const lines = ['Duck is packing your SQL notes…', 'Pip is polishing the editor…', 'Sparky is warming up the Spark engines…',
+    'Sensei is checking every lesson twice…', 'Folding the execution maps…', 'Counting your streak, carefully…',
+    'Teaching the coaches a few new tricks…', 'Dusting off the heatmap…'];
+  let timer = null, tick = 0, last = st, done = false;
+  modal(`<div class="kicker dot">Update</div><h3 style="margin:6px 0 2px">Updating to DataDojo ${esc(v.latest)}</h3>
+    <div class="faint">Your progress, settings and history are kept.</div>
+    <div class="ud-stage"><div class="ud-track"><i class="ud-fill"></i><span class="ud-rider">${blob(crew[0].seed, { size: 46, mood: 'idle', live: true })}</span><b class="ud-flag">🏁</b></div>
+      <div class="ud-fans">${crew.slice(1).map((c, i) => `<span style="--d:${i * .15}s">${blob(c.seed, { size: 34, mood: 'happy', live: true })}</span>`).join('')}</div></div>
+    <div class="ud-steps">${['Download', 'Install', 'Restart'].map(s => `<span>${s}</span>`).join('<i></i>')}</div>
+    <div class="ud-line"><span id="ud-say">${lines[0]}</span><b id="ud-pct"></b></div>
+    <div class="row-end" id="ud-actions"></div>`);
+  $('.modal-box').classList.add('ud');
+  const box = $('.modal-box');
+  const draw = s => {
+    if (!$('.ud-stage')) return;
+    last = s;
+    const ph = s?.phase || 'downloading', pct = ph === 'downloading' ? (s.total ? Math.round(100 * s.done / s.total) : 2) : 100;
+    box.style.setProperty('--p', pct + '%');
+    box.dataset.phase = ph;
+    const at = { downloading: 0, installing: 1, ready: 1, restarting: 2 }[ph] ?? 0;  // Download, Install, Restart
+    document.querySelectorAll('.ud-steps span').forEach((x, i) => x.classList.toggle('on', i <= at));
+    $('#ud-pct').textContent = ph === 'downloading' && s.total ? `${(s.done / 1048576).toFixed(1)} of ${(s.total / 1048576).toFixed(1)} MB · ${pct}%` : '';
+    if (ph === 'installing') $('#ud-say').textContent = 'Installing… almost there.';
+    if (ph === 'ready' && !done) {
+      done = true; clearInterval(timer); confetti($('.ud-flag')); setMood($('.ud-rider svg'), 'happy');
+      $('#ud-say').textContent = `All set! Restart to start using ${v.latest}. Or it installs the next time you quit.`;
+      $('#ud-actions').innerHTML = `<button class="ghost" id="ud-later">Later</button><button class="primary" id="ud-restart">Restart now</button>`;
+      $('#ud-later').onclick = () => closeModal();
+      $('#ud-restart').onclick = async () => draw(await api('/api/update/restart', {}));
+    }
+    if (ph === 'restarting') { $('#ud-say').textContent = 'Restarting DataDojo… see you in a moment.'; $('#ud-actions').innerHTML = ''; }
+    if (ph === 'error') {
+      clearInterval(timer);
+      $('#ud-say').innerHTML = `<span class="fail">The update couldn't finish: ${esc(s.error || 'something went wrong')}</span>`;
+      $('#ud-actions').innerHTML = `<button class="primary" id="ud-manual">Download it myself</button>`;
+      $('#ud-manual').onclick = () => api('/api/update/open', {});
+    }
+  };
+  draw(st);
+  timer = setInterval(async () => {
+    if (++tick % 6 === 0 && last?.phase === 'downloading') $('#ud-say').textContent = lines[(tick / 6) % lines.length];
+    draw(await api('/api/update/status'));
+  }, 450);
+  onModalClose = () => { clearInterval(timer); if (!['restarting'].includes(last?.phase)) updateToast(v, last); };
+}
 
 // "what's new" + the right way to update for how DataDojo was installed; progress lives in the data folder, so it survives
 function updateModal(v) {
-  const how = v.install === 'desktop' && v.download
-    ? `<a class="up-dl" href="${esc(v.download)}"><button class="primary">⬇ Download DataDojo ${esc(v.latest)} for ${esc(v.os)}</button></a>
-       <p class="dim" style="margin:10px 0 0">Open the download and install it over the old one${v.os === 'Mac' ? ' (drag DataDojo into Applications and choose Replace)' : ''}, then reopen DataDojo.</p>`
+  const how = inAppUpdate(v)
+    ? `<button class="primary" id="up-go">${ic('update', 15)}Update now</button>
+       <p class="dim" style="margin:10px 0 0">Downloads in the background while you keep practicing, then restarts when you say so.</p>`
+    : v.install === 'desktop' && v.download
+    ? `<a class="up-dl" href="${esc(v.download)}" target="_blank" rel="noreferrer"><button class="primary">${ic('update', 15)}Download DataDojo ${esc(v.latest)} for ${esc(v.os)}</button></a>
+       <p class="dim" style="margin:10px 0 0">Open the download and install it over the old one, then reopen DataDojo.</p>`
     : `<div class="dim" style="margin-bottom:6px">Run this in your terminal, then start <code>datadojo</code> again:</div>
        <div class="sol-code"><button class="copy" id="up-copy">Copy</button><pre>uv tool upgrade datadojo</pre></div>`;
   modal(`<div class="kicker dot">Update available</div>
@@ -2139,6 +2268,7 @@ function updateModal(v) {
     ${v.notes ? `<div class="up-notes">${md(v.notes.split(/^## How to update/m)[0].replace(/^## (.*)$/gm, '**$1**'))}</div>` : ''}
     <div class="row-end"><a class="faint" href="${esc(v.url)}" target="_blank" rel="noreferrer" style="text-decoration:underline">Release page on GitHub</a></div>`);
   if ($('#up-copy')) $('#up-copy').onclick = () => navigator.clipboard.writeText('uv tool upgrade datadojo').then(() => { $('#up-copy').textContent = 'Copied ✓'; });
+  if ($('#up-go')) $('#up-go').onclick = () => { closeModal(); updateToast(v, null, true); };
 }
 // ---------- launch intro ----------
 // The intro's markup and critical CSS live in index.html so it is on screen from the very first paint (no flash of the

@@ -148,7 +148,7 @@ def coach_brain():
         return {"off": True}
     via = {"openai": "ChatGPT plan" if signin else "OpenAI API key", "anthropic": "Claude account" if signin else "Anthropic API key",
            "gemini": "Google Cloud" if signin else "Gemini API key"}.get(p, "on this computer (Ollama)")
-    return {"model": s.get("model") or "", "via": via}
+    return {"model": s.get("model") or "", "via": via, "provider": p, "signin": signin}
 
 
 def _reason(e):

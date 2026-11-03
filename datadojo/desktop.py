@@ -42,7 +42,9 @@ def main():
             raise ImportError("Linux builds use the browser")  # GTK/Qt webviews aren't bundled
         import webview
         webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
-        webview.create_window("DataDojo", url, width=1440, height=900, min_size=(1100, 700), background_color="#0b0d11")
+        window = webview.create_window("DataDojo", url, width=1440, height=900, min_size=(1100, 700), background_color="#0b0d11")
+        from datadojo import updater
+        updater.quit_app = window.destroy  # an in-app update closes the window; the new version opens itself
         # private_mode=False + storage_path keeps localStorage (name, theme, chats) across launches
         webview.start(private_mode=False, storage_path=str(DATA_HOME / "webview"))
         httpd.shutdown()  # window closed: stop the server; atexit stops Postgres
