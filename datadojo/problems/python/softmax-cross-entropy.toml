@@ -1,0 +1,39 @@
+title = "Stable softmax and cross-entropy"
+lang = "python"
+difficulty = "easy"
+pattern = "ml-algorithms"
+lists = ["ml-ai"]
+function = "softmax_ce"
+statement = """
+`softmax_ce(logits, target)` returns `[probs, loss]`: the softmax of `logits` and the cross-entropy loss
+`−ln(probs[target])`, all rounded to 4 decimals.
+
+Compute softmax stably: subtract the largest logit before exponentiating, so `[1000, 1001]` does not
+overflow.
+
+- `softmax_ce([1, 2, 3], 2)` → `[[0.09, 0.2447, 0.6652], 0.4076]`
+"""
+hints = [
+    "Shift by max(logits) first; the result is mathematically identical.",
+    "loss = -math.log(prob of the target index).",
+]
+starter = "def softmax_ce(logits, target):\n    pass\n"
+solution = """
+import math
+
+def softmax_ce(logits, target):
+    m = max(logits)
+    exps = [math.exp(z - m) for z in logits]
+    total = sum(exps)
+    probs = [e / total for e in exps]
+    return [[round(p, 4) for p in probs], round(-math.log(probs[target]), 4)]
+"""
+
+[[tests]]
+args = [[1, 2, 3], 2]
+[[tests]]
+args = [[1000, 1001], 0]
+[[tests]]
+args = [[0, 0, 0, 0], 3]
+[[tests]]
+args = [[-2, 5, 1], 1]

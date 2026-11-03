@@ -1,0 +1,38 @@
+title = "One-hot encoding with unseen categories"
+lang = "python"
+difficulty = "easy"
+pattern = "ml-features"
+lists = ["ml-ai"]
+function = "one_hot"
+statement = """
+`one_hot(values, categories)` encodes each value as a list of 0/1 flags, one per category in
+`categories` order. A value that is not a known category (seen first in production, say) encodes as
+all zeros instead of crashing.
+
+- `one_hot(["red", "blue", "pink"], ["red", "green", "blue"])` → `[[1, 0, 0], [0, 0, 1], [0, 0, 0]]`
+"""
+hints = [
+    "Build an index dict for the categories.",
+    "Start each row as zeros and set at most one position.",
+]
+starter = "def one_hot(values, categories):\n    pass\n"
+solution = """
+def one_hot(values, categories):
+    pos = {c: i for i, c in enumerate(categories)}
+    rows = []
+    for v in values:
+        row = [0] * len(categories)
+        if v in pos:
+            row[pos[v]] = 1
+        rows.append(row)
+    return rows
+"""
+
+[[tests]]
+args = [["red", "blue", "pink"], ["red", "green", "blue"]]
+[[tests]]
+args = [[1, 2, 1], [1, 2]]
+[[tests]]
+args = [[], ["a"]]
+[[tests]]
+args = [["x"], ["a", "b"]]

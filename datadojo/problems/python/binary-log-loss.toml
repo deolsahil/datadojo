@@ -1,0 +1,40 @@
+title = "Binary log loss"
+lang = "python"
+difficulty = "medium"
+pattern = "ml-metrics"
+lists = ["ml-ai"]
+function = "log_loss"
+statement = """
+`log_loss(y_true, probs)` returns the mean binary cross-entropy, rounded to 6 decimals:
+`-mean(y·ln(p) + (1-y)·ln(1-p))`.
+
+A model that outputs exactly 0 or 1 would make `ln(0)` blow up, so first clip every probability into
+`[1e-15, 1 - 1e-15]`.
+
+- `log_loss([1, 0], [0.9, 0.2])` → `0.164252`
+"""
+hints = [
+    "Clip with min(max(p, eps), 1 - eps) before taking logs.",
+    "Use math.log, and only the term for the true label is non-zero.",
+]
+starter = "def log_loss(y_true, probs):\n    pass\n"
+solution = """
+import math
+
+def log_loss(y_true, probs):
+    eps = 1e-15
+    total = 0.0
+    for y, p in zip(y_true, probs):
+        p = min(max(p, eps), 1 - eps)
+        total += -(y * math.log(p) + (1 - y) * math.log(1 - p))
+    return round(total / len(y_true), 6)
+"""
+
+[[tests]]
+args = [[1, 0], [0.9, 0.2]]
+[[tests]]
+args = [[1, 1, 0], [1.0, 0.0, 0.0]]
+[[tests]]
+args = [[0, 1, 1, 0], [0.5, 0.5, 0.5, 0.5]]
+[[tests]]
+args = [[1], [0.999]]

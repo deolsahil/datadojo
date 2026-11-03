@@ -1,0 +1,37 @@
+title = "k-nearest neighbours"
+lang = "python"
+difficulty = "medium"
+pattern = "ml-algorithms"
+lists = ["ml-ai"]
+function = "knn"
+statement = """
+`knn(train_x, train_y, query, k)` classifies `query` (a list of numbers) by majority vote among the
+`k` training points closest to it in Euclidean distance. Break distance ties by training order
+(earlier first), and vote ties by the smallest label.
+
+- `knn([[0, 0], [1, 1], [5, 5]], ["a", "a", "b"], [0.5, 0.5], 2)` → `"a"`
+"""
+hints = [
+    "Sort training indices by (distance, index) and keep the first k.",
+    "Count votes with collections.Counter; pick max count, then min label.",
+]
+starter = "def knn(train_x, train_y, query, k):\n    pass\n"
+solution = """
+from collections import Counter
+
+def knn(train_x, train_y, query, k):
+    dist = lambda x: sum((a - b) ** 2 for a, b in zip(x, query))
+    nearest = sorted(range(len(train_x)), key=lambda i: (dist(train_x[i]), i))[:k]
+    votes = Counter(train_y[i] for i in nearest)
+    top = max(votes.values())
+    return min(label for label, v in votes.items() if v == top)
+"""
+
+[[tests]]
+args = [[[0, 0], [1, 1], [5, 5]], ["a", "a", "b"], [0.5, 0.5], 2]
+[[tests]]
+args = [[[0], [2], [4], [6]], [1, 2, 2, 1], [3], 2]
+[[tests]]
+args = [[[1, 1], [2, 2], [3, 3]], ["x", "y", "y"], [2.6, 2.6], 3]
+[[tests]]
+args = [[[0, 0], [0, 1]], ["b", "a"], [0, 0.5], 2]

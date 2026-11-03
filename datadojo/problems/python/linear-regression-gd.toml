@@ -1,0 +1,42 @@
+title = "Linear regression by gradient descent"
+lang = "python"
+difficulty = "medium"
+pattern = "ml-algorithms"
+lists = ["ml-ai"]
+function = "fit_line"
+statement = """
+`fit_line(xs, ys, lr, epochs)` fits `y ≈ w·x + b` with batch gradient descent on mean squared error,
+starting from `w = b = 0`. Each epoch, compute both gradients over the whole dataset first, then update:
+
+- `dw = (2/n) Σ (w·x + b − y)·x`, `db = (2/n) Σ (w·x + b − y)`
+- `w -= lr·dw`, `b -= lr·db`
+
+Return `[w, b]` rounded to 4 decimals.
+
+- `fit_line([1, 2, 3], [2, 4, 6], 0.1, 1)` → `[1.8667, 0.8]`
+"""
+hints = [
+    "Compute every prediction with the old w and b before updating either.",
+    "Updating w first and then using it for db is the classic bug.",
+]
+starter = "def fit_line(xs, ys, lr, epochs):\n    pass\n"
+solution = """
+def fit_line(xs, ys, lr, epochs):
+    w = b = 0.0
+    n = len(xs)
+    for _ in range(epochs):
+        errs = [w * x + b - y for x, y in zip(xs, ys)]
+        dw = 2 / n * sum(e * x for e, x in zip(errs, xs))
+        db = 2 / n * sum(errs)
+        w, b = w - lr * dw, b - lr * db
+    return [round(w, 4), round(b, 4)]
+"""
+
+[[tests]]
+args = [[1, 2, 3], [2, 4, 6], 0.1, 1]
+[[tests]]
+args = [[1, 2, 3, 4], [3, 5, 7, 9], 0.05, 200]
+[[tests]]
+args = [[0, 1], [1, 1], 0.5, 3]
+[[tests]]
+args = [[2, 4], [1, 2], 0.01, 50]

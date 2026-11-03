@@ -4,7 +4,7 @@ from collections import Counter
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from datadojo import content, interview, llm
+from datadojo import content, interview, llm, rounds
 from datadojo.paths import DATA_HOME
 
 ROOT = Path(__file__).parent          # read-only app files (problems, static, ...)
@@ -72,6 +72,9 @@ def db():
                 "rating INTEGER, name TEXT, email TEXT, text TEXT, code TEXT, resolved INTEGER DEFAULT 0, "
                 "ts TEXT DEFAULT CURRENT_TIMESTAMP)")
     con.execute("CREATE TABLE IF NOT EXISTS explanations (key TEXT PRIMARY KEY, text TEXT)")
+    con.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, problem TEXT, kind TEXT, ts TEXT DEFAULT CURRENT_TIMESTAMP)")
+    con.execute("CREATE TABLE IF NOT EXISTS rounds (id INTEGER PRIMARY KEY, problem TEXT, track TEXT, level TEXT, score INTEGER, "
+                "report TEXT, ts TEXT DEFAULT CURRENT_TIMESTAMP)")
     con.execute("CREATE TABLE IF NOT EXISTS interviews (id INTEGER PRIMARY KEY, track TEXT, level TEXT, mode TEXT, topic TEXT, "
                 "score INTEGER, items TEXT, ts TEXT DEFAULT CURRENT_TIMESTAMP)")
     return con
@@ -282,7 +285,7 @@ def ensure_postgres():
     return {"DOJO_PG_HOST": host, "DOJO_PG_PORT": PG_PORT}
 
 
-def execute(p, code, engine, map=False):
+def execute(p, code, engine, map=False, scale=False):
     """Run code over all tests of p with the given engine; returns runner output or {"error"}."""
     lang = p["lang"]
     # Each engine owns its Spark: drop an inherited SPARK_HOME/PYSPARK_* (e.g. a local Spark install),
@@ -304,18 +307,19 @@ def execute(p, code, engine, map=False):
         except (OSError, subprocess.CalledProcessError) as e:
             return {"error": f"Could not start PostgreSQL: {e}"}
     env["PYSPARK_PYTHON"] = env["PYSPARK_DRIVER_PYTHON"] = python
+    limit = TIMEOUT[lang] + (240 if scale else 0)  # at scale: several big runs of two solutions
     # ponytail: fresh process + timeout only, no memory cap/sandbox; fine for your own code on your own machine
     with tempfile.TemporaryDirectory() as tmp:
         req, res = Path(tmp) / "request.json", Path(tmp) / "result.json"
-        req.write_text(json.dumps({"problem": p, "code": code, "engine": engine, "map": map}), encoding="utf-8")
+        req.write_text(json.dumps({"problem": p, "code": code, "engine": engine, "map": map, "scale": scale}), encoding="utf-8")
         # a frozen desktop build has no python to call: it re-runs itself in runner mode
         cmd = ([sys.executable, "--runner"] if python == sys.executable and getattr(sys, "frozen", False)
                else [python, "-I", str(ROOT / "runner.py")])
         try:
             r = subprocess.run(cmd + [str(req), str(res)], cwd=tmp, env=env, capture_output=True, text=True,
-                               timeout=TIMEOUT[lang], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                               timeout=limit, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired:
-            return {"error": f"Timed out after {TIMEOUT[lang]}s"}
+            return {"error": f"Timed out after {limit}s"}
         try:
             return json.loads(res.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -463,6 +467,8 @@ STAGES = {
     "edge-cases": "Push on edge cases: NULLs, ties, duplicates, empty input, boundaries. Ask which they handle.",
     "optimize": "Discuss cost: complexity, shuffles/joins in Spark, indexes/scans in SQL, and cleaner idioms.",
     "review": "They solved it. Review the code briefly, name the pattern, and suggest one related problem idea.",
+    "interviewer": "You are the interviewer in a timed coding round. Do not give hints, code or the approach. Answer clarifying "
+                   "questions about the problem only, briefly, like a real interviewer would. Encourage them to think out loud.",
 }
 
 
@@ -554,6 +560,71 @@ def stats():
     return {"solved": len(solved), "total": len(probs), "streak": streak, "runs": runs,
             "main_language": langs.most_common(1)[0][0] if langs else None, "days": days,
             "by_difficulty": {k: {"solved": done[k], "total": total[k]} for k in DIFFICULTIES}}
+
+
+REVIEW_GAPS = (1, 3, 7)  # days until the next review; three clean reviews and a problem is mastered
+
+
+def practice():
+    """The practice queue: struggled problems come back on a 1-3-7 day schedule, attempted-but-unsolved ones right away,
+    plus the patterns with the lowest first-try success. Struggled = 2+ failed runs before the first pass, a hint, or
+    the solution. A review counts when the problem passes on its first run that day, on or after the due date."""
+    con, probs = db(), load_problems()
+    today = datetime.date.today()
+    runs, helped = {}, {}
+    for pid, passed, ts in con.execute("SELECT problem, passed, datetime(ts, 'localtime') FROM submissions ORDER BY ts, id"):
+        if pid in probs:
+            runs.setdefault(pid, []).append((ts, bool(passed)))
+    for pid, kind, ts in con.execute("SELECT problem, kind, datetime(ts, 'localtime') FROM events ORDER BY ts"):
+        helped.setdefault(pid, []).append((ts, kind))
+    day = lambda ts: datetime.date.fromisoformat(ts[:10])
+    due, upcoming = [], []
+    for pid, rs in runs.items():
+        p = probs[pid]
+        item = {"id": pid, "title": p["title"], "lang": p["lang"], "pattern": p["pattern"], "difficulty": p["difficulty"]}
+        first = next((i for i, (_, ok) in enumerate(rs) if ok), None)
+        if first is None:
+            due.append(item | {"reason": "Not solved yet", "stage": 0, "since": (today - day(rs[-1][0])).days})
+            continue
+        fails = sum(1 for _, ok in rs[:first] if not ok)
+        used = {k for ts, k in helped.get(pid, []) if ts <= rs[first][0]}
+        if fails < 2 and not used:
+            continue  # solved without struggling: nothing to review
+        reason = ("Looked at the solution" if "solution" in used else "Used a hint" if "hint" in used
+                  else f"{fails} failed runs before passing")
+        stage, last = 0, day(rs[first][0])
+        by_day = {}
+        for ts, ok in rs[first + 1:]:
+            by_day.setdefault(day(ts), []).append(ok)
+        for d in sorted(by_day):
+            if d > last and d >= last + datetime.timedelta(days=REVIEW_GAPS[min(stage, 2)]):
+                stage, last = (stage + 1, d) if by_day[d][0] else (0, d)  # a failed review starts the schedule over
+        if stage >= len(REVIEW_GAPS):
+            continue  # mastered
+        when = last + datetime.timedelta(days=REVIEW_GAPS[stage])
+        entry = item | {"reason": reason, "stage": stage, "due": when.isoformat(), "since": (today - last).days}
+        (due if when <= today else upcoming).append(entry)
+    due.sort(key=lambda x: (x["reason"] != "Not solved yet", x.get("due", "")))
+    upcoming.sort(key=lambda x: x["due"])
+    # weak spots: first-try success per pattern, lowest first
+    catalog = load_catalog()
+    names = {pt["id"]: pt for pt in catalog["patterns"]}
+    order = {"easy": 0, "medium": 1, "hard": 2}
+    per = {}
+    for pid, rs in runs.items():
+        per.setdefault(probs[pid]["pattern"], []).append(rs[0][1])
+    solved = {pid for pid, rs in runs.items() if any(ok for _, ok in rs)}
+    weak = []
+    for pat, firsts in per.items():
+        rate = sum(firsts) / len(firsts)
+        if rate >= 0.75 or len(firsts) < 2 or pat not in names:  # one attempt says nothing about a pattern
+            continue
+        nxt = sorted((q for q in probs.values() if q["pattern"] == pat and q["id"] not in solved),
+                     key=lambda q: (order.get(q["difficulty"], 3), q["title"]))[:3]
+        weak.append({"pattern": pat, "title": names[pat]["title"], "lang": names[pat]["lang"], "rate": round(rate * 100),
+                     "attempted": len(firsts), "next": [{"id": q["id"], "title": q["title"], "difficulty": q["difficulty"]} for q in nxt]})
+    weak.sort(key=lambda w: (w["rate"], -w["attempted"]))
+    return {"due": due, "upcoming": upcoming[:5], "upcoming_count": len(upcoming), "weak": weak[:3]}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -654,6 +725,16 @@ class Handler(SimpleHTTPRequestHandler):
                                    "providers": {k: v | {"models": llm.catalog_models(k)} for k, v in llm.PROVIDERS.items()}})
         if parts[1:] == ["version"]:
             return self.send_json(latest_release())
+        if parts[1:2] == ["rounds"] and len(parts) == 3:  # one past round's report
+            row = db().execute("SELECT report FROM rounds WHERE id = ?", (parts[2],)).fetchone()
+            return self.send_json(json.loads(row[0]) if row else {"error": "not found"}, 200 if row else 404)
+        if parts[1:] == ["rounds"]:  # past coding rounds, newest first
+            probs = load_problems()
+            rows = db().execute("SELECT id, problem, track, level, score, ts FROM rounds ORDER BY id DESC LIMIT 10").fetchall()
+            return self.send_json([{"id": i, "problem": pid, "title": probs.get(pid, {}).get("title", pid), "track": tr,
+                                    "level": lv, "score": sc, "ts": ts} for i, pid, tr, lv, sc, ts in rows])
+        if parts[1:] == ["practice"]:
+            return self.send_json(practice())
         if parts[1:] == ["stats"]:
             return self.send_json(stats())
         if len(parts) >= 3 and parts[1] == "problems" and parts[2] in probs:
@@ -668,6 +749,7 @@ class Handler(SimpleHTTPRequestHandler):
                                    (p["id"],)).fetchone()[0]
             return self.send_json({k: v for k, v in p.items() if k != "solution"}
                                   | {"sample": p["tests"][0], "tests": len(p["tests"]), "open_reports": reports,
+                                     "test_rows": max((len(t["rows"]) for x in p["tests"] for t in x.get("tables", {}).values()), default=0),
                                      "last_code": subs[0]["code"] if subs else None,
                                      "solved": any(s["passed"] for s in subs)})
         self.send_json({"error": "not found"}, 404)
@@ -777,6 +859,30 @@ class Handler(SimpleHTTPRequestHandler):
                     cur = con.execute("INSERT INTO interviews (track, level, mode, topic, score, items) VALUES (?,?,?,?,?,?)",
                                       (t["id"], level, body.get("mode"), body.get("topic"), rep["score"], json.dumps(items)))
                 return self.send_json({"id": cur.lastrowid, "report": rep})
+        if self.path == "/api/round/start":  # pick a problem for a mock coding round
+            if body.get("track") not in rounds.TRACKS:
+                return self.send_json({"error": "unknown track"}, 400)
+            solved = {r[0] for r in db().execute("SELECT DISTINCT problem FROM submissions WHERE passed")}
+            return self.send_json(rounds.start(body["track"], body.get("level", "mid"), load_problems(), load_catalog(), solved))
+        if self.path == "/api/round/grade":  # the follow-up answer, graded like an interview answer
+            if body.get("followup") not in rounds.FOLLOWUPS:
+                return self.send_json({"error": "unknown follow-up"}, 400)
+            q = rounds.followup_question(body["followup"], body.get("level", "mid"))
+            return self.send_json(interview.grade({"title": "Coding round"}, q, str(body.get("answer", ""))[:6000], body.get("seconds")))
+        if self.path == "/api/round/finish":
+            probs = load_problems()
+            if body.get("id") not in probs:
+                return self.send_json({"error": "unknown problem"}, 404)
+            num = lambda k, d=0: float(body.get(k) or d)
+            rep = rounds.score(min(1.0, max(0.0, num("passed_fraction"))), body.get("eff_ok"), bool(body.get("improved")),
+                               num("seconds"), num("minutes", 25), int(num("hints")), num("followup_score"))
+            rep |= {"title": probs[body["id"]]["title"], "track": body.get("track"), "level": body.get("level"),
+                    "seconds": int(num("seconds")), "minutes": int(num("minutes", 25)), "eff_say": body.get("eff_say") or "",
+                    "followup": body.get("followup_q") or "", "followup_feedback": body.get("followup_feedback") or {}}
+            with db() as con:
+                cur = con.execute("INSERT INTO rounds (problem, track, level, score, report) VALUES (?,?,?,?,?)",
+                                  (body["id"], body.get("track"), body.get("level"), rep["total"], json.dumps(rep)))
+            return self.send_json(rep | {"round": cur.lastrowid})
         p = load_problems().get(body.get("id"))
         if not p:
             return self.send_json({"error": "unknown problem"}, 404)
@@ -791,8 +897,19 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"reply": coach(p, body.get("code", ""), body.get("result"),
                                                   body.get("stage", "build"), body.get("messages", []),
                                                   bool(body.get("solution")))})
+        if self.path == "/api/round/check":  # after the tests pass: is it as efficient as the reference?
+            m = execution_map(p, body.get("code", ""), body.get("engine"))
+            ok, say = rounds.efficiency(p["lang"], m.get("yours"), m.get("reference"))
+            return self.send_json({"ok": ok, "say": say})
+        if self.path == "/api/event":  # a hint revealed or the solution opened: feeds the practice queue
+            if body.get("kind") in ("hint", "solution"):
+                with db() as con:
+                    con.execute("INSERT INTO events (problem, kind) VALUES (?, ?)", (p["id"], body["kind"]))
+            return self.send_json({"ok": True})
         if self.path == "/api/format":
             return self.send_json(format_code(p["lang"], body.get("code", ""), body.get("engine")))
+        if self.path == "/api/scale":  # the map's "At scale" view: both solutions timed on grown data
+            return self.send_json(execute(p, body.get("code", ""), body.get("engine") or default_engine(p["lang"]), scale=True))
         if self.path == "/api/map":
             return self.send_json(execution_map(p, body.get("code", ""), body.get("engine")))
         if self.path == "/api/explain":

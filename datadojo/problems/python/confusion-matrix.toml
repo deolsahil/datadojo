@@ -1,0 +1,36 @@
+title = "Confusion matrix"
+lang = "python"
+difficulty = "easy"
+pattern = "ml-metrics"
+lists = ["ml-ai"]
+function = "confusion"
+statement = """
+`confusion(y_true, y_pred, labels)` returns the confusion matrix as a list of rows: row `i` is the true
+label `labels[i]`, column `j` the predicted label `labels[j]`, and each cell counts how often that
+pair occurred. Pairs whose labels are not in `labels` are ignored.
+
+- `confusion(["cat", "dog", "cat"], ["cat", "cat", "cat"], ["cat", "dog"])` → `[[2, 0], [1, 0]]`
+"""
+hints = [
+    "Map each label to its index once with a dict.",
+    "Skip a pair if either side is not in labels.",
+]
+starter = "def confusion(y_true, y_pred, labels):\n    pass\n"
+solution = """
+def confusion(y_true, y_pred, labels):
+    pos = {label: i for i, label in enumerate(labels)}
+    m = [[0] * len(labels) for _ in labels]
+    for t, p in zip(y_true, y_pred):
+        if t in pos and p in pos:
+            m[pos[t]][pos[p]] += 1
+    return m
+"""
+
+[[tests]]
+args = [["cat", "dog", "cat"], ["cat", "cat", "cat"], ["cat", "dog"]]
+[[tests]]
+args = [[0, 1, 2, 2, 1], [0, 2, 2, 1, 1], [0, 1, 2]]
+[[tests]]
+args = [["a", "b", "x"], ["a", "x", "b"], ["a", "b"]]
+[[tests]]
+args = [[], [], ["y", "n"]]

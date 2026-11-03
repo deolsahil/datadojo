@@ -1,0 +1,38 @@
+title = "K-fold cross-validation indices"
+lang = "python"
+difficulty = "medium"
+pattern = "ml-features"
+lists = ["ml-ai"]
+function = "kfold"
+statement = """
+`kfold(n, k)` splits row indices `0..n-1` into `k` contiguous folds, the way scikit-learn's KFold does
+without shuffling: the first `n % k` folds get one extra row. For each fold return
+`[train_indices, validation_indices]`, where validation is that fold and train is everything else.
+
+- `kfold(5, 2)` → `[[[3, 4], [0, 1, 2]], [[0, 1, 2], [3, 4]]]`
+"""
+hints = [
+    "Fold sizes: n // k each, plus 1 for the first n % k folds.",
+    "Walk a start offset forward by each fold size.",
+]
+starter = "def kfold(n, k):\n    pass\n"
+solution = """
+def kfold(n, k):
+    sizes = [n // k + (1 if i < n % k else 0) for i in range(k)]
+    folds, start = [], 0
+    for size in sizes:
+        val = list(range(start, start + size))
+        train = [i for i in range(n) if not start <= i < start + size]
+        folds.append([train, val])
+        start += size
+    return folds
+"""
+
+[[tests]]
+args = [5, 2]
+[[tests]]
+args = [6, 3]
+[[tests]]
+args = [4, 4]
+[[tests]]
+args = [7, 3]

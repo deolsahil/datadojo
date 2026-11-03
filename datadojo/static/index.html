@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<!-- launch intro: drawn before anything else, always dark. A gate script below removes it unless this is a fresh open of
+<!-- launch intro: drawn before anything else, in the learner's theme (dark by default). A gate script below removes it unless this is a fresh open of
      the home page and motion is welcome. app.js starts it (class "play") once the logo font is ready. -->
 <div id="intro" class="intro" aria-hidden="true">
   <style>
@@ -26,6 +26,12 @@
       radial-gradient(1200px 500px at 85% -10%, rgba(125,211,252,.07), transparent 60%),
       radial-gradient(900px 400px at 0% 0%, rgba(251,191,36,.05), transparent 60%), #0b0d11;
       transition: opacity .75s cubic-bezier(.4,0,.2,1) .15s }
+    /* light theme: the sakura background and logo colors (--bg/--art, --acc/--acc2 in app.css), so it flows into the light app */
+    [data-theme="sakura"] .intro { background: radial-gradient(900px 420px at 90% -10%, rgba(214,51,108,.08), transparent 60%),
+      radial-gradient(800px 400px at 0% 0%, rgba(59,91,219,.06), transparent 60%), #faf7f2 }
+    [data-theme="sakura"] .intro .ch { color: #d6336c; text-shadow: 0 6px 0 rgba(80,50,20,.12) }
+    [data-theme="sakura"] .intro .ch:nth-child(n+5) { color: #3b5bdb }
+    [data-theme="sakura"] .intro-tag { color: #7a7066 } [data-theme="sakura"] .intro-skip { color: #a69b8f }
     .intro.out { opacity: 0; pointer-events: none }
     .intro-scene { position: relative; display: flex; flex-direction: column; align-items: center;
       transition: transform .6s cubic-bezier(.4,0,.2,1), opacity .45s ease }
@@ -79,6 +85,7 @@
         <a href="#/lang/sql" data-nav="sql">SQL</a>
         <a href="#/lang/python" data-nav="python">Python</a>
         <a href="#/lang/pyspark" data-nav="pyspark">PySpark</a>
+        <a href="#/list/ml-ai" data-nav="ml-ai">ML &amp; AI</a>
       </div></div>
     <a href="#/interview" data-nav="interview">Interview</a>
     <a href="#/design" data-nav="design">System Design</a>

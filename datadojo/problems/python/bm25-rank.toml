@@ -1,0 +1,53 @@
+title = "BM25 keyword ranking"
+lang = "python"
+difficulty = "hard"
+pattern = "ai-retrieval"
+lists = ["ml-ai"]
+function = "bm25"
+statement = """
+`bm25(docs, query, k1, b)` ranks documents (each a list of tokens) for a query (a list of tokens) with
+BM25, the classic keyword scorer behind hybrid search. For each query term `t` in a document `d`:
+
+- `idf(t) = ln((N − n_t + 0.5) / (n_t + 0.5) + 1)`, where `N` is the number of docs and `n_t` how many contain `t`
+- `score += idf(t) · f·(k1 + 1) / (f + k1·(1 − b + b·|d| / avgdl))`, where `f` is the count of `t` in `d`
+
+Return `[index, score]` pairs for documents with a score above 0, highest first (ties by lower index),
+scores rounded to 4 decimals. Repeated query terms count once.
+
+- `bm25([["a", "b"], ["b", "c", "c"]], ["c"], 1.5, 0.75)` → `[[1, 0.9304]]`
+"""
+hints = [
+    "Precompute document frequency per term and the average document length.",
+    "Use set(query) so a repeated query word doesn't double count.",
+]
+starter = "def bm25(docs, query, k1, b):\n    pass\n"
+solution = """
+import math
+from collections import Counter
+
+def bm25(docs, query, k1, b):
+    n = len(docs)
+    avgdl = sum(len(d) for d in docs) / n
+    df = Counter(t for d in docs for t in set(d))
+    scored = []
+    for i, d in enumerate(docs):
+        tf = Counter(d)
+        s = 0.0
+        for t in set(query):
+            f = tf[t]
+            if f:
+                idf = math.log((n - df[t] + 0.5) / (df[t] + 0.5) + 1)
+                s += idf * f * (k1 + 1) / (f + k1 * (1 - b + b * len(d) / avgdl))
+        if s > 0:
+            scored.append([i, round(s, 4)])
+    return sorted(scored, key=lambda x: (-x[1], x[0]))
+"""
+
+[[tests]]
+args = [[["a", "b"], ["b", "c", "c"]], ["c"], 1.5, 0.75]
+[[tests]]
+args = [[["spark", "join", "shuffle"], ["sql", "join"], ["python"]], ["join", "shuffle", "join"], 1.2, 0.75]
+[[tests]]
+args = [[["x"], ["y"]], ["z"], 1.5, 0.75]
+[[tests]]
+args = [[["a", "a", "a", "b"], ["a", "b"], ["b"]], ["a", "b"], 1.5, 0.0]

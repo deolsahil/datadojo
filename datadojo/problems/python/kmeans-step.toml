@@ -1,0 +1,42 @@
+title = "One k-means iteration"
+lang = "python"
+difficulty = "medium"
+pattern = "ml-algorithms"
+lists = ["ml-ai"]
+function = "kmeans_step"
+statement = """
+`kmeans_step(points, centroids)` runs one k-means iteration on 2-D points: assign every point to its
+nearest centroid (Euclidean; ties go to the lower centroid index), then move each centroid to the mean
+of its assigned points. A centroid with no points stays where it is. Return the new centroids, each
+coordinate rounded to 4 decimals.
+
+- `kmeans_step([[0, 0], [0, 2], [10, 10]], [[0, 0], [10, 0]])` → `[[0.0, 1.0], [10.0, 10.0]]`
+"""
+hints = [
+    "Use min(range(k), key=...) for the assignment; ties go to the first index automatically.",
+    "Remember the empty-cluster case.",
+]
+starter = "def kmeans_step(points, centroids):\n    pass\n"
+solution = """
+def kmeans_step(points, centroids):
+    groups = [[] for _ in centroids]
+    for p in points:
+        d = lambda c: (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2
+        groups[min(range(len(centroids)), key=lambda i: d(centroids[i]))].append(p)
+    out = []
+    for c, g in zip(centroids, groups):
+        if g:
+            out.append([round(sum(p[0] for p in g) / len(g), 4), round(sum(p[1] for p in g) / len(g), 4)])
+        else:
+            out.append([round(c[0], 4), round(c[1], 4)])
+    return out
+"""
+
+[[tests]]
+args = [[[0, 0], [0, 2], [10, 10]], [[0, 0], [10, 0]]]
+[[tests]]
+args = [[[1, 1], [2, 2]], [[0, 0], [100, 100]]]
+[[tests]]
+args = [[[0, 0], [2, 0]], [[1, 5], [1, -5]]]
+[[tests]]
+args = [[[3, 4], [5, 6], [7, 8]], [[0, 0], [6, 6], [9, 9]]]

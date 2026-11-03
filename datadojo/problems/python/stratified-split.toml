@@ -1,0 +1,43 @@
+title = "Stratified train/test split"
+lang = "python"
+difficulty = "medium"
+pattern = "ml-features"
+lists = ["ml-ai"]
+function = "stratified_split"
+statement = """
+`stratified_split(labels, test_ratio)` splits row indices so every class keeps its share in both sets.
+Deterministically: for each class (in sorted order), take that class's row indices in order and send the
+first `floor(n * test_ratio + 0.5)` of them to the test set, the rest to train. Return
+`[train_indices, test_indices]`, each sorted ascending.
+
+- `stratified_split([0, 0, 0, 0, 1, 1], 0.5)` → `[[2, 3, 5], [0, 1, 4]]`
+"""
+hints = [
+    "Group indices by label first (dict of lists).",
+    "Round with math.floor(n * ratio + 0.5) so 0.5 always rounds up.",
+]
+starter = "def stratified_split(labels, test_ratio):\n    pass\n"
+solution = """
+import math
+
+def stratified_split(labels, test_ratio):
+    groups = {}
+    for i, y in enumerate(labels):
+        groups.setdefault(y, []).append(i)
+    train, test = [], []
+    for y in sorted(groups):
+        idx = groups[y]
+        n_test = math.floor(len(idx) * test_ratio + 0.5)
+        test += idx[:n_test]
+        train += idx[n_test:]
+    return [sorted(train), sorted(test)]
+"""
+
+[[tests]]
+args = [[0, 0, 0, 0, 1, 1], 0.5]
+[[tests]]
+args = [["a", "b", "a", "b", "a"], 0.2]
+[[tests]]
+args = [[1, 1, 1], 0.0]
+[[tests]]
+args = [[2, 1, 2, 1, 2, 1, 2, 1], 0.25]

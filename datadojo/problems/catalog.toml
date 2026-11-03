@@ -2,6 +2,11 @@
 # `lists` entries must be list ids. Order here is display order.
 
 [[lists]]
+id = "ml-ai"
+title = "ML & AI from Scratch 18"
+desc = "The ML and AI coding questions interviewers ask without libraries: metrics, features, algorithms and RAG building blocks."
+
+[[lists]]
 id = "sql-essentials"
 title = "SQL Essentials 50"
 desc = "The SQL questions that come up in almost every data interview: joins, aggregation, windows, NULLs."
@@ -247,3 +252,31 @@ lang = "pyspark"
 group = "Pipelines"
 title = "Data Quality & Reshape"
 desc = "Null checks, pivots, schema normalization"
+
+[[patterns]]
+id = "ml-metrics"
+lang = "python"
+group = "ML & AI"
+title = "Model Evaluation"
+desc = "Precision, recall, AUC, log loss and ranking metrics"
+
+[[patterns]]
+id = "ml-features"
+lang = "python"
+group = "ML & AI"
+title = "Feature Engineering"
+desc = "Scaling, encoding and splits without leakage"
+
+[[patterns]]
+id = "ml-algorithms"
+lang = "python"
+group = "ML & AI"
+title = "ML Algorithms from Scratch"
+desc = "kNN, gradient descent, k-means and softmax"
+
+[[patterns]]
+id = "ai-retrieval"
+lang = "python"
+group = "ML & AI"
+title = "LLM & RAG Building Blocks"
+desc = "Embedding search, chunking, BM25 and context packing"

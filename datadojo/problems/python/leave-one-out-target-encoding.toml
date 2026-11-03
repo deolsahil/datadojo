@@ -1,0 +1,40 @@
+title = "Target encoding without leakage"
+lang = "python"
+difficulty = "hard"
+pattern = "ml-features"
+lists = ["ml-ai"]
+function = "target_encode"
+statement = """
+`target_encode(categories, targets)` replaces each row's category with the mean target of the *other*
+rows in the same category (leave-one-out), so a row never sees its own label. If a category appears
+only once, use the mean target of all other rows instead. Round to 4 decimals.
+
+- `target_encode(["a", "a", "b"], [1, 0, 1])` → `[0.0, 1.0, 0.5]`
+"""
+hints = [
+    "Precompute per-category sum and count, plus the overall sum.",
+    "Leave-one-out mean = (sum - own) / (count - 1).",
+]
+starter = "def target_encode(categories, targets):\n    pass\n"
+solution = """
+def target_encode(categories, targets):
+    total, n = sum(targets), len(targets)
+    sums, counts = {}, {}
+    for c, t in zip(categories, targets):
+        sums[c] = sums.get(c, 0) + t
+        counts[c] = counts.get(c, 0) + 1
+    out = []
+    for c, t in zip(categories, targets):
+        if counts[c] > 1:
+            out.append(round((sums[c] - t) / (counts[c] - 1), 4))
+        else:
+            out.append(round((total - t) / (n - 1), 4))
+    return out
+"""
+
+[[tests]]
+args = [["a", "a", "b"], [1, 0, 1]]
+[[tests]]
+args = [["x", "x", "x", "y"], [1, 1, 0, 0]]
+[[tests]]
+args = [["p", "q", "p", "r", "q"], [3, 5, 1, 2, 7]]

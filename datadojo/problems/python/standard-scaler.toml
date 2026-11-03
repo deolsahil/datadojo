@@ -1,0 +1,35 @@
+title = "Standard scaling without leakage"
+lang = "python"
+difficulty = "easy"
+pattern = "ml-features"
+lists = ["ml-ai"]
+function = "scale"
+statement = """
+`scale(train, test)` standardizes a numeric feature. Learn the mean and the population standard
+deviation from `train` only, then return `test` transformed as `(x - mean) / std`, each value rounded
+to 4 decimals. If the standard deviation is 0, every scaled value is `0.0`.
+
+Fitting on the test set too would leak information from data the model should never have seen.
+
+- `scale([1, 2, 3], [2, 4])` → `[0.0, 2.4495]`
+"""
+hints = [
+    "Compute mean and std from train only; test is just transformed.",
+    "Population std: divide the squared deviations by len(train), not len - 1.",
+]
+starter = "def scale(train, test):\n    pass\n"
+solution = """
+def scale(train, test):
+    mean = sum(train) / len(train)
+    std = (sum((x - mean) ** 2 for x in train) / len(train)) ** 0.5
+    return [round((x - mean) / std, 4) if std else 0.0 for x in test]
+"""
+
+[[tests]]
+args = [[1, 2, 3], [2, 4]]
+[[tests]]
+args = [[5, 5, 5], [5, 7]]
+[[tests]]
+args = [[10, 20, 30, 40], [25, 0]]
+[[tests]]
+args = [[-1.5, 2.5], [0.5]]

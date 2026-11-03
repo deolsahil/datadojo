@@ -658,7 +658,7 @@ button.pill-update { border: 0; cursor: pointer; font-family: inherit }
 .c-wide .pc-pill { background: color-mix(in srgb, var(--medium) 18%, transparent); color: var(--medium); border-color: transparent }
 .c-narrow .pc-pill { background: color-mix(in srgb, var(--easy) 15%, transparent); color: var(--easy); border-color: transparent }
 .c-source .pc-pill { background: color-mix(in srgb, #5b8def 18%, transparent); color: #5b8def; border-color: transparent }
-.pc-big { margin-top: auto; padding: 4px 10px 8px; font-size: 12px; color: var(--dim); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap }
+.pc-big { margin-top: auto; padding: 4px 10px 8px; font-size: 12px; color: var(--dim); display: flex; align-items: baseline; gap: 6px; flex-wrap: nowrap; white-space: nowrap; overflow: hidden } .pc-big em { overflow: hidden; text-overflow: ellipsis; min-width: 0 }
 .pc-big b { font-size: 20px; color: var(--text) }
 .pc-big em { font-style: normal; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--acc) }
 .pc-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px }
@@ -743,3 +743,47 @@ button:has(> .ic) { display: inline-flex; align-items: center; justify-content: 
 .su-cancel { padding: 4px 14px; font-size: 12px; font-weight: 700; color: var(--hard); border: 1px solid color-mix(in srgb, var(--hard) 55%, transparent);
   background: color-mix(in srgb, var(--hard) 10%, transparent); border-radius: 8px }
 .su-cancel:hover { background: color-mix(in srgb, var(--hard) 20%, transparent) }
+/* practice queue */
+.pq { display: grid; grid-template-columns: 1.25fr 1fr; gap: 14px; margin-bottom: 8px } @media (max-width: 900px) { .pq { grid-template-columns: 1fr } }
+.pq .card { padding: 16px 18px } .pq-h { display: flex; align-items: center; gap: 8px; margin-bottom: 10px } .pq-h .ic { color: var(--acc2) }
+.pq-count { margin-left: auto; min-width: 26px; text-align: center; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--acc2) 18%, transparent); color: var(--acc2); font-weight: 800 }
+.pq-row { display: flex; align-items: center; gap: 12px; padding: 9px 10px; margin: 0 -10px; border-radius: 10px; transition: background .15s }
+.pq-row:hover { background: var(--bg2) } .pq-row > div { flex: 1; min-width: 0 } .pq-row b { display: block; font-size: 13.5px }
+.pq-row small { color: var(--dim); font-size: 11.5px } .pq-row .go { color: var(--faint) }
+.pq-when { font-size: 11px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--line2); color: var(--dim) }
+.pq-when.overdue { color: var(--hard); border-color: color-mix(in srgb, var(--hard) 45%, transparent) }
+.pq-when.due-today { color: var(--acc2); border-color: color-mix(in srgb, var(--acc2) 45%, transparent) }
+.pq-more { margin-top: 8px; font-size: 12px } .pq-empty { margin: 4px 0 }
+.pq-w { padding: 8px 0; border-top: 1px solid var(--line) } .pq-w:first-of-type { border-top: 0 }
+.pq-wt { display: flex; justify-content: space-between; gap: 10px; align-items: baseline } .pq-wt small { color: var(--dim); font-size: 11.5px; white-space: nowrap }
+.pq-bar { height: 6px; border-radius: 4px; background: var(--track); margin: 6px 0 } .pq-bar i { display: block; height: 100%; border-radius: 4px; background: var(--hard) }
+.pq-next { font-size: 12px; color: var(--dim) } .pq-next a { color: var(--acc) } .pq-next a:hover { text-decoration: underline }
+.review-banner { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px; font-size: 12.5px; color: var(--text2);
+  background: color-mix(in srgb, var(--acc2) 9%, var(--card)) } .review-banner .ic { color: var(--acc2); margin-top: 2px }
+/* mock coding round */
+.round-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px; font-size: 12.5px;
+  background: color-mix(in srgb, var(--acc) 9%, var(--card)) } .round-bar .ic { color: var(--acc) } .round-bar b { margin-right: 2px }
+.round-bar.over { background: color-mix(in srgb, var(--hard) 12%, var(--card)) } .round-bar.over .ic, .round-bar.over #round-left { color: var(--hard) }
+.round-bar small { color: var(--dim) } .round-bar button { padding: 4px 10px; font-size: 12px }
+.cr-card { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; padding: 18px 20px } .cr-text { flex: 1 1 320px } .cr-text .dim { margin-top: 4px; font-size: 12.5px }
+.cr-pick { display: flex; flex-direction: column; gap: 8px; align-items: flex-start } .cr-pick .chips { margin: 0 }
+.cr-history { display: grid; gap: 8px; margin-top: 10px }
+.rr-top { display: flex; gap: 24px; align-items: center; margin: 14px 0 6px } .rr-parts { border-collapse: collapse } .rr-parts td { padding: 3px 16px 3px 0 } .rr-parts td:first-child { color: var(--dim) }
+.rr-list { margin: 6px 0 0; padding-left: 18px; color: var(--text2) }
+button[hidden], .stages[hidden] { display: none }
+.rr-top .ring text { font-size: 22px; font-weight: 700 }
+/* execution map: at scale */
+.map-scale { margin: 12px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg2) }
+.ms-head { display: flex; align-items: center; gap: 12px } .ms-head > div { flex: 1; display: flex; flex-direction: column; gap: 2px } .ms-head .dim { font-size: 12px }
+.ms-head button { padding: 5px 12px; font-size: 12px }
+.ms-verdict { margin: 10px 0 8px; font-size: 13px; font-weight: 600; color: var(--easy) } .ms-verdict.bad { color: var(--medium) }
+.ms-grid { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; align-items: center }
+.ms-n { font-size: 12px; color: var(--dim); text-align: right } .ms-bars { display: grid; gap: 3px }
+.ms-bar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text2) }
+.ms-bar span { white-space: nowrap } .ms-bar i { flex: none; height: 9px; width: calc(var(--w) * .85); border-radius: 5px; background: var(--acc); transition: width .6s cubic-bezier(.2,.8,.2,1) }
+.ms-bar.ref i { background: var(--dim); opacity: .6 }
+.ms-key { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 11.5px; color: var(--dim) }
+.ms-key i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--acc) } .ms-key i.ref { background: var(--dim); opacity: .6 }
+.map-scale > summary { list-style: none; cursor: pointer } .map-scale > summary::-webkit-details-marker { display: none }
+.ms-caret { font-style: normal; color: var(--dim); font-size: 12px; transition: transform .2s; flex: none } .map-scale[open] .ms-caret { transform: rotate(90deg) }
+.map-scale:not([open]) { padding-bottom: 12px }

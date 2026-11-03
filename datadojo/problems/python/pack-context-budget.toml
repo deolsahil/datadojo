@@ -1,0 +1,39 @@
+title = "Pack retrieved chunks into a token budget"
+lang = "python"
+difficulty = "medium"
+pattern = "ai-retrieval"
+lists = ["ml-ai"]
+function = "pack"
+statement = """
+`pack(chunks, budget)` gets retrieved chunks as `[tokens, score]` pairs and a context window budget
+in tokens. Greedily take chunks by score (highest first, ties by lower index), skipping any chunk that
+would push the total over the budget but continuing to try smaller ones after it. Return the indices of
+the chosen chunks in their original order, so the prompt keeps document order.
+
+- `pack([[300, 0.9], [500, 0.95], [100, 0.5]], 600)` → `[1, 2]` (500 first; 300 no longer fits, so it's skipped; 100 still fits)
+"""
+hints = [
+    "Sort indices by (-score, index), keep a running total.",
+    "Skip, don't stop: a smaller chunk later may still fit.",
+]
+starter = "def pack(chunks, budget):\n    pass\n"
+solution = """
+def pack(chunks, budget):
+    used, chosen = 0, []
+    for i in sorted(range(len(chunks)), key=lambda i: (-chunks[i][1], i)):
+        if used + chunks[i][0] <= budget:
+            used += chunks[i][0]
+            chosen.append(i)
+    return sorted(chosen)
+"""
+
+[[tests]]
+args = [[[300, 0.9], [500, 0.95], [200, 0.5]], 600]
+[[tests]]
+args = [[[100, 0.1], [100, 0.2]], 50]
+[[tests]]
+args = [[[400, 0.8], [400, 0.8], [100, 0.3]], 900]
+[[tests]]
+args = [[[50, 0.9]], 50]
+[[tests]]
+args = [[[700, 0.99], [300, 0.7], [300, 0.6], [200, 0.5]], 800]

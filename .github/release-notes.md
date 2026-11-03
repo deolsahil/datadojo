@@ -1,4 +1,25 @@
-## What's new in 0.3.0
+## What's new in 0.3.1
+
+**⏱️ Coding rounds**
+- On the Interview page, pick SQL, Python, PySpark or ML & AI and a level for a **timed problem with a coach as your interviewer**.
+- If your code works but is slower than it needs to be, you're asked to optimise it. Then answer one follow-up question (26 of them, from query plans to RAG evals), graded against a rubric.
+- A report scores correctness, efficiency, time and the follow-up out of 100. Past rounds are kept.
+
+**🧠 ML & AI from scratch**
+- 18 new problems in plain Python: precision and recall, ROC AUC, log loss, NDCG, scaling and encoding without leakage, k-fold and stratified splits, k-NN, k-means, gradient descent, softmax, cosine search, chunking, BM25 and context packing. 252 problems in total.
+
+**🔁 Your practice**
+- The home page shows what's due: problems you struggled with come back after 1, 3 and 7 days, and reviews start from a blank editor.
+- Your three weakest patterns, by first-try success, with the next problems to try.
+
+**📈 Will it hold up on real data?**
+- In the execution map, time your solution next to the reference on the test data grown to millions of rows, with a plain takeaway: whether it scales, and how fast it slows down if it doesn't. Fold the section away when you don't need it.
+
+**✨ Also**
+- The launch intro follows your theme: light mode gets a light intro.
+- The map's verdict no longer calls a correct O(n) solution slower than the reference.
+
+## New in 0.3.0
 
 **🗺️ Execution map**
 - After you solve a problem, **See execution map** shows what the engine actually did, next to the reference solution, with a one-line verdict.

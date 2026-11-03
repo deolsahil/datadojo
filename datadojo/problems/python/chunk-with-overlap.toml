@@ -1,0 +1,43 @@
+title = "Chunk text with overlap for RAG"
+lang = "python"
+difficulty = "easy"
+pattern = "ai-retrieval"
+lists = ["ml-ai"]
+function = "chunk"
+statement = """
+`chunk(text, size, overlap)` splits `text` into chunks of `size` words for a retrieval index, where each
+chunk repeats the last `overlap` words of the previous one (so a sentence cut at a boundary still
+appears whole somewhere). Words are separated by whitespace; chunks are joined with single spaces.
+
+Step forward `size − overlap` words each time, and stop once a chunk reaches the last word (the final
+chunk may be shorter). Empty text gives `[]`.
+
+- `chunk("a b c d e", 3, 1)` → `["a b c", "c d e"]`
+"""
+hints = [
+    "text.split() handles any whitespace.",
+    "Loop start = 0, size-overlap, ... and break when start + size >= len(words).",
+]
+starter = "def chunk(text, size, overlap):\n    pass\n"
+solution = """
+def chunk(text, size, overlap):
+    words = text.split()
+    chunks, start = [], 0
+    while start < len(words):
+        chunks.append(" ".join(words[start:start + size]))
+        if start + size >= len(words):
+            break
+        start += size - overlap
+    return chunks
+"""
+
+[[tests]]
+args = ["a b c d e", 3, 1]
+[[tests]]
+args = ["one two three four five six seven", 3, 0]
+[[tests]]
+args = ["", 4, 1]
+[[tests]]
+args = ["w1 w2 w3 w4 w5 w6", 4, 2]
+[[tests]]
+args = ["short", 10, 3]

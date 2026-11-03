@@ -589,6 +589,245 @@ def make_map(p, code, engine):
     return {"error": "No execution map for this language yet."}
 
 
+# --- at scale ------------------------------------------------------------------
+# The biggest test, grown to real sizes and timed for your code and the reference in this one process.
+# Each extra copy of the data gets shifted ids and suffixed keys, so joins stay one-to-one inside a copy
+# instead of exploding, and (for Python) the original copy goes last so a search can't stop early.
+# ponytail: copies of the test data, not realistic distributions; enough to show how the work grows
+
+DATE_LIKE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+SCALE = {"python": ([1_000, 4_000, 16_000, 64_000, 256_000], 0.3), "sql": ([10_000, 100_000, 1_000_000, 10_000_000], 2.0),
+         "pyspark": ([10_000, 100_000, 1_000_000], 4.0)}  # target sizes; a side stops once a run takes longer than this
+
+
+def _int_span(v):
+    """Largest |int| anywhere in v, so shifted copies never collide with the original values."""
+    if isinstance(v, bool):
+        return 0
+    if isinstance(v, (int, float)):
+        return abs(v)
+    if isinstance(v, (list, tuple)):
+        return max((_int_span(x) for x in v), default=0)
+    if isinstance(v, dict):
+        return max((_int_span(x) for x in list(v) + list(v.values())), default=0)
+    return 0
+
+
+def _shift(v, c, k):
+    if c == 0 or isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v + c * k
+    if not k:
+        return v
+    if isinstance(v, str):
+        return v if DATE_LIKE.match(v) else f"{v}_{c}"
+    if isinstance(v, (list, tuple)):
+        return type(v)(_shift(x, c, k) for x in v)
+    return v
+
+
+def scale_python_args(args, copies, shift=True):
+    """Grow the data argument (the longest list or string) to `copies` copies; the rest (a target, a k, a point) stays.
+    shift=False repeats it unchanged, for inputs whose values carry structure (grids, tokens, node ids)."""
+    k = 10 ** len(str(int(_int_span(args)))) * 10 if shift else 0
+    data = max(range(len(args)), key=lambda i: len(args[i]) if isinstance(args[i], (list, str)) else -1, default=None)
+    out = []
+    for i, a in enumerate(args):
+        if i != data:
+            out.append(a)
+        elif isinstance(a, list) and a:
+            # sorted input stays sorted; otherwise the original comes last so a search can't stop early
+            order = range(copies) if _try_sorted(a) else list(range(1, copies)) + [0]
+            out.append([_shift(x, c, k) for c in order for x in a])
+        elif isinstance(a, str) and a:
+            out.append(a * copies)
+        else:
+            out.append(a)
+    return out
+
+
+def _try_sorted(a):
+    try:
+        return a == sorted(a)
+    except TypeError:
+        return False
+
+
+INT_TYPES = ("INT", "INTEGER", "BIGINT", "SMALLINT", "TINYINT", "LONG")
+TEXT_TYPES = ("STRING", "VARCHAR", "TEXT", "CHAR", "NVARCHAR")
+
+
+def scale_kinds(t):
+    """[(column, "int" | "text" | None)]: what each column gets in a shifted copy (dates stored as text are left alone)."""
+    out = []
+    for i, (col, typ) in enumerate(columns(t["columns"])):
+        T = typ.split("(")[0].strip().upper()
+        vals = [r[i] for r in t["rows"] if r[i] is not None]
+        out.append((col, "int" if T in INT_TYPES else
+                    "text" if T in TEXT_TYPES and not all(DATE_LIKE.match(str(v)) for v in vals or ["x"]) else None))
+    return out
+
+
+def scale_sql_select(t, k):
+    """Columns of a SELECT that grows base table _b_<name> by a cross join with range(copies) AS r(c)."""
+    return [f"{col} + r.c * {k} AS {col}" if kind == "int" else
+            f"CASE WHEN r.c = 0 THEN {col} ELSE {col} || '_' || CAST(r.c AS VARCHAR) END AS {col}" if kind == "text" else col
+            for col, kind in scale_kinds(t)]
+
+
+class Capped(Exception):
+    pass
+
+
+def capped(run, secs, cancel=None):
+    """run() with a hard time cap: cancel() from a timer thread (DuckDB interrupt, Spark cancel) or, for plain
+    Python, an alarm in this (main) thread. Raises Capped when the cap hits; returns seconds taken otherwise."""
+    import signal, threading, time
+    hit = []
+    def stop(*_):
+        hit.append(1)
+        if cancel:
+            cancel()
+        else:
+            raise Capped
+    if cancel:
+        timer = threading.Timer(secs, stop); timer.start()
+    elif hasattr(signal, "SIGALRM"):
+        old = signal.signal(signal.SIGALRM, stop); signal.setitimer(signal.ITIMER_REAL, secs)
+    t0 = time.perf_counter()
+    try:
+        run()
+    except Capped:
+        raise
+    except Exception:
+        if hit:
+            raise Capped
+        raise
+    finally:
+        if cancel:
+            timer.cancel()
+        elif hasattr(signal, "SIGALRM"):
+            signal.setitimer(signal.ITIMER_REAL, 0); signal.signal(signal.SIGALRM, old)
+    if hit:
+        raise Capped
+    return time.perf_counter() - t0
+
+
+def scale_run(p, code, engine):
+    lang = p["lang"]
+    if lang not in SCALE:
+        return {"error": "No at-scale run for this language yet."}
+    sizes, limit = SCALE[lang]
+    cap = 10 * limit  # no single run may take longer than this
+    src = {"yours": code, "reference": p["solution"]}
+    cancel = None
+
+    if lang == "python":
+        test = max(p["tests"], key=lambda t: size_of(t["args"]))
+        base = max(size_of(test["args"]), 1)
+        fns = {}
+        for side, c in src.items():
+            ns = {}
+            exec(compile(c, "<solution>", "exec"), ns)
+            fns[side] = ns[p["function"]]
+        def build(copies, shift):
+            args = scale_python_args(test["args"], copies, shift)
+            return size_of(args), args
+        def job(side, args):
+            a = copy.deepcopy(args)
+            return lambda: fns[side](*a)
+    else:
+        test = max(p["tests"], key=lambda t: max((len(x["rows"]) for x in t["tables"].values()), default=0))
+        base = max((len(x["rows"]) for x in test["tables"].values()), default=0) or 1
+        span = 10 ** len(str(int(_int_span([r for x in test["tables"].values() for r in x["rows"]])))) * 10
+    if lang == "sql":
+        import duckdb
+        if engine not in ("duckdb", None):
+            import sqlglot
+            src = {s: ";\n".join(sqlglot.transpile(q, read="spark" if engine == "spark-sql" else engine, write="duckdb"))
+                   for s, q in src.items()}
+        con = duckdb.connect()
+        cancel = con.interrupt
+        load_dbapi(con, {f"_b_{n}": t for n, t in test["tables"].items()})
+        def build(copies, shift):
+            for name, t in test["tables"].items():
+                con.execute(f"CREATE OR REPLACE TABLE {name} AS SELECT {', '.join(scale_sql_select(t, span if shift else 0))} "
+                            f"FROM _b_{name}, range({copies}) AS r(c)")
+            return base * copies, None
+        def job(side, _):
+            q = src[side].strip().rstrip(";")
+            return lambda: con.execute(f"CREATE OR REPLACE TEMP TABLE _out AS {q}")
+    if lang == "pyspark":
+        from pyspark.sql import functions as F
+        fns = {}
+        for side, c in src.items():
+            ns = {}
+            exec(c, ns)
+            fns[side] = ns[p["function"]]
+        sp = spark()
+        cancel = sp.sparkContext.cancelAllJobs
+        bases, cached = {n: spark_df(t) for n, t in test["tables"].items()}, []
+        def build(copies, shift):
+            for df in cached:
+                df.unpersist()
+            cached.clear()
+            dfs = {}
+            for name, t in test["tables"].items():
+                df = bases[name].crossJoin(sp.range(copies).withColumnRenamed("id", "_c"))
+                types = dict(columns(t["columns"]))
+                for col, kind in scale_kinds(t):
+                    if kind == "int" and shift:
+                        df = df.withColumn(col, (F.col(col) + F.col("_c") * span).cast(types[col]))
+                    elif kind == "text" and shift:
+                        df = df.withColumn(col, F.when(F.col("_c") == 0, F.col(col))
+                                           .otherwise(F.concat(F.col(col), F.lit("_"), F.col("_c").cast("string"))))
+                dfs[name] = df.drop("_c").cache()
+                dfs[name].count()  # build the data before the clock starts
+                cached.append(dfs[name])
+            return base * copies, dfs
+        def job(side, dfs):
+            return lambda: fns[side](sp, **dfs).write.format("noop").mode("overwrite").save()
+
+    # shifted copies when the reference copes with them, plain repeats otherwise (values that carry structure)
+    first = max(1, round(sizes[0] / base))
+    for shift in (True, False):
+        try:
+            _, data = build(first, shift)
+            capped(job("reference", data), cap, cancel)
+            break
+        except Exception:
+            if not shift:
+                return {"error": "This problem's data can't be grown automatically, so there's no at-scale run for it."}
+
+    runs, stopped, done = {"yours": [], "reference": []}, {"yours": False, "reference": False}, []
+    for i, target in enumerate(sizes):
+        n, data = build(max(1, round(target / base)), shift)
+        done.append(n)
+        for side in ("reference", "yours"):
+            if stopped[side]:
+                runs[side].append(None)
+                continue
+            try:
+                dt = capped(job(side, data), cap, cancel)
+            except Capped:
+                runs[side].append(None); stopped[side] = True
+                continue
+            except Exception as e:
+                return {"error": f"{'Your code' if side == 'yours' else 'The reference'} failed at {n:,} {'items' if lang == 'python' else 'rows'}: "
+                                 f"{type(e).__name__}: {e}"[:400]}
+            runs[side].append(round(dt * 1000, 1))
+            # stop over the limit, or when the next size would pass the cap at the growth seen so far
+            prev = [(m, t) for m, t in zip(done[:-1], runs[side][:-1]) if t]
+            grow = max(1.0, math.log(max(dt * 1000, 1e-3) / prev[-1][1]) / math.log(n / prev[-1][0])) if prev and n > prev[-1][0] else 1.0
+            nxt = sizes[i + 1] / target if i + 1 < len(sizes) else 1
+            stopped[side] = dt > limit or dt * nxt ** grow > cap
+        if all(stopped.values()):
+            break
+    return {"kind": "scale", "unit": "items" if lang == "python" else "rows", "sizes": done, "ms": runs, "limit_ms": limit * 1000,
+            "shifted": shift, "engine": "Python" if lang == "python" else "DuckDB" if lang == "sql" else "Spark (local)"}
+
+
 # ----------------------------------------------------------------------------
 
 def run_one(p, code, test, engine):
@@ -618,10 +857,10 @@ def main(argv=None):
     with open(req_path, encoding="utf-8") as f:
         req = json.load(f)
     p, code, engine = req["problem"], req["code"], req.get("engine") or "duckdb"
-    if req.get("map"):
+    if req.get("map") or req.get("scale"):
         try:
             with contextlib.redirect_stdout(io.StringIO()):
-                res = make_map(p, code, engine)
+                res = scale_run(p, code, engine) if req.get("scale") else make_map(p, code, engine)
         except Exception as e:
             res = {"error": f"{type(e).__name__}: {e}"}
         with open(res_path, "w", encoding="utf-8") as f:

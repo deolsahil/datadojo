@@ -96,7 +96,7 @@ function ring(done, total, size = 44, color = 'var(--acc)') {
     <circle cx="${h}" cy="${h}" r="${r}" fill="none" stroke="var(--track)" stroke-width="3"/>
     <circle class="fill" cx="${h}" cy="${h}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round"
       stroke-dasharray="${c * f} ${c}" transform="rotate(-90 ${h} ${h})"/>
-    <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${done}/${total}</text></svg>`;
+    <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${total === 100 ? done : `${done}/${total}`}</text></svg>`;
 }
 const cell = v => v === null ? '<i>NULL</i>' : esc(typeof v === 'string' ? v : JSON.stringify(v));
 const table = (cols, rows) => `<table class="data">${cols ? `<tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr>` : ''}${
@@ -331,8 +331,31 @@ function coachHead(lang, cat, extra = '') {
     <div><h3>${LANGS[lang]}</h3><div class="dim" style="font-size:12px">${c.name}, ${c.role} · ${d}/${t} solved</div></div>${extra}</div>`;
 }
 
+// practice queue: problems you struggled with come back on a 1-3-7 day schedule; weak spots show the lowest first-try rate
+function practiceCard(pq, cat) {
+  if (!pq || (!pq.due?.length && !pq.weak?.length && !pq.upcoming_count)) return '';
+  const pat = Object.fromEntries(cat.patterns.map(p => [p.id, p.title]));
+  const when = x => x.reason === 'Not solved yet' ? 'unfinished' : x.due < new Date().toLocaleDateString('en-CA') ? 'overdue' : 'due today';
+  const row = x => `<a class="pq-row" href="#/p/${x.id}/review">${langTag(x.lang)}<div><b>${esc(x.title)}</b>
+      <small>${esc(pat[x.pattern] || '')} · ${esc(x.reason)}${x.reason === 'Not solved yet' ? '' : ` · review ${x.stage + 1} of 3`}</small></div>
+      <span class="pq-when ${when(x).replace(' ', '-')}">${when(x)}</span><span class="go">→</span></a>`;
+  const next = pq.upcoming?.[0];
+  const days = next ? Math.round((new Date(next.due) - new Date(new Date().toLocaleDateString('en-CA'))) / 864e5) : 0;
+  return `<div class="section-title">Your practice</div><div class="pq">
+    <div class="card pq-due"><div class="pq-h">${ic('reset', 15)}<b>Review today</b><span class="pq-count">${pq.due.length}</span></div>
+      ${pq.due.length ? pq.due.slice(0, 6).map(row).join('') + (pq.due.length > 6 ? `<div class="faint pq-more">+ ${pq.due.length - 6} more</div>` : '')
+        : `<p class="dim pq-empty">Nothing to review today${next ? `. Next: <b>${esc(next.title)}</b> in ${days} day${days === 1 ? '' : 's'}` : ''}.</p>`}
+      ${pq.upcoming_count ? `<div class="faint pq-more">${pq.upcoming_count} more coming up over the next week</div>` : ''}</div>
+    <div class="card pq-weak"><div class="pq-h">${ic('flag', 15)}<b>Weak spots</b></div>
+      ${pq.weak.length ? pq.weak.map(w => `<div class="pq-w"><div class="pq-wt"><b>${esc(w.title)}</b><small>${LANGS[w.lang]} · ${w.rate}% first-try · ${w.attempted} tried</small></div>
+        <div class="pq-bar"><i style="width:${Math.max(4, w.rate)}%"></i></div>
+        ${w.next.length ? `<div class="pq-next">Try: ${w.next.map(n => `<a href="#/p/${n.id}">${esc(n.title)}</a>`).join(' · ')}</div>` : ''}</div>`).join('')
+        : '<p class="dim pq-empty">No weak spots yet. Patterns show up here once you\'ve tried 2+ problems in them.</p>'}</div>
+  </div>`;
+}
+
 async function home() {
-  const [{ cat, stats }, profile] = await Promise.all([load(), api('/api/profile')]);
+  const [{ cat, stats }, profile, pq] = await Promise.all([load(), api('/api/profile'), api('/api/practice')]);
   const [mood, line] = senseiSays(stats);
   const q = dailyQuote(profile.quotes || [{ text: '', by: '' }]);
   const untouched = cat.patterns.find(p => {
@@ -360,6 +383,7 @@ async function home() {
       <b>${esc(untouched.title)}</b> (${LANGS[untouched.lang]}) is still untouched. Want to try one together today?</div><span class="sp"></span><span class="go">→</span></a>` : ''}
     <div class="card stats"><div><b data-count="${stats.solved}" data-suffix="/${stats.total}">0</b><small>problems solved</small></div><div><b data-count="${stats.streak}">0</b><small>day streak</small></div>
       <div><b data-count="${stats.runs}">0</b><small>total runs</small></div><div><b>${stats.main_language ? LANGS[stats.main_language] : '-'}</b><small>main language</small></div></div>
+    ${practiceCard(pq, cat)}
     <div class="section-title">See it in action</div>${demoShell()}
     <div class="section-title">Curated lists</div>${listTiles(cat)}
     ${Object.keys(LANGS).map(l => coachHead(l, cat) + patternTiles(cat, l)).join('')}
@@ -425,11 +449,13 @@ const monacoReady = new Promise(res => {
 // problems in a list are ordered easy -> hard; list pages and the problem title share this order for numbering
 const byDifficulty = ps => [...ps].sort((a, b) => ['easy', 'medium', 'hard'].indexOf(a.difficulty) - ['easy', 'medium', 'hard'].indexOf(b.difficulty));
 
-async function workspace(id) {
+async function workspace(id, mode) {  // mode "review" (practice queue) or "round" (mock coding round): start from the blank starter
+  const review = mode === 'review';
+  let round = mode === 'round' ? JSON.parse(sessionStorage.getItem('round:' + id) || 'null') : null;
   const [p, { cat }] = await Promise.all([api('/api/problems/' + id), load()]);
   if (p.error) return $('#app').innerHTML = '<div class="empty">Problem not found</div>';
   const coach = CAST[p.lang], you = me() || 'you';
-  const chatKey = 'chat:' + id, stageKey = 'stage:' + id;
+  const chatKey = (round ? 'roundchat:' : 'chat:') + id, stageKey = 'stage:' + id;
   let messages = JSON.parse(localStorage.getItem(chatKey) || '[]');
   let stage = +(localStorage.getItem(stageKey) || 0), last = null, hintsShown = 0, secs = 0, ticking = true;
   let fontSize = +(localStorage.getItem('fontSize') || 13), inst = null, resting = 'idle';
@@ -445,6 +471,9 @@ async function workspace(id) {
       <section class="col"><div class="col-h"># Problem</div><div class="scroll prob">
         <h2>${(n => n ? `<span class="pnum">${n}.</span>` : '')(byDifficulty(cat.problems.filter(x => x.pattern === p.pattern)).findIndex(x => x.id === id) + 1)}${esc(p.title)}</h2>
         <div class="tags">${langTag(p.lang)}${diffTag(p.difficulty)}<span class="tag">${p.tests} tests</span>${p.solved ? '<span class="tag easy">solved ✓</span>' : ''}</div>
+        ${round ? `<div class="round-bar" id="round-bar">${ic('timer', 15)}<div><b>Coding round</b><span id="round-left"></span><small id="round-hints"></small></div>
+          <span class="sp"></span><button class="primary" id="round-next" hidden>Continue to follow-up</button><button class="ghost" id="round-end">End round</button></div>` : ''}
+        ${review ? `<div class="review-banner">${ic('reset', 14)}<div><b>Review</b> · solve it again from scratch. Pass on your first run to move it to the next review.</div></div>` : ''}
         ${md(p.statement)}
         <div class="col-h" style="padding:10px 0 2px">Example input</div>
         ${p.sample.tables ? tables(p.sample.tables) : `<pre>${esc(p.function)}(${p.sample.args.map(a => JSON.stringify(a)).join(', ')})</pre>`}
@@ -465,7 +494,7 @@ async function workspace(id) {
       <div class="gutter" id="g2" title="Drag to resize · double-click to reset"></div>
       <section class="col">
         <div class="coach-head"><div id="coach">${blob(coach.seed, { size: 58, live: true, cls: 'live' })}</div>
-          <div><b>${coach.name}</b><div class="dim" style="font-size:11.5px">${coach.role}</div></div><span class="sp"></span>
+          <div><b>${coach.name}</b><div class="dim" style="font-size:11.5px">${round ? 'your interviewer' : coach.role}</div></div><span class="sp"></span>
           <button class="ghost new-chat" id="new-chat" title="Clear this chat and start fresh">↺ New chat</button>
           <span class="status" id="status"><i></i>listening</span></div>
         <div class="chat" id="chat"></div>
@@ -553,7 +582,7 @@ async function workspace(id) {
   // editor
   const code = () => inst ? inst.getValue() : $('#fallback').value;
   const setCode = v => inst ? inst.setValue(v) : ($('#fallback').value = v);
-  $('#fallback').value = p.last_code || p.starter || '';
+  $('#fallback').value = (review || round ? p.starter : p.last_code || p.starter) || '';
   monacoReady.then(m => {
     if (!m || !document.body.contains($('#editor'))) {
       $('#editor').style.display = 'none'; $('#fallback').style.display = 'block'; return;
@@ -582,7 +611,7 @@ async function workspace(id) {
     if (!await ask(`Peek at the reference solution? ${coach.name} thinks a hint might be enough!`,
       { ok: 'Show solution', cancel: 'Keep trying', seed: coach.seed })) return;
     const sol = (await api(`/api/problems/${id}/solution`)).solution.trim();
-    sawSolution = true;
+    sawSolution = true; api('/api/event', { id, kind: 'solution' });
     modal(`<h3>Reference solution</h3>
       <div class="sol-code"><button class="copy" id="sol-copy">Copy</button><pre>${esc(sol)}</pre></div>
       <div class="lbl">Explanation</div>
@@ -597,7 +626,7 @@ async function workspace(id) {
   // hints
   if (hints.length) $('#more-hint').onclick = () => {
     if (hintsShown >= hints.length) return;
-    hintsShown++;
+    hintsShown++; api('/api/event', { id, kind: 'hint' }); if (round) { round.hints++; saveRound(); roundTick(); }
     $('#hint-list').insertAdjacentHTML('beforeend', `<div class="hint-card"><span class="hint-n">${hintsShown}</span><div>${inline(hints[hintsShown - 1])}</div></div>`);
     document.querySelectorAll('.hint-dots i').forEach((d, i) => d.classList.toggle('on', i < hintsShown));
     const done = hintsShown >= hints.length;
@@ -630,6 +659,7 @@ async function workspace(id) {
     renderStages(); react('happy');
   };
   $('#stages').onclick = e => { const b = e.target.closest('.stage'); if (b) goStage(+b.dataset.i); };
+  if (round && !messages.length) messages.push({ role: 'assistant', mood: 'happy', content: `I'm ${coach.name}, your interviewer for this round. You have ${round.minutes} minutes. Talk me through your approach here as you go. I'll answer questions, but I won't give you the solution.` });
   if (!messages.length) goStage(stage); else { renderStages(); renderChat(); }
   $('#new-chat').onclick = async () => {  // only on request: wipe this problem's chat and greet again from stage 1
     if (!await ask(`Clear your chat with ${coach.name} on this problem and start fresh?`, { ok: 'Start new chat', seed: coach.seed })) return;
@@ -643,7 +673,7 @@ async function workspace(id) {
     $('#chat').insertAdjacentHTML('beforeend', `<div class="line them" id="typing">${blob(coach.seed, { size: 30, mood: 'thinking' })}<div class="msg assistant"><span class="typing"><i></i><i></i><i></i></span></div></div>`);
     $('#chat').scrollTop = 1e9;
     status('thinking…', 'thinking');
-    const r = await api('/api/coach', { id, code: code(), result: last, stage: STAGES[stage][0], solution: sawSolution,
+    const r = await api('/api/coach', { id, code: code(), result: last, stage: round ? 'interviewer' : STAGES[stage][0], solution: sawSolution,
       messages: messages.filter(m => m.role !== 'sys').map(({ role, content }) => ({ role, content })) });
     status('listening', resting);
     say(r.reply || r.error, last?.passed ? 'happy' : 'idle');
@@ -675,6 +705,8 @@ async function workspace(id) {
           ${t.error ? `<pre class="fail">${esc(t.error)}</pre>` : ''}
           <div class="lbl">Input</div>${Array.isArray(t.input) ? `<pre>${esc(t.input.map(a => JSON.stringify(a)).join(', '))}</pre>` : tables(t.input)}
           <div class="lbl">Expected</div>${value(t.expected, t.expected_columns)}${'got' in t ? `<div class="lbl">Your output</div>${value(t.got, t.got_columns)}` : ''}</details>`).join('');
+    if (round) { round.frac = total ? n / total : 0; saveRound(); }
+    if (last.passed && round) return roundPassed();
     if (last.passed) {
       $('#out .test-bar').insertAdjacentHTML('afterend', `<button class="primary map-btn" id="map-btn">${ic('map', 16)}See execution map</button>`);
       $('#map-btn').onclick = () => showMap();
@@ -688,6 +720,69 @@ async function workspace(id) {
     }
   }
   $('#run').onclick = runTests;
+
+  // ---- mock coding round: timer, efficiency check against the reference, graded follow-up, report ----
+  function saveRound() { if (round) sessionStorage.setItem('round:' + id, JSON.stringify(round)); }
+  function roundTick() {
+    if (!round || !$('#round-left')) return;
+    const left = round.minutes * 60 - Math.floor((Date.now() - round.started) / 1000), m = Math.floor(Math.abs(left) / 60), sec = Math.abs(left) % 60;
+    $('#round-left').textContent = left >= 0 ? ` · ${m}:${String(sec).padStart(2, '0')} left` : ` · ${m}:${String(sec).padStart(2, '0')} over time`;
+    $('#round-bar').classList.toggle('over', left < 0);
+    $('#round-hints').textContent = round.hints ? ` · ${round.hints} hint${round.hints === 1 ? '' : 's'} (−${5 * round.hints})` : '';
+  }
+  async function roundPassed() {
+    resting = 'happy'; react('happy', 1500);
+    say('Tests pass. Give me a second to look at how it runs…', 'thinking', true);
+    const r = await api('/api/round/check', { id, code: code(), engine: $('#engine').value });
+    if (r.ok === false) {
+      round.improved = round.eff_ok === false ? round.improved : false;
+      round.eff_ok = false; round.eff_say = r.say; saveRound();
+      say(`It works. ${r.say} Can you make it more efficient? Run it again when you're ready, or continue to my follow-up question.`, 'unsure', true);
+      $('#round-next').hidden = false;
+      return;
+    }
+    round.improved = round.eff_ok === false && r.ok === true;
+    round.eff_ok = r.ok; round.eff_say = r.ok === null ? '' : round.improved ? 'You improved it to match the best solution.' : 'As efficient as the best solution.';
+    saveRound();
+    say(round.improved ? 'Much better, that matches the best solution. One follow-up question.' : 'Clean, and as efficient as it needs to be. One follow-up question.', 'love', true);
+    followUp();
+  }
+  function followUp() {
+    $('#round-next').hidden = true; round.phase = 'followup'; saveRound();
+    modal(`<div class="kicker dot">Follow-up · ${esc(coach.name)} asks</div><h3 style="margin:8px 0 12px">${esc(round.followup.q)}</h3>
+      <textarea id="fu-answer" class="field" rows="7" placeholder="Answer like you would out loud: what, why, and how you'd check it."></textarea>
+      <div class="row-end"><span id="fu-msg" class="dim"></span><button class="primary" id="fu-send">Submit answer</button></div>`);
+    onModalClose = () => { if (round && round.phase === 'followup') $('#round-next').hidden = false; };
+    const t0 = Date.now(); $('#fu-answer').focus();
+    $('#fu-send').onclick = async () => {
+      const answer = $('#fu-answer').value.trim();
+      if (answer.split(/\s+/).length < 3) return void ($('#fu-msg').textContent = 'Write a few sentences first.');
+      $('#fu-send').disabled = true; $('#fu-send').innerHTML = '<span class="spinner"></span>Grading…';
+      const g = await api('/api/round/grade', { followup: round.followup.id, answer, level: round.level, seconds: Math.round((Date.now() - t0) / 1000) });
+      round.followup_score = g.error ? 0 : g.score; round.followup_feedback = g.error ? { error: g.error } : { score: g.score, improve: g.improve, strengths: g.strengths, answer: g.answer };
+      round.phase = 'done'; saveRound(); onModalClose = null; finishRound();
+    };
+  }
+  async function finishRound() {
+    if (!round) return;
+    const seconds = Math.round((Date.now() - round.started) / 1000);
+    const rep = await api('/api/round/finish', { id, track: round.track, level: round.level, passed_fraction: round.frac || 0,
+      eff_ok: round.eff_ok ?? null, improved: !!round.improved, eff_say: round.eff_say || '', seconds, minutes: round.minutes, hints: round.hints,
+      followup_score: round.followup_score || 0, followup_q: round.followup.q, followup_feedback: round.followup_feedback || {} });
+    sessionStorage.removeItem('round:' + id); localStorage.removeItem('roundchat:' + id);
+    round = null; $('#round-bar')?.remove(); $('#sol').hidden = $('#stages').hidden = false;
+    roundReport(rep);
+  }
+  $('#round-next') && ($('#round-next').onclick = followUp);
+  $('#round-end') && ($('#round-end').onclick = async () => {
+    if (!await ask('End the round now? It will be scored as it stands.', { ok: 'End round', seed: coach.seed, mood: 'unsure' })) return;
+    finishRound();
+  });
+  if (round) {
+    $('#sol').hidden = $('#stages').hidden = true;  // no peeking, no coaching steps during a round
+    roundTick(); const t = setInterval(roundTick, 1000); cleanups.push(() => clearInterval(t));
+    if (round.phase === 'followup') $('#round-next').hidden = false;
+  }
   async function formatCode() {  // one undoable edit, so Ctrl/Cmd+Z brings the old layout back
     const r = await api('/api/format', { id, code: code(), engine: $('#engine').value });
     if (r.error === 'not found') return say("Formatting needs a restart of DataDojo: the running app is older than this page.", 'unsure', true);
@@ -716,7 +811,8 @@ async function workspace(id) {
     let head, good = true;
     if (!graph) {
       const ratio = r.stats?.Steps ? y.stats.Steps / r.stats.Steps : 1;
-      if (r.stats && rank(y.stats['Grows like']) > rank(r.stats['Grows like'])) { good = false; head = `Your code grows like ${y.stats['Grows like']}; the reference grows like ${r.stats['Grows like']}`; }
+      const tier = v => Math.max(0, rank(v) - 2);  // small tests make linear code look sublinear: only worse than O(n) counts
+      if (r.stats && tier(y.stats['Grows like']) > tier(r.stats['Grows like'])) { good = false; head = `Your code grows like ${y.stats['Grows like']}; the reference grows like ${r.stats['Grows like']}`; }
       else if (ratio > 1.3) { good = false; head = `Your code does ${ratio.toFixed(1)}× the work of the reference`; }
       else head = ratio < .8 ? 'Leaner than the reference. Nice!' : 'As efficient as the reference';
     } else {
@@ -742,6 +838,9 @@ async function workspace(id) {
     const ask = `<button class="map-ask" id="map-ask" aria-label="Ask ${coach.name} to explain my map">${blob(coach.seed, { size: 38, mood: 'happy' })}<span class="map-tip">Ask ${coach.name} to explain my map</span></button>`;
     box.innerHTML = `<div class="map-verdict ${good ? 'good' : 'bad'}"><i>${good ? '✓' : '!'}</i><div><b>${esc(head)}</b><span>${esc(notes[0] || tip)}</span></div></div>
       <div class="map-stats">${chips}${graph ? '' : ask}</div>
+      <details class="map-scale" id="map-scale" ${localStorage.getItem('scaleClosed') ? '' : 'open'}><summary class="ms-head"><i class="ms-caret">▸</i><div>${p.lang === 'python' ? `<b>At scale</b><span class="dim">Time both solutions on the biggest test grown to 256,000 items.</span>`
+        : `<b>Will it hold up on real data?</b><span class="dim">Your tests have ${p.test_rows || 'a few'} row${p.test_rows === 1 ? '' : 's'}. Interviewers ask what happens with millions.</span>`}</div>
+        <button id="ms-run">${ic('play', 12)}Run at scale</button></summary><div id="ms-body"></div></details>
       ${y.order?.length ? `<div class="map-order"><small>Runs in this order</small>${y.order.map(c => `<span>${c}</span>`).join('<i>→</i>')}</div>` : ''}
       ${graph ? `<div class="map-bar">
         <div class="seg" id="map-who"><button data-v="yours" class="on">Your code</button><button data-v="reference">Reference</button></div>
@@ -757,7 +856,70 @@ async function workspace(id) {
       ${notes.length > 1 ? `<ul class="map-notes">${notes.slice(1).map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}`;
     $('#map-ask').onclick = () => { closeModal(); send(`Explain my execution map. Mine: ${JSON.stringify(y.stats)}; reference: ${JSON.stringify(r.stats || {})}. `
       + `Notes: ${(y.notes || []).join(' ')} What should I change to make my code as efficient as the reference?`); };
+    $('#ms-run').onclick = e => { e.preventDefault(); $('#map-scale').open = true; atScale(engine); };  // a click on the button shouldn't fold the panel
+    $('#map-scale').ontoggle = () => $('#map-scale').open ? localStorage.removeItem('scaleClosed') : localStorage.setItem('scaleClosed', '1');
     if (graph) mapViewer(y, r, duck);
+  }
+
+  // SQL and PySpark: what the timings mean, as a sentence you could say in an interview
+  function takeaway(d) {
+    const t = ms => ms < 1 ? `${ms.toFixed(1)} ms` : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+    const nf = n => n >= 999.5e3 ? `${+(n / 1e6).toFixed(1)}M` : n >= 999.5 ? `${+(n / 1e3).toFixed(1)}k` : String(n);  // 999,999 → 1M, not 1000k
+    const step = d.sizes.length > 1 ? Math.round(d.sizes[1] / d.sizes[0]) : 10;
+    // growth over the last two finished sizes: exponent k, so each step of `step`× more data costs step^k× more time.
+    // Under 20 ms is mostly fixed overhead, so it doesn't count as growth.
+    const growth = ms => { const ix = ms.map((v, i) => v != null && v >= 20 ? i : -1).filter(i => i >= 0).slice(-2);
+      return ix.length < 2 ? null : Math.log(ms[ix[1]] / ms[ix[0]]) / Math.log(d.sizes[ix[1]] / d.sizes[ix[0]]); };
+    const kind = k => k == null || k < 0.5 ? 'stays flat' : k < 1.3 ? 'grows in step with the data (linear)' : k < 2.3 ? 'quadratic' : 'worse than quadratic';
+    const Y = d.ms.yours, R = d.ms.reference, last = d.sizes.length - 1;
+    const yi = Y.findLastIndex(v => v != null), ri = R.findLastIndex(v => v != null), ky = growth(Y), kr = growth(R);
+    const per = k => Math.max(2, Math.round(step ** k));
+    if (yi < ri) {
+      const k = ky ?? (yi > 0 && Y[yi - 1] ? Math.log(Y[yi] / Y[yi - 1]) / Math.log(d.sizes[yi] / d.sizes[yi - 1]) : 2);
+      return [`Your ${p.lang === 'sql' ? 'query' : 'job'} slows down about ${per(k)}× each time the data grows ${step}×, so it was stopped after ${nf(d.sizes[yi])} rows (${t(Y[yi])}). `
+        + `The reference ${kind(kr)} and handles ${nf(d.sizes[ri])} rows in ${t(R[ri])}.`, false];
+    }
+    if (ri < yi || (ri < last && yi < last)) {  // the reference itself can't go all the way: the problem is heavy by nature
+      return [`Both slow down sharply as the data grows: this problem is expensive by nature (often a range or cross join). `
+        + `Yours: ${t(Y[Math.min(yi, ri)])} at ${nf(d.sizes[Math.min(yi, ri)])} rows, the reference ${t(R[Math.min(yi, ri)])}. In an interview, say how you'd cut the rows before the join.`, Y[Math.min(yi, ri)] <= 1.5 * R[Math.min(yi, ri)]];
+    }
+    if (ky != null && ky >= 1.3 && (kr == null || ky - kr >= 0.5)) {
+      return [`Your ${p.lang === 'sql' ? 'query' : 'job'} slows down about ${per(ky)}× each time the data grows ${step}× (${kind(ky)}). The reference ${kind(kr)}.`, false];
+    }
+    if (Y[last] > 50 && Y[last] > 1.5 * R[last]) {
+      return [`Same growth as the reference, but about ${(Y[last] / R[last]).toFixed(1)}× slower at ${nf(d.sizes[last])} rows (${t(Y[last])} vs ${t(R[last])}). Worth a look, not a rewrite.`, false];
+    }
+    return [`Fine at ${nf(d.sizes[last])} rows: ${t(Y[last])}, in line with the reference (${t(R[last])}). That's your answer when the interviewer asks about scale.`, true];
+  }
+
+  // "At scale": real timings for your code and the reference on the biggest test grown to big sizes
+  async function atScale(engine) {
+    const box = $('#ms-body');
+    $('#ms-run').disabled = true; $('#ms-run').innerHTML = `<span class="spinner"></span>Running${p.lang === 'pyspark' ? ' (Spark: about a minute)' : ''}…`;
+    const d = await api('/api/scale', { id, code: code(), engine });
+    if (!$('#map-scale')) return;
+    if (d.error) { $('#ms-run').disabled = false; $('#ms-run').textContent = 'Try again'; return void box.insertAdjacentHTML('beforeend', d.error === 'not found'
+      ? '<p class="fail">DataDojo was updated while it was running. Quit it and start it again to use this.</p>' : `<pre class="fail">${esc(d.error)}</pre>`); }
+    const t = ms => ms == null ? '' : ms < 1 ? `${ms.toFixed(1)} ms` : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+    const nf = n => n >= 999.5e3 ? `${+(n / 1e6).toFixed(1)}M` : n >= 999.5 ? `${+(n / 1e3).toFixed(1)}k` : String(n);  // 999,999 → 1M, not 1000k
+    const all = [...d.ms.yours, ...d.ms.reference].filter(v => v != null), lo = Math.log10(Math.max(.05, Math.min(...all))), hi = Math.log10(Math.max(...all) * 1.2);
+    const w = ms => ms == null ? 0 : Math.max(2, 100 * (Math.log10(Math.max(ms, .05)) - lo) / (hi - lo || 1));
+    const last = d.sizes.length - 1, Y = d.ms.yours, R = d.ms.reference;
+    const yi = Y.findLastIndex(v => v != null), common = d.sizes.map((_, i) => i).filter(i => Y[i] != null && R[i] != null).pop();
+    let verdict, good = true;
+    if (p.lang !== 'python') [verdict, good] = takeaway(d);
+    else if (yi < last && R[last] != null) { good = false; verdict = yi < 0 ? `Yours didn't finish even at ${nf(d.sizes[0])} ${d.unit}. The reference handles ${nf(d.sizes[last])} in ${t(R[last])}.`
+      : `Yours took ${t(Y[yi])} at ${nf(d.sizes[yi])} ${d.unit}; bigger sizes would take too long. The reference handles ${nf(d.sizes[last])} in ${t(R[last])}.`; }
+    else if (common != null && Y[common] > 20 && Y[common] > 1.5 * R[common]) { good = false; verdict = `At ${nf(d.sizes[common])} ${d.unit}, yours takes ${(Y[common] / R[common]).toFixed(1)}× as long as the reference (${t(Y[common])} vs ${t(R[common])}).`; }
+    else verdict = common != null && Y[common] < 20 && R[common] < 20 ? `Both stay fast even at ${nf(d.sizes[common])} ${d.unit}.` : `Keeps pace with the reference at ${nf(d.sizes[common ?? last])} ${d.unit}.`;
+    $('#map-scale .ms-head .dim').textContent = `${d.engine} on this computer · bars use a log scale`;
+    $('#ms-run').disabled = false; $('#ms-run').innerHTML = `${ic('reset', 12)}Run again`;
+    box.innerHTML = `
+      <div class="ms-verdict ${good ? 'good' : 'bad'}">${esc(verdict)}</div>
+      <div class="ms-grid">${d.sizes.map((n, i) => `<span class="ms-n">${nf(n)} ${d.unit}</span>
+        <div class="ms-bars"><div class="ms-bar you" style="--w:${w(Y[i])}%"><i></i><span>${Y[i] == null ? 'stopped' : t(Y[i])}</span></div>
+          <div class="ms-bar ref" style="--w:${w(R[i])}%"><i></i><span>${R[i] == null ? 'stopped' : t(R[i])}</span></div></div>`).join('')}</div>
+      <div class="ms-key"><span><i class="you"></i>Your code</span><span><i class="ref"></i>Reference</span><span class="faint">${d.shifted ? 'Copies of the test data with shifted keys, so joins don\'t explode' : 'Repeated copies of the test data'}. Timings vary run to run.</span></div>`;
   }
 
   // plan cards: laid out as a tree (sources left, result right), pan / zoom, click to inspect, overview panel
@@ -789,7 +951,8 @@ async function workspace(id) {
       const pill = duck && tot ? `<span class="pc-pill ${n.ms === slow && slow ? 'hot' : ''}">${(100 * (n.ms || 0) / tot).toFixed(1)}% time</span>`
         : `<span class="pc-pill">${{ narrow: 'narrow', wide: 'wide', shuffle: 'shuffle', source: 'read', warn: 'slow' }[n.cls]}</span>`;
       const only = (v, m, f) => v && v === m && L.ids.filter(j => f(d.nodes[j]) === m).length === 1;  // badge a clear winner only, not a tie
-      const badges = [only(n.rows, most, x => x.rows) ? 'Most rows' : '', duck && only(n.ms, slow, x => x.ms) ? 'Slowest' : ''].filter(Boolean);
+      const big = only(n.rows, most, x => x.rows), slowest = duck && only(n.ms, slow, x => x.ms);  // one badge: two don't fit the card
+      const badges = big && slowest ? ['Most rows, slowest'] : big ? ['Most rows'] : slowest ? ['Slowest'] : [];
       return `<div class="pc c-${n.cls} ${n.warn ? 'has-warn' : ''}" data-i="${i}" style="left:${p.x}px;top:${p.y}px;width:${W}px;height:${H}px">
         ${n.warn ? `<div class="pc-warn">⚠ ${esc(n.warn)}</div>` : ''}
         <div class="pc-top"><div><b>${esc(n.label)}</b><small>${esc(n.short || '')}</small></div>${pill}</div>
@@ -1514,9 +1677,24 @@ const MIC_IDLE = `${MIC}<span>Speak</span>`, MIC_REC = '<i class="rec-dot"></i><
 const KIND_LABEL = { concept: 'Concept', scenario: 'Scenario', design: 'System design', behavioral: 'Behavioral' };
 const STATUS_ICON = { covered: ['✓', 'pass', 'Covered'], partial: ['~', 'partial', 'Partly'], missed: ['✗', 'fail', 'Missed'] };
 
+function roundReport(rep) {
+  const mm = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, f = rep.followup_feedback || {};
+  modal(`<div class="kicker dot">Coding round report</div><h3 style="margin:6px 0 2px">${esc(rep.title)}</h3>
+    <div class="dim">${esc({ sql: 'SQL', python: 'Python', pyspark: 'PySpark', ml: 'ML & AI' }[rep.track] || rep.track || '')} · ${esc(LEVEL_INFO[rep.level]?.[0] || rep.level || '')} · ${mm(rep.seconds)} of ${rep.minutes}:00</div>
+    <div class="rr-top">${ring(rep.total, 100, 86, rep.total >= 70 ? 'var(--easy)' : rep.total >= 45 ? 'var(--medium)' : 'var(--hard)')}
+      <table class="rr-parts">${Object.entries(rep.parts).filter(([k, [v]]) => k !== 'Hints' || v).map(([k, [v, max]]) =>
+        `<tr><td>${k}</td><td class="${v < 0 ? 'fail' : ''}">${v}${max ? ` / ${max}` : ''}</td></tr>`).join('')}</table></div>
+    ${rep.eff_say ? `<div class="lbl">Efficiency</div><p style="margin:0">${esc(rep.eff_say)}</p>` : ''}
+    ${rep.followup ? `<div class="lbl">Follow-up</div><p style="margin:0 0 6px"><b>${esc(rep.followup)}</b></p>
+      ${f.error ? `<p class="faint">${esc(f.error)}</p>` : `<p class="dim" style="margin:0">${f.score == null ? 'Not answered.' : `Scored ${f.score}/10.`}</p>
+      ${(f.improve || []).length ? `<ul class="rr-list">${f.improve.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${f.answer ? `<details><summary>A strong answer</summary><p>${esc(f.answer)}</p></details>` : ''}`}` : ''}
+    <div class="row-end"><a href="#/interview"><button class="primary">Back to interviews</button></a></div>`);
+}
+
 async function interviewHome() {
   load();
-  const d = await api('/api/interview');
+  const [d, rounds] = await Promise.all([api('/api/interview'), api('/api/rounds')]);
   const title = id => d.tracks.find(t => t.id === id)?.title || id;
   $('#app').innerHTML = `<div class="page enter"><a class="back" href="#/">← Home</a>
     <div class="list-head">${blob(CAST.sensei.seed, { size: 72, live: true, mood: 'happy' })}
@@ -1526,6 +1704,14 @@ async function interviewHome() {
       <div class="gc-top"><span class="gc-n">0${i + 1}</span>${blob(CAST[['pyspark', 'sensei', 'python', 'sql'][i % 4]].seed, { size: 54 })}</div>
       <div class="kicker">Solo · guided</div><h3>${esc(t.title)} Interview</h3><p class="dim">${esc(t.desc)}</p>
       <div class="gc-foot"><span>${t.count ? `<b>${t.count}</b> questions · ${t.topics.length} topics` : 'Questions coming soon'}</span><span class="sp"></span><button class="primary">Start</button></div></a>`).join('')}</div>
+    <div class="section-title">Coding round</div>
+    <div class="card cr-card"><div class="cr-text"><b>A timed coding problem, with ${CAST.sensei.name} as your interviewer</b>
+      <div class="dim">Solve it, then defend it: if your code is slower than it needs to be you'll be asked to improve it, then answer one follow-up. Scored out of 100.</div></div>
+      <div class="cr-pick"><div class="chips" id="cr-track">${[['sql', 'SQL'], ['python', 'Python'], ['pyspark', 'PySpark'], ['ml', 'ML & AI']].map(([k, l], i) => `<button data-v="${k}" class="${i ? '' : 'on'}">${l}</button>`).join('')}</div>
+        <div class="chips" id="cr-level">${[['entry', 'Easy'], ['mid', 'Medium'], ['senior', 'Hard']].map(([k, l], i) => `<button data-v="${k}" class="${i === 1 ? 'on' : ''}">${l}</button>`).join('')}</div>
+        <button class="primary" id="cr-start">Start round</button></div></div>
+    ${rounds.length ? `<div class="cr-history">${rounds.map(r => `<a class="card iv-hist" href="#" data-round="${r.id}">${ring(r.score, 100, 40, r.score >= 70 ? 'var(--easy)' : r.score >= 45 ? 'var(--medium)' : 'var(--hard)')}
+      <div><b>${esc(r.title)}</b> · ${esc({ sql: 'SQL', python: 'Python', pyspark: 'PySpark', ml: 'ML & AI' }[r.track] || r.track)} · ${esc(LEVEL_INFO[r.level]?.[0] || r.level)}<div class="faint">${esc(r.ts)} UTC</div></div><span class="sp"></span><span class="go">→</span></a>`).join('')}</div>` : ''}
     <div class="section-title iv-hist-head">Past interviews${d.history.length ? '<button class="ghost" id="iv-clear">Clear all</button>' : ''}</div>
     ${d.history.length ? `<div class="iv-history">${d.history.map(h => `<a class="card iv-hist" href="#/interview/review/${h.id}" data-id="${h.id}">
       ${h.score != null ? ring(h.score, 100, 40, h.score >= 70 ? 'var(--easy)' : h.score >= 45 ? 'var(--medium)' : 'var(--hard)') : '<span class="faint">-</span>'}
@@ -1533,6 +1719,19 @@ async function interviewHome() {
       <div class="faint">${esc(h.ts)} UTC</div></div><span class="sp"></span>
       <button class="ghost iv-del" data-del="${h.id}" title="Delete this interview" aria-label="Delete this interview">✕</button><span class="go">→</span></a>`).join('')}</div>`
       : `<div class="faint">No interviews yet. Your reports will show up here.</div>`}</div>`;
+  ['#cr-track', '#cr-level'].forEach(sel => $(sel).onclick = e => { const b = e.target.closest('button'); if (b) $(sel).querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); });
+  $('#cr-start').onclick = async () => {
+    $('#cr-start').disabled = true; $('#cr-start').innerHTML = '<span class="spinner"></span>Picking a problem…';
+    const r = await api('/api/round/start', { track: $('#cr-track .on').dataset.v, level: $('#cr-level .on').dataset.v });
+    if (r.error) { $('#cr-start').disabled = false; $('#cr-start').textContent = 'Start round'; return; }
+    localStorage.removeItem('roundchat:' + r.id);
+    sessionStorage.setItem('round:' + r.id, JSON.stringify({ ...r, started: Date.now(), hints: 0, phase: 'coding' }));
+    location.hash = `#/p/${r.id}/round`;
+  };
+  if ($('.cr-history')) $('.cr-history').onclick = async e => {
+    const a = e.target.closest('[data-round]'); if (!a) return; e.preventDefault();
+    roundReport(await api('/api/rounds/' + a.dataset.round));
+  };
   if ($('#iv-clear')) $('#iv-clear').onclick = async () => {
     if (!await ask(`Delete all ${d.history.length} past interviews? Their reports can't be recovered.`, { ok: 'Delete all', seed: CAST.sensei.seed, mood: 'unsure' })) return;
     await api('/api/interview/delete', { all: true }); route();
@@ -1856,7 +2055,7 @@ async function route() {
     a.dataset.nav === (page === 'lang' ? arg : ['design', 'games', 'interview'].includes(page) ? page : page ? '' : 'home')));
   document.querySelectorAll('.dd').forEach(dd => { dd.classList.toggle('on', !!dd.querySelector('.dd-menu a.on')); dd.classList.remove('open'); });
   if (page === 'setup') await setupPage();
-  else if (page === 'p') await workspace(arg);
+  else if (page === 'p') await workspace(arg, rest[0]);
   else if (page === 'feedback') await feedbackPage();
   else if (page === 'design') await (arg ? designLesson(arg) : designHome());
   else if (page === 'games') await (arg ? gamePlay(arg) : gamesHome());
