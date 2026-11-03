@@ -14,8 +14,18 @@ DIFFICULTIES = ("easy", "medium", "hard")
 REQUIRED = {"title", "lang", "difficulty", "pattern", "statement", "starter", "solution", "tests"}
 
 
+_loaded = {}  # parsed files, re-read only when a file changes: every page asked for all 252 problems (~60 ms each time)
+
+
+def _cached(name, files, build):
+    sig = tuple((str(f), f.stat().st_mtime_ns) for f in files)
+    if _loaded.get(name, (None,))[0] != sig:
+        _loaded[name] = (sig, build())
+    return _loaded[name][1]
+
+
 def load_catalog():
-    return tomllib.loads((PROBLEMS / "catalog.toml").read_text())
+    return _cached("catalog", [PROBLEMS / "catalog.toml"], lambda: tomllib.loads((PROBLEMS / "catalog.toml").read_text()))
 
 
 def parse_problem(text, stem, catalog):
@@ -45,6 +55,11 @@ def parse_problem(text, stem, catalog):
 
 
 def load_problems():
+    """All problems by id. Callers must not change the dicts: they are shared until a file changes."""
+    return _cached("problems", sorted(PROBLEMS.glob("*/*.toml")) + [PROBLEMS / "catalog.toml"], _parse_problems)
+
+
+def _parse_problems():
     catalog, out = load_catalog(), {}
     for f in sorted(PROBLEMS.glob("*/*.toml")):
         try:

@@ -7,7 +7,8 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <script>document.documentElement.dataset.theme = localStorage.getItem('theme') || 'midnight'  /* dark until the learner picks light */</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap">
+<!-- fonts load without blocking the first paint (a slow network used to leave the window blank) -->
+<link rel="stylesheet" id="font-css" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" media="print" onload="this.media='all'; this.dataset.ready=1">
 <link rel="stylesheet" href="vendor/blobatar/motion.css">
 <link rel="stylesheet" href="vendor/blobatar/gaze.css">
 <link rel="stylesheet" href="app.css">
@@ -97,9 +98,8 @@
   <button class="theme-btn" id="theme-btn"></button>
   <button class="me" id="me" title="Change your name"></button>
 </header>
-<main id="app"></main>
+<main id="app"><div class="boot" role="status"><span class="spinner"></span>Opening DataDojo…</div></main><!-- replaced by the first page -->
 <div id="modal" class="modal" hidden><div class="modal-box"><button class="x" id="modal-x">✕</button><div id="modal-body"></div></div></div>
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

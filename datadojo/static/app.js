@@ -440,10 +440,16 @@ async function problemList(kind, id) {
 }
 
 // ---------- workspace ----------
+// The editor comes from a CDN: load it in the background (a blocking <script> tag left the window blank on slow networks)
+const MONACO = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
 const monacoReady = new Promise(res => {
-  if (!window.require) return res(null);
-  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
-  require(['vs/editor/editor.main'], () => { monacoTheme(); res(window.monaco); }, () => res(null));
+  const s = Object.assign(document.createElement('script'), { src: `${MONACO}/loader.js`, async: true });
+  s.onerror = () => res(null);  // offline: the plain text editor takes over
+  s.onload = () => {
+    require.config({ paths: { vs: MONACO } });
+    require(['vs/editor/editor.main'], () => { monacoTheme(); res(window.monaco); }, () => res(null));
+  };
+  document.head.append(s);
 });
 
 // problems in a list are ordered easy -> hard; list pages and the problem title share this order for numbering
@@ -710,6 +716,7 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
     if (last.passed) {
       $('#out .test-bar').insertAdjacentHTML('afterend', `<button class="primary map-btn" id="map-btn">${ic('map', 16)}See execution map</button>`);
       $('#map-btn').onclick = () => showMap();
+      prefetchMap();  // build the map while they read the result, so the button opens it at once
       resting = 'happy'; react('love', 2500); confetti($('#out .verdict'));
       say(`All ${n} tests pass! Nicely done${me() ? ', ' + me().split(' ')[0] : ''}. Want me to review it, or try the edge cases on another engine?`, 'love', true);
       if (stage < STAGES.length - 1) { stage = STAGES.length - 2; goStage(STAGES.length - 1); }
@@ -794,13 +801,21 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
   $('#fmt').onclick = formatCode;
 
   // execution map: what the engine did with the passing code, next to the reference solution
+  let mapAhead = null;  // { key, req }: the map for the code that just passed, requested in the background
+  function prefetchMap() { const engine = $('#engine').value; mapAhead = { key: code() + '\n' + engine, req: api('/api/map', { id, code: code(), engine }) }; }
   async function showMap(engine = $('#engine').value) {  // engine: a one-off override, never saved as the learner's choice
     const graph = p.lang !== 'python', duck = p.lang === 'sql' && engine !== 'spark-sql', other = engine !== $('#engine').value;
     modal(`<div class="map-head"><h3>Execution map</h3>${other ? `<span class="dim">on Spark SQL · <a href="#" id="map-home">back to the ${esc($('#engine').selectedOptions[0]?.textContent || 'usual')} map</a></span>` : ''}</div>
-      <div id="map-body"><div class="dim"><span class="spinner"></span>Running your code once more to watch the engine${p.lang === 'pyspark' ? ' (Spark needs ~10s)' : ''}…</div></div>`);
+      <div id="map-body"><div class="map-skel" aria-busy="true">
+        <div class="sk sk-verdict"><span class="spinner"></span>Running your code once more to watch the engine${p.lang === 'pyspark' ? ' (Spark needs ~10s)' : ''}…</div>
+        <div class="map-stats">${'<div class="sk sk-chip"></div>'.repeat(graph ? 4 : 3)}</div>
+        <div class="sk sk-scale"></div>${graph ? '<div class="sk sk-bar"></div>' : ''}
+        ${graph ? '<div class="map-main"><div class="sk map-stage"></div><div class="sk sk-side"></div></div>' : '<div class="map-py"><div class="sk sk-code"></div><div class="sk sk-code"></div></div>'}
+      </div></div>`);  // a placeholder shaped like the map, so the window opens at its final size and nothing jumps
     $('.modal-box').classList.add('map');
     if ($('#map-home')) $('#map-home').onclick = e => { e.preventDefault(); showMap(); };
-    const m = await api('/api/map', { id, code: code(), engine });
+    const ahead = mapAhead && mapAhead.key === code() + '\n' + engine ? mapAhead.req : null;
+    const m = await (ahead || api('/api/map', { id, code: code(), engine }));
     const box = $('#map-body'); if (!box) return;
     const y = m.yours || {}, r = m.reference || {};
     if (y.error) return box.innerHTML = (other ? `<p>Spark SQL can't run this query: it uses syntax or functions only ${esc($('#engine').selectedOptions[0]?.textContent || 'your engine')} supports.</p>` : '') + `<pre class="fail">${esc(y.error)}</pre>`;
@@ -826,7 +841,8 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
       sql: 'Blocking steps must read all their input before passing anything on. Fewer of them, on fewer rows, is faster.',
       python: 'Each bar shows how many times that line ran across all tests. Long bars are where the time goes.' }[p.lang];
     const f = v => v == null ? '–' : typeof v === 'number' ? v.toLocaleString() : esc(v);
-    const chips = Object.keys(y.stats).map(k => { const a = y.stats[k], b = r.stats?.[k], w = b != null && rank(a) > rank(b), bt = b != null && rank(a) < rank(b);
+    const cmp = (k, v) => k === 'Grows like' ? Math.max(0, rank(v) - 2) : rank(v);  // growth: only worse than O(n) counts, as in the verdict
+    const chips = Object.keys(y.stats).map(k => { const a = y.stats[k], b = r.stats?.[k], w = b != null && cmp(k, a) > cmp(k, b), bt = b != null && cmp(k, a) < cmp(k, b);
       return `<div class="map-stat ${w ? 'worse' : bt ? 'better' : ''}"><span>${esc(k)}</span><b>${f(a)}</b><small>ref ${f(b)}</small></div>`; }).join('');
     const legend = graph ? `<div class="map-legend">${(duck ? [['source', 'read', 'Reads a table'], ['narrow', 'streaming', 'Rows flow straight through'], ['wide', 'blocking', 'Must read all input first'], ['warn', 'watch out', 'Slow at scale']]
       : [['source', 'read', 'Reads a table'], ['narrow', 'narrow', 'Works partition by partition, no data moves'], ['wide', 'wide', 'Needs rows with the same key together'], ['shuffle', 'shuffle', 'Moves rows across the network; ends a stage'], ['warn', 'watch out', 'Slow at scale']])
@@ -2027,8 +2043,11 @@ $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
 
 let setupKnown = false;
 async function setupDone() {
-  if (!setupKnown) setupKnown = (await api('/api/setup')).settings.setup_done;
-  return setupKnown;
+  if (setupKnown) return true;
+  const check = api('/api/setup').then(r => { const done = !!r.settings?.setup_done;
+    done ? localStorage.setItem('setupDone', '1') : localStorage.removeItem('setupDone'); return done; });
+  if (localStorage.getItem('setupDone')) { check.then(d => { setupKnown = d; }); return setupKnown = true; }  // known: don't wait for the server
+  return setupKnown = await check;
 }
 // The browser can't restore scroll itself: the page is empty until its data loads, so it lands at the top and
 // then jumps back down later. We restore it in the same frame the page renders instead.
@@ -2115,7 +2134,9 @@ function intro() {
     setTimeout(() => { el.remove(); root.classList.remove('intro-reveal'); }, 1300);
   };
   el.onclick = finish; addEventListener('keydown', finish);
-  const font = document.fonts ? document.fonts.load('800 150px "JetBrains Mono"') : Promise.resolve();
+  const css = document.getElementById('font-css');  // the font stylesheet loads without blocking; wait for it, then the font
+  const sheet = !css || css.dataset.ready ? Promise.resolve() : new Promise(r => { css.addEventListener('load', r); css.addEventListener('error', r); });
+  const font = sheet.then(() => document.fonts ? document.fonts.load('800 150px "JetBrains Mono"') : null);
   Promise.race([font, new Promise(r => setTimeout(r, 450))]).then(() => {  // never wait long for the font
     if (done) return;
     el.classList.add('play'); setTimeout(finish, 2900);

@@ -787,3 +787,17 @@ button[hidden], .stages[hidden] { display: none }
 .map-scale > summary { list-style: none; cursor: pointer } .map-scale > summary::-webkit-details-marker { display: none }
 .ms-caret { font-style: normal; color: var(--dim); font-size: 12px; transition: transform .2s; flex: none } .map-scale[open] .ms-caret { transform: rotate(90deg) }
 .map-scale:not([open]) { padding-bottom: 12px }
+/* execution map: opens fast and calm. A short ease-in (no bounce at this size), a placeholder holds the final layout,
+   and the real map replaces it with a quick fade, no waiting: the data is usually back in ~0.2 s */
+.modal-box.map { animation: map-in .18s ease-out both }
+@keyframes map-in { from { opacity: 0; transform: translateY(6px) } }
+.sk { border-radius: var(--radius); border: 1px solid var(--line); background: linear-gradient(90deg, var(--card) 30%, color-mix(in srgb, var(--line2) 55%, var(--card)) 50%, var(--card) 70%) 0 0 / 300% 100%;
+  animation: shimmer 1.6s linear infinite reverse }
+.sk-verdict { height: 62px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; padding: 0 16px; color: var(--dim); font-size: 12.5px }
+.sk-chip { width: 120px; height: 84px } .sk-scale { height: 68px; margin: 12px 0 10px } .sk-bar { height: 38px; margin-bottom: 8px; width: 60% } .sk-side { height: min(62vh, 620px) } .sk-code { height: 184px }
+.map-skel .map-stage { cursor: default }
+#map-body > :not(.map-skel) { animation: fade .15s ease-out both }
+@media (prefers-reduced-motion: reduce) { .modal-box.map, #map-body > *, .sk { animation: none } }
+/* startup loader: on screen from the first paint until the first page draws */
+.boot { min-height: 60vh; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--dim); font-size: 13px;
+  animation: fade .2s ease both }

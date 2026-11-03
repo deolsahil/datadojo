@@ -1,6 +1,6 @@
 [project]
 name = "datadojo"
-version = "0.3.1"
+version = "0.3.2"
 description = "Local Data & AI interview practice (SQL, Python, PySpark, AI, ML) with friendly AI coaches."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

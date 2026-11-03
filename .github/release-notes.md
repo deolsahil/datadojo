@@ -1,4 +1,15 @@
-## What's new in 0.3.1
+## What's new in 0.3.2
+
+**⚡ Faster**
+- Pages open in about a tenth of a second: problems are read once instead of on every page, and nothing waits on a setup check.
+- The execution map opens instantly: it's prepared in the background while you read your test results.
+- No more blank window on slow networks: the editor and fonts load in the background, and an "Opening DataDojo…" loader shows from the first moment.
+
+**✨ Smoother**
+- The execution map opens with a calm fade and a placeholder in its final shape, so nothing jumps.
+- The map's growth chip no longer shows a correct O(n) solution in red.
+
+## New in 0.3.1
 
 **⏱️ Coding rounds**
 - On the Interview page, pick SQL, Python, PySpark or ML & AI and a level for a **timed problem with a coach as your interviewer**.
