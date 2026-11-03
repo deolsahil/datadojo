@@ -90,6 +90,17 @@ const md = (src = '') => src.trim().split(/```\w*\n?/).map((chunk, i) => i % 2
   ? `<pre>${esc(chunk.replace(/\n$/, ''))}</pre>`
   : chunk.split(/\n\s*\n/).filter(b => b.trim()).map(b => block(b.trim())).join('')).join('');
 
+// "gpt-5.5 · ChatGPT plan": which model the coaches use, into every .coach-brain link on the page
+async function showBrain() {
+  const b = await api('/api/coach-brain');
+  b.off ? localStorage.setItem('coachOff', '1') : localStorage.removeItem('coachOff');  // the coach greeting reads this
+  document.querySelectorAll('.coach-brain').forEach(a => {
+    const short = a.classList.contains('short');  // the coach panel is narrow: model only, the rest on hover
+    a.textContent = b.off ? (short ? 'Coaching off' : 'Coaching off · turn it on') : short ? b.model : `${b.model} · ${b.via}`;
+    a.title = b.off ? 'Open coach setup to turn coaching on' : `Coaches use ${b.model} (${b.via}). Click to change.`;
+    a.classList.toggle('off', !!b.off); a.hidden = !b.off && !b.model;
+  });
+}
 function ring(done, total, size = 44, color = 'var(--acc)') {
   const h = size / 2, r = h - 4, c = 2 * Math.PI * r, f = total ? done / total : 0;
   return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
@@ -371,7 +382,8 @@ async function home() {
       ${links.length ? `<div class="socials">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer" title="${esc(l.icon)}">${icon(l.icon)}</a>`).join('')}</div>` : ''}</div>
     <div class="welcome card"><div class="sensei-big" id="sensei">${blob(CAST.sensei.seed, { size: 104, mood, live: true, cls: 'live' })}</div>
       <div class="bubble"><div class="kicker dot">${stats.runs ? 'Welcome back' : 'Welcome'}</div><p>${esc(line)}</p>
-        ${me() ? '' : '<button id="set-name" class="primary">Tell Sensei your name</button>'}</div>
+        ${me() ? '' : '<button id="set-name" class="primary">Tell Sensei your name</button>'}
+        <a class="coach-brain" href="#/setup" hidden></a></div>
       <span class="sp"></span><div class="streak-big ${streakState(stats)}">${FLAME}<b data-count="${stats.streak}">0</b><small>day streak</small></div></div>
     <div class="card progress">
       <div class="top">${ring(stats.solved, stats.total, 56)}<div><b>Overall progress</b><div class="dim">${stats.solved} of ${stats.total} problems solved</div></div>
@@ -398,6 +410,7 @@ async function home() {
   $('#sensei').onmouseleave = () => setMood(s, mood);
   $('#sensei').onclick = () => { setMood(s, 'wink'); setTimeout(() => setMood(s, mood), 900); };
   if ($('#set-name')) $('#set-name').onclick = askName;
+  showBrain();
 }
 
 async function langPage(lang) {
@@ -500,7 +513,7 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
       <div class="gutter" id="g2" title="Drag to resize · double-click to reset"></div>
       <section class="col">
         <div class="coach-head"><div id="coach">${blob(coach.seed, { size: 58, live: true, cls: 'live' })}</div>
-          <div><b>${coach.name}</b><div class="dim" style="font-size:11.5px">${round ? 'your interviewer' : coach.role}</div></div><span class="sp"></span>
+          <div><b>${coach.name}</b><div class="dim" style="font-size:11.5px">${round ? 'your interviewer' : coach.role}</div><a class="coach-brain short" href="#/setup" hidden></a></div><span class="sp"></span>
           <button class="ghost new-chat" id="new-chat" title="Clear this chat and start fresh">↺ New chat</button>
           <span class="status" id="status"><i></i>listening</span></div>
         <div class="chat" id="chat"></div>
@@ -668,6 +681,7 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
   };
   $('#stages').onclick = e => { const b = e.target.closest('.stage'); if (b) goStage(+b.dataset.i); };
   if (round && !messages.length) messages.push({ role: 'assistant', mood: 'happy', content: `I'm ${coach.name}, your interviewer for this round. You have ${round.minutes} minutes. Talk me through your approach here as you go. I'll answer questions, but I won't give you the solution.` });
+  await showBrain();  // which model answers, and whether coaching is off (the greeting says so)
   if (!messages.length) goStage(stage); else { renderStages(); renderChat(); }
   $('#new-chat').onclick = async () => {  // only on request: wipe this problem's chat and greet again from stage 1
     if (!await ask(`Clear your chat with ${coach.name} on this problem and start fresh?`, { ok: 'Start new chat', seed: coach.seed })) return;

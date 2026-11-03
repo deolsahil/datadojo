@@ -801,3 +801,8 @@ button[hidden], .stages[hidden] { display: none }
 /* startup loader: on screen from the first paint until the first page draws */
 .boot { min-height: 60vh; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--dim); font-size: 13px;
   animation: fade .2s ease both }
+/* which model the coaches use (home welcome card, coach panel) */
+.coach-brain { display: inline-block; max-width: 100%; margin-top: 4px; padding: 2px 9px; border-radius: 999px; font-size: 11px; color: var(--dim);
+  border: 1px solid var(--line2); background: var(--bg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle }
+.coach-brain::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--easy); margin-right: 6px; vertical-align: 1px }
+.coach-brain:hover { color: var(--text); border-color: var(--acc) } .coach-brain.off::before { background: var(--faint) } .coach-brain[hidden] { display: none }

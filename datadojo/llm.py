@@ -140,6 +140,17 @@ def _body(e):
         return ""
 
 
+def coach_brain():
+    """What powers the coaches, for the UI: {"model", "via"}, or {"off": True} when setup was skipped."""
+    s = load()
+    p, signin = s.get("provider"), s.get("auth") == "signin"
+    if p not in PROVIDERS and s.get("coach_skipped"):
+        return {"off": True}
+    via = {"openai": "ChatGPT plan" if signin else "OpenAI API key", "anthropic": "Claude account" if signin else "Anthropic API key",
+           "gemini": "Google Cloud" if signin else "Gemini API key"}.get(p, "on this computer (Ollama)")
+    return {"model": s.get("model") or "", "via": via}
+
+
 def _reason(e):
     if isinstance(e, urllib.error.HTTPError):
         return f"HTTP {e.code}"

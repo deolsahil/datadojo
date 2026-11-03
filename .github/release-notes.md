@@ -1,4 +1,9 @@
-## What's new in 0.3.3
+## What's new in 0.3.4
+
+- **See which model your coaches use.** A small label on the home page and next to every coach shows the model and how it's connected, for example "gpt-5.5 · ChatGPT plan". Click it to change.
+- When coaching is off, the label says so, and so does the coach's first message.
+
+## New in 0.3.3
 
 **🛠️ Fixes for the desktop app**
 - **Opening a problem no longer opens a second DataDojo window** on the setup screen.
