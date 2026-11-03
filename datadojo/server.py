@@ -1,5 +1,5 @@
 """DataDojo server: JSON API + static UI. Start it with the `datadojo` command (see __main__.py)."""
-import atexit, datetime, functools, hashlib, json, os, shutil, sqlite3, subprocess, sys, tempfile, threading, tomllib, urllib.request
+import atexit, datetime, re, functools, webbrowser, hashlib, json, os, shutil, sqlite3, subprocess, sys, tempfile, threading, tomllib, urllib.request
 from collections import Counter
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -282,7 +282,7 @@ def ensure_postgres():
     return {"DOJO_PG_HOST": host, "DOJO_PG_PORT": PG_PORT}
 
 
-def execute(p, code, engine):
+def execute(p, code, engine, map=False):
     """Run code over all tests of p with the given engine; returns runner output or {"error"}."""
     lang = p["lang"]
     # Each engine owns its Spark: drop an inherited SPARK_HOME/PYSPARK_* (e.g. a local Spark install),
@@ -307,7 +307,7 @@ def execute(p, code, engine):
     # ponytail: fresh process + timeout only, no memory cap/sandbox; fine for your own code on your own machine
     with tempfile.TemporaryDirectory() as tmp:
         req, res = Path(tmp) / "request.json", Path(tmp) / "result.json"
-        req.write_text(json.dumps({"problem": p, "code": code, "engine": engine}), encoding="utf-8")
+        req.write_text(json.dumps({"problem": p, "code": code, "engine": engine, "map": map}), encoding="utf-8")
         # a frozen desktop build has no python to call: it re-runs itself in runner mode
         cmd = ([sys.executable, "--runner"] if python == sys.executable and getattr(sys, "frozen", False)
                else [python, "-I", str(ROOT / "runner.py")])
@@ -335,6 +335,86 @@ def expected(p):
     return _expected[key]
 
 
+_ref_maps = {}
+
+
+def execution_map(p, code, engine=None):
+    """What the engine did with the learner's code, next to the reference solution's map."""
+    engine = engine or default_engine(p["lang"])
+    key = (p["id"], engine if p["lang"] == "sql" and engine == "spark-sql" else "", hashlib.sha256(p["solution"].encode()).hexdigest())
+    ref_engine = "spark-sql" if engine == "spark-sql" else default_engine(p["lang"])
+    ref, box = _ref_maps.get(key), {}
+    t = None if ref else threading.Thread(target=lambda: box.update(r=execute(p, p["solution"], ref_engine, map=True)))
+    if t:
+        t.start()  # both maps at once: each Spark process takes seconds to start
+    yours = execute(p, code, engine, map=True)
+    if t:
+        t.join()
+        ref = box["r"]
+        if "error" not in ref:
+            _ref_maps[key] = ref
+    return {"yours": yours, "reference": ref}
+
+
+TRANSLATION_ERRORS = re.compile(r"ParseError|TokenError|Parser Error|Binder Error|Catalog Error|Unsupported|not supported|"
+                                r"No function matches|Invalid expression", re.I)
+_ai_sql = {}
+
+
+def translation_failed(got):
+    errs = [got.get("error") or ""] + [o.get("error") or "" for o in got.get("outputs", [])]
+    return any(TRANSLATION_ERRORS.search(e) for e in errs)
+
+
+def ai_translate(p, code, dialect):
+    """Translate another SQL dialect to DuckDB with the coach's model when sqlglot can't. Faithful, never "fixed":
+    a wrong answer must stay wrong. Accepted only if it parses as one or more read-only queries. None on any failure."""
+    import sqlglot
+    from sqlglot import exp
+    key = hashlib.sha256(f"{dialect}\0{code}".encode()).hexdigest()
+    if key in _ai_sql:
+        return _ai_sql[key]
+    schema = "\n".join(f"CREATE TABLE {n} ({tb['columns']});" for n, tb in p["tests"][0]["tables"].items())
+    system = f"""You translate SQL from {EMULATED[dialect]} to DuckDB SQL.
+Translate exactly. Keep the query's meaning, column names, aliases, ordering and row results identical, INCLUDING any
+mistakes: never fix, simplify, optimize or change the logic. Only change syntax and function names so DuckDB runs it.
+Reply with only the DuckDB SQL, no explanation and no code fences.
+
+Tables:
+{schema}"""
+    try:
+        out = llm.chat(system, [{"role": "user", "content": code}], strict=True).strip()
+        out = re.sub(r"^```\w*\s*|\s*```$", "", out).strip()
+        trees = [e for e in sqlglot.parse(out, read="duckdb") if e is not None]
+        if not trees or not all(isinstance(e, exp.Query) for e in trees):  # SELECT / WITH / UNION only: nothing that writes
+            return None
+    except Exception:
+        return None
+    _ai_sql[key] = out
+    return out
+
+
+def format_code(lang, code, engine):
+    """Pretty-print the learner's code: black for Python and PySpark, sqlglot in the engine's own SQL dialect."""
+    try:
+        if lang == "sql":
+            import sqlglot
+            dialect = {"spark-sql": "spark", "postgres": "postgres", "sqlite": "sqlite"}.get(engine or "duckdb", engine or "duckdb")
+            out = ";\n\n".join(e.sql(dialect=dialect, pretty=True) for e in sqlglot.parse(code, read=dialect) if e)
+            return {"code": out + ("\n" if out else "")}
+        import ast, black
+        out = black.format_str(code, mode=black.Mode()).split("\n")
+        # black puts two blank lines before top-level defs (PEP 8); one reads better in short solutions. Only the gaps
+        # right before top-level statements change, found with ast, so blank lines inside strings are never touched.
+        starts = {min([n.lineno] + [d.lineno for d in getattr(n, "decorator_list", [])]) - 1 for n in ast.parse("\n".join(out)).body}
+        keep = [ln for i, ln in enumerate(out) if not (ln == "" and i + 1 in starts and i >= 1 and out[i - 1] == "")]
+        return {"code": "\n".join(keep)}
+    except Exception as e:
+        line = getattr(e, "errors", None) and e.errors[0].get("line")  # sqlglot
+        line = line or (re.search(r"(\d+):\d+", str(e)) or [None, None])[1]  # black: "Cannot parse ...: 3:7: ..."
+        return {"error": "Can't format yet: fix the syntax error first" + (f" (line {line})." if line else ".")}
+
+
 def same(got, want, ordered):
     if not ordered and isinstance(got, list) and isinstance(want, list):
         got, want = sorted(got, key=repr), sorted(want, key=repr)
@@ -353,6 +433,11 @@ def run(p, code, engine=None):
     if "error" in exp:
         return {"error": "Reference solution failed (this is a problem bug, not yours):\n" + exp["error"]}
     got = execute(p, code, engine)
+    ai = None
+    if engine in EMULATED and translation_failed(got):
+        ai = ai_translate(p, code, engine)  # the automatic translator choked: ask the coach's model, then re-run on DuckDB
+        if ai:
+            got = execute(p, ai, "duckdb") | {"translated": ai}
     if "error" in got:
         return got | {"engine": engine}
     results = []
@@ -361,13 +446,14 @@ def run(p, code, engine=None):
         if "error" in e:
             r.update(passed=False, error="reference solution failed: " + e["error"])
         else:
-            r["expected"] = clip(e["value"])
+            r["expected"], r["expected_columns"] = clip(e["value"]), e.get("columns")
             if "error" in g:
                 r.update(passed=False, error=g["error"])
             else:
-                r.update(got=clip(g["value"]), passed=same(g["value"], e["value"], p.get("ordered", False)))
+                r.update(got=clip(g["value"]), got_columns=g.get("columns"), passed=same(g["value"], e["value"], p.get("ordered", False)))
         results.append(r)
-    return {"results": results, "stdout": got.get("stdout", ""), "translated": got.get("translated"), "engine": engine}
+    return {"results": results, "stdout": got.get("stdout", ""), "translated": got.get("translated"), "engine": engine,
+            "translated_by": "ai" if ai else None}
 
 
 STAGES = {
@@ -491,6 +577,18 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parts = self.path.split("?")[0].strip("/").split("/")
+        if parts == ["auth", "callback"]:  # "Sign in with ChatGPT" returns here in the browser
+            from urllib.parse import parse_qsl, urlsplit
+            from html import escape
+            err = llm.openai_callback(dict(parse_qsl(urlsplit(self.path).query)))
+            page = (f"<h2>Sign-in didn't finish</h2><p>{escape(err)}</p>" if err else
+                    "<h2>Signed in to ChatGPT ✓</h2><p>You can close this tab and go back to DataDojo.</p>")
+            data = f"<!doctype html><meta charset=utf-8><title>DataDojo</title><body style='font:15px system-ui;padding:40px'>{page}".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
         if parts[0] != "api":
             return super().do_GET()
         probs = load_problems()  # re-read each time so edited TOML shows up without restart
@@ -552,7 +650,8 @@ class Handler(SimpleHTTPRequestHandler):
                                           "sheet": len(t["sheet"]), "voice": interview.whisper_status()})
         if parts[1:] == ["setup"]:
             return self.send_json({"settings": llm.public(), "ollama": llm.ollama_status(),
-                                   "local_models": llm.LOCAL_MODELS, "providers": llm.PROVIDERS})
+                                   "local_models": llm.LOCAL_MODELS, "signin": llm.signin_state(),
+                                   "providers": {k: v | {"models": llm.catalog_models(k)} for k, v in llm.PROVIDERS.items()}})
         if parts[1:] == ["version"]:
             return self.send_json(latest_release())
         if parts[1:] == ["stats"]:
@@ -589,12 +688,31 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({"error": "unknown provider"}, 400)
             model = str(body.get("model") or cur["model"]).strip()
             key = cur["api_key"] if body.get("api_key") is None else str(body["api_key"]).strip()  # None keeps the saved key
-            if provider == "ollama":
+            signin = provider in llm.PROVIDERS and bool(body.get("signin"))  # signed in instead of a key
+            if provider == "ollama" or signin:
                 key = ""
-            if body.get("verify", True) and (err := llm.test(provider, model, key)):
+            if body.get("verify", True) and not signin and (err := llm.test(provider, model, key)):  # sign-in verified itself
                 return self.send_json({"error": err}, 400)
-            llm.save(cur | {"provider": provider, "model": model, "api_key": key, "setup_done": True})
+            if signin and llm.signins[provider]["status"] != "done" and not (provider == "openai" and (cur.get("openai_oauth") or {}).get("access_token")):
+                return self.send_json({"error": "Sign in first."}, 400)
+            extra = {"gcp_project": llm.signins["gemini"].get("project") or cur.get("gcp_project")} if signin and provider == "gemini" else {}
+            llm.save(cur | {"provider": provider, "model": model, "api_key": key, "auth": "signin" if signin else "key", "setup_done": True} | extra)
             return self.send_json({"ok": True, "settings": llm.public()})
+        if self.path == "/api/setup/models":  # the key typed in setup, else the saved one for that provider
+            cur, provider = llm.load(), body.get("provider")
+            if provider not in llm.PROVIDERS:
+                return self.send_json({"error": "unknown provider"}, 400)
+            key = (body.get("api_key") or "").strip() or (cur["api_key"] if cur["provider"] == provider else "")
+            return self.send_json(llm.list_models(provider, key))
+        if self.path == "/api/setup/signin":  # sign in with a Claude, ChatGPT or Google account instead of a key
+            provider = body.get("provider")
+            if provider not in llm.PROVIDERS:
+                return self.send_json({"error": "unknown provider"}, 400)
+            res = llm.start_signin(provider, body.get("project"), f"http://127.0.0.1:{self.server.server_address[1]}/auth/callback",
+                                   install=bool(body.get("install")))
+            if res.get("url"):
+                webbrowser.open(res["url"])  # the system browser, also from the desktop app's window
+            return self.send_json(res)
         if self.path == "/api/setup/skip":
             llm.save(llm.load() | {"setup_done": True})
             return self.send_json({"ok": True})
@@ -673,6 +791,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"reply": coach(p, body.get("code", ""), body.get("result"),
                                                   body.get("stage", "build"), body.get("messages", []),
                                                   bool(body.get("solution")))})
+        if self.path == "/api/format":
+            return self.send_json(format_code(p["lang"], body.get("code", ""), body.get("engine")))
+        if self.path == "/api/map":
+            return self.send_json(execution_map(p, body.get("code", ""), body.get("engine")))
         if self.path == "/api/explain":
             return self.send_json(explain(p))
         self.send_json({"error": "not found"}, 404)
@@ -680,13 +802,23 @@ class Handler(SimpleHTTPRequestHandler):
 
 def check(selectors=(), engine=None):
     """Validate problems: the solution passes its tests, and the starter code does not.
-    With engine, instead report whether each reference solution also passes on that engine."""
+    With engine, instead report whether each reference solution also passes on that engine. For an emulated dialect
+    the solution is first written in that dialect (sqlglot), so this measures the translation a learner relies on."""
     bad = 0
     for p in load_problems().values():
         if selectors and not {p["id"], p["pattern"], p["lang"]} & set(selectors):
             continue
         if engine:
-            res = run(p, p["solution"], engine)
+            code = p["solution"]
+            if p["lang"] == "sql" and engine in EMULATED:
+                import sqlglot
+                try:
+                    code = ";\n".join(sqlglot.transpile(code, read="duckdb", write=engine, pretty=True))
+                except Exception as e:
+                    bad += 1
+                    print(f"NO  {p['id']}  can't write it in {engine}: {str(e).splitlines()[0][:120]}")
+                    continue
+            res = run(p, code, engine)
             ok = bool(res.get("results")) and all(t["passed"] for t in res["results"])
             bad += not ok
             err = res.get("error") or next((t.get("error", "wrong result") for t in res.get("results", []) if not t["passed"]), "")

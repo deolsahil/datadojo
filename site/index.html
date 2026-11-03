@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DataDojo · practice SQL, Python and PySpark with friendly AI coaches</title>
-<meta name="description" content="Free desktop app for data engineers: 234 SQL, Python and PySpark problems graded by real engines, a data system design course, brain games and AI coaches. Runs on your own computer.">
+<title>DataDojo · Data &amp; AI interview practice with friendly AI coaches</title>
+<meta name="description" content="Free desktop app for Data and AI interviews: 234 SQL, Python and PySpark problems graded by real engines, mock interviews for Data, AI and ML roles, data and AI system design, brain games and AI coaches. Runs on your own computer.">
 <meta property="og:title" content="DataDojo">
-<meta property="og:description" content="Practice SQL, Python and PySpark like the real interview, with friendly AI coaches. Free, runs locally.">
+<meta property="og:description" content="Practice for Data and AI interviews like the real thing: SQL, Python, PySpark, AI and ML, with friendly AI coaches. Free, runs locally.">
 <meta property="og:image" content="assets/workspace.webp">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -99,7 +99,7 @@
   .grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)) }
   .tag-new { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .08em;
              color: var(--on-acc); background: var(--acc2); vertical-align: 2px }
-  /* NEW: interview launch (remove after 2026-11-08): announcement pill + spotlight */
+  /* NEW: execution map launch (v0.3.0, remove after 2026-11-17): announcement pill + spotlight */
   .new-pill { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 6px 14px 6px 6px; border-radius: 999px;
               border: 1px solid rgba(251,191,36,.45); background: rgba(251,191,36,.08); color: var(--text2); font-size: 13px; transition: border-color .2s, transform .2s }
   .new-pill:hover { border-color: var(--acc2); transform: translateY(-1px) } .new-pill b { padding: 2px 9px; border-radius: 999px; background: var(--acc2); color: var(--on-acc); font-size: 11px; letter-spacing: .08em }
@@ -165,18 +165,19 @@
 </head>
 <body>
 <nav><div class="wrap"><a class="logo" href="#">DATA<span>DOJO</span></a>
-  <a class="l" href="#interview">Interview <span class="tag-new">NEW</span></a><!-- NEW: remove badge after 2026-11-08 -->
+  <a class="l" href="#map">Execution map <span class="tag-new">NEW</span></a><!-- NEW: remove badge after 2026-11-17 -->
+  <a class="l" href="#tour">Interview</a>
   <a class="l" href="#tour">Tour</a><a class="l" href="#features">Features</a><a class="l" href="#start">Get started</a>
   <span class="sp"></span><a class="btn small" href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub ★</a>
   <a class="btn small primary" id="nav-dl" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg">Download</a></div></nav>
 
 <header class="wrap hero" id="download">
   <div>
-    <!-- NEW: interview launch (remove after 2026-11-08) -->
-    <a class="new-pill" href="#interview"><b>NEW</b> Interview practice: speak your answers, get graded →</a>
+    <!-- NEW: execution map launch (remove after 2026-11-17) -->
+    <a class="new-pill" href="#map"><b>NEW</b> Execution map: see how your code really runs →</a>
     <div class="kicker">Free desktop app · Mac, Windows &amp; Linux</div>
     <h1>DATADOJO<i>_</i></h1>
-    <p class="lead">Practice SQL, Python and PySpark like it's the real interview. 234 problems graded by real engines, mock interviews you can answer out loud, data and AI system design courses, brain games, and friendly AI coaches that give hints, not answers. Everything runs on your own computer.</p>
+    <p class="lead">Practice for Data and AI interviews like it's the real thing: SQL, Python, PySpark, AI and ML. 234 problems graded by real engines, mock interviews you can answer out loud, data and AI system design courses, brain games, and friendly AI coaches that give hints, not answers. Everything runs on your own computer.</p>
     <div class="dlg">
       <div class="mac"><a class="dbtn" data-os="mac" id="dl-mac" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg" data-file="DataDojo-macOS-arm64.dmg">⌘ Download for Mac <span class="caret" id="mac-caret" role="button" aria-label="Choose Mac chip">▾</span></a>
         <div class="menu" id="mac-menu"><a href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg" data-file="DataDojo-macOS-arm64.dmg"><b>Apple Silicon</b><small>M1, M2, M3, M4 and later</small></a>
@@ -195,30 +196,30 @@
     <div id="sensei"></div><div class="bubble">Hi! I'm Sensei. Stuck on a window function? I'll nudge, you'll solve. 🐾</div></div>
 </header>
 
-<!-- NEW: interview launch spotlight (remove after 2026-11-08; the tour tab and feature card stay) -->
-<section id="interview" class="wrap reveal">
+<!-- NEW: execution map spotlight (v0.3.0, remove after 2026-11-17; the tour tab and feature card stay) -->
+<section id="map" class="wrap reveal">
   <div class="spot">
     <div>
-      <div class="kicker" style="color:var(--acc2)">New · Interview practice</div>
-      <h2>Answer out loud. Sensei grades it like an interviewer.</h2>
-      <p class="sub" style="margin:0">Mock interviews and topic drills for four roles, at entry, mid or senior level.</p>
+      <div class="kicker" style="color:var(--acc2)">New · Execution map</div>
+      <h2>See what the engine actually did with your code.</h2>
+      <p class="sub" style="margin:0">After every solve, a live map of how your code ran, right next to the best solution, with a one-line verdict.</p>
       <ul>
-        <li><i>🎙️</i><span>Speak or type. Your words appear as you talk, transcribed on your own computer, so audio never leaves it.</span></li>
-        <li><i>✅</i><span>Every answer is checked point by point against what a strong answer covers, with a score, what to improve and a suggested answer.</span></li>
-        <li><i>🗣️</i><span>Delivery feedback too: pace, length and filler words.</span></li>
-        <li><i>📒</i><span>A cheatsheet per role, in plain English first, then interview-ready depth.</span></li>
+        <li><i>⚡</i><span><b>PySpark:</b> stages, shuffles and narrow vs wide steps, planned the way it would run on big data.</span></li>
+        <li><i>🧮</i><span><b>SQL:</b> every step with real row counts and timing, so a join that blows up jumps out.</span></li>
+        <li><i>🐍</i><span><b>Python:</b> how often each line ran, and whether your code grows like O(n) or O(n²).</span></li>
+        <li><i>🔎</i><span>Click any step to trace its lineage, or a row count to see the actual rows that passed through.</span></li>
       </ul>
-      <div class="tracks"><span>Data Engineer</span><span>AI Engineer</span><span>ML Engineer</span><span>Data Analyst</span></div>
+      <div class="tracks"><span>PySpark</span><span>SQL</span><span>Python</span></div>
     </div>
-    <div class="win"><div class="bar"><i></i><i></i><i></i><span>interview/data-engineer · Sensei</span></div>
-      <img decoding="async" loading="lazy" src="assets/interview-card.webp" alt="A graded interview answer in DataDojo" width="852" height="792"></div>
+    <div class="win"><div class="bar"><i></i><i></i><i></i><span>execution map · Sparky</span></div>
+      <img decoding="async" loading="lazy" src="assets/execution-map-card.webp" alt="DataDojo's execution map: a PySpark plan with stages, shuffles and a warning on a slow Python UDF" width="1280" height="846"></div>
   </div>
 </section>
 <!-- end NEW -->
 
 <section id="tour" class="wrap reveal">
   <div class="kicker">Tour</div><h2>See it in action</h2>
-  <div class="tabs" id="tabs"><button class="on" data-i="workspace">Coaching workspace</button><button data-i="interview">Interview practice <span class="tag-new">NEW</span></button><button data-i="home">Your dashboard</button>
+  <div class="tabs" id="tabs"><button class="on" data-i="workspace">Coaching workspace</button><button data-i="execution-map">Execution map <span class="tag-new">NEW</span></button><button data-i="interview">Interview practice</button><button data-i="home">Your dashboard</button>
     <button data-i="design">System design</button><button data-i="games">Brain games</button></div>
   <div class="win"><div class="bar"><i></i><i></i><i></i><span id="win-title">sql/joins/customers-without-orders · Duck</span></div>
     <img id="shot" decoding="async" src="assets/workspace.webp" alt="DataDojo coaching workspace" width="1440" height="900"></div>
@@ -228,8 +229,12 @@
   <div class="kicker">What's inside</div><h2>Everything you practice for data and AI roles</h2>
   <p class="sub">Problems are graded by actually running your code, the same way an interviewer would check it.</p>
   <div class="grid four">
-    <div class="card"><div class="ico">🎙️</div><h3>Mock interviews <span class="tag-new">NEW</span></h3><p>Data Engineer, AI Engineer, ML Engineer and Data Analyst. Speak or type; every answer graded with a report at the end.</p></div>
-    <div class="card"><div class="ico">🤖</div><h3>AI system design <span class="tag-new">NEW</span></h3><p>Production GenAI: RAG, fine-tuning, evals, observability, caching, feedback loops and guardrails.</p></div>
+    <div class="card"><div class="ico">🗺️</div><h3>Execution map <span class="tag-new">NEW</span></h3><p>After a solve, see what the engine did next to the best solution: Spark stages and shuffles, SQL steps with row counts, Python line counts and Big-O.</p></div>
+    <div class="card"><div class="ico">🔑</div><h3>Sign in, no key <span class="tag-new">NEW</span></h3><p>Connect your coach by signing in with your Anthropic account, ChatGPT plan or Google Cloud, or paste an API key as before.</p></div>
+    <div class="card"><div class="ico">✨</div><h3>Format code <span class="tag-new">NEW</span></h3><p>One click (Shift + Alt + F) tidies Python and PySpark the standard way, and SQL in your engine's own dialect.</p></div>
+    <div class="card"><div class="ico">🔄</div><h3>Always-current models <span class="tag-new">NEW</span></h3><p>Every model your provider offers, updated daily: new ones appear and retired ones disappear on their own.</p></div>
+    <div class="card"><div class="ico">🎙️</div><h3>Mock interviews</h3><p>Data Engineer, AI Engineer, ML Engineer and Data Analyst. Speak or type; every answer graded with a report at the end.</p></div>
+    <div class="card"><div class="ico">🤖</div><h3>AI system design</h3><p>Production GenAI: RAG, fine-tuning, evals, observability, caching, feedback loops and guardrails.</p></div>
     <div class="card"><div class="ico">🧮</div><h3>234 real problems</h3><p>SQL, Python and PySpark by pattern: windows, gaps &amp; islands, CDC, SCD2, joins, parsing and more, plus curated lists.</p></div>
     <div class="card"><div class="ico">⚙️</div><h3>Any engine</h3><p>DuckDB, SQLite, PostgreSQL, Spark SQL, plus MySQL, Snowflake, BigQuery and SQL Server syntax. Python 3.10 to 3.15, PySpark 3.4 to 4.x.</p></div>
     <div class="card"><div class="ico">🐾</div><h3>Coaches, not answer keys</h3><p>A six-stage coaching chat (understand → approach → build → edge cases → optimize → review) that reacts to your test runs.</p></div>
@@ -369,7 +374,7 @@ fetch('https://api.github.com/repos/deolsahil/datadojo/releases/latest').then(r 
   .then(r => { if (r) $('#dl-version').textContent = `Version ${r.tag_name.replace(/^v/, '')} · free`; }).catch(() => {});
 
 // Tour tabs
-const TITLES = { workspace: 'sql/joins/customers-without-orders · Duck', interview: 'interview/data-engineer · Sensei', home: 'Home · Sensei', design: 'system-design/cdc-into-a-lakehouse · Sensei', games: 'games/join-size · Sensei' };
+const TITLES = { workspace: 'sql/joins/customers-without-orders · Duck', 'execution-map': 'pyspark/aggregation/category-revenue-share · Sparky', interview: 'interview/data-engineer · Sensei', home: 'Home · Sensei', design: 'system-design/cdc-into-a-lakehouse · Sensei', games: 'games/join-size · Sensei' };
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return;
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   $('#shot').src = `assets/${b.dataset.i}.webp`; $('#win-title').textContent = TITLES[b.dataset.i]; };

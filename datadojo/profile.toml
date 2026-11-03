@@ -1,7 +1,7 @@
 # Shown in the Home hero. Edit freely; the page reloads it on every visit.
 name = "Sahil Deol"
 repo = "https://github.com/deolsahil/datadojo"   # reviews and reports can be sent here as GitHub issues
-tagline = "SQL · Python · PySpark, one rep at a time."
+tagline = "Data & AI interview practice, one rep at a time."
 
 # Social buttons, in display order. Supported icons: github, linkedin, leetcode, medium, x, instagram, website, email.
 # Leave a url empty ("") to hide that button.

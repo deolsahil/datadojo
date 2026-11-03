@@ -26,6 +26,7 @@ def pyinstaller():
         "--distpath", str(DIST), "--workpath", str(BUILD), "--specpath", str(BUILD),
         "--collect-data", "datadojo", "--collect-submodules", "datadojo",
         "--collect-submodules", "sqlglot", "--collect-all", "psycopg_binary",
+        "--collect-all", "black", "--collect-all", "blib2to3",  # the code formatter and its grammar files
         "--hidden-import", "duckdb", "--hidden-import", "psycopg",
         "--add-data", f"{ROOT / 'datadojo' / 'runner.py'}{sep}datadojo",
         "--add-data", f"{ROOT / 'datadojo' / 'whisper_worker.py'}{sep}datadojo",  # run by the whisper env, not imported

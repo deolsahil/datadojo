@@ -26,6 +26,27 @@ let B = null;
 const blobReady = Promise.all(['internal', 'expression', 'gaze'].map(f => import(`./vendor/blobatar/${f}.js`)))
   .then(([I, E, G]) => { B = { I, E, G }; }).catch(() => { B = null; });
 
+// line icons, one style everywhere (24px grid, 2px stroke, currentColor), instead of emoji that differ per OS
+const LINE = {
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h11l-2.5 4.5L16 13H5"/>',
+  timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M9.5 2.5h5"/>',
+  pause: '<path d="M9 5v14M15 5v14"/>',
+  play: '<path d="M7 4.8v14.4a.8.8 0 0 0 1.2.7l11.3-7.2a.8.8 0 0 0 0-1.4L8.2 4.1A.8.8 0 0 0 7 4.8z" fill="currentColor"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3z"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  map: '<circle cx="5" cy="6" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="12" r="2.5"/><path d="M7.5 6.5 16.5 11M7.5 17.5l9-5"/>',
+  chat: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H9l-5 4z"/><path d="M12 7.5v5M9.5 10h5"/>',
+  eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  notes: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h7M9 8h3"/>',
+  format: '<path d="M4 6h16M8 10h12M8 14h12M4 18h16"/><path d="M4 10.5 6 12l-2 1.5"/>',
+};
+const ic = (name, size = 15) => `<svg class="ic" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LINE[name]}</svg>`;
+
+// one segment per test, green when it passed, red when it didn't
+const testBar = results => `<div class="test-bar" aria-hidden="true">${results.map((ok, i) => `<i class="${ok ? 'ok' : 'no'}" style="--d:${i * 60}ms"></i>`).join('')}</div>`;
+
 function blob(seed, { mood = 'idle', size = 48, live = false, cls = '' } = {}) {
   if (!B) return `<span class="blob-fallback" style="width:${size}px;height:${size}px"></span>`;
   const p = B.I._parts(seed, { animate: live ? 'always' : 'hover', expression: B.E[mood], background: false });
@@ -82,7 +103,8 @@ const table = (cols, rows) => `<table class="data">${cols ? `<tr>${cols.map(c =>
   rows.map(r => `<tr>${(Array.isArray(r) ? r : [r]).map(v => `<td>${cell(v)}</td>`).join('')}</tr>`).join('')}</table>`;
 const tables = ts => Object.entries(ts).map(([n, t]) =>
   `<div class="tblname">${esc(n)}</div>` + (t.rows.length ? table(t.columns.split(',').map(c => c.trim()), t.rows) : '<div class="faint">(empty table)</div>')).join('');
-const value = v => Array.isArray(v) && v.length && v.every(Array.isArray) ? table(null, v)
+const value = (v, cols) => Array.isArray(v) && v.length && v.every(Array.isArray) ? table(cols?.length ? cols : null, v)
+  : Array.isArray(v) && !v.length && cols?.length ? table(cols, []) + '<div class="faint">(no rows)</div>'
   : `<pre>${esc(JSON.stringify(v, null, 1))}</pre>`;
 const langTag = l => `<span class="lang-tag ${l}">${LANGS[l]}</span>`;
 const diffTag = d => `<span class="tag ${d}">${d}</span>`;
@@ -126,6 +148,11 @@ function confetti(fromEl) {
   }
 }
 // Make the hover glow on cards follow the cursor.
+let scrollIdle;  // see html.scrolling in app.css
+addEventListener('scroll', () => {
+  document.documentElement.classList.add('scrolling');
+  clearTimeout(scrollIdle); scrollIdle = setTimeout(() => document.documentElement.classList.remove('scrolling'), 150);
+}, { passive: true });
 document.addEventListener('pointermove', e => {
   const c = e.target.closest?.('.tile, .list-tile, .pcard');
   if (!c) return;
@@ -156,9 +183,6 @@ function renderThemeToggle() {
   $('#theme-btn').title = dark ? 'Switch to light mode (Sakura)' : 'Switch to dark mode (Midnight)';
 }
 $('#theme-btn').onclick = () => setTheme(document.documentElement.dataset.theme === 'sakura' ? 'midnight' : 'sakura');
-matchMedia('(prefers-color-scheme: light)').addEventListener('change', e => {
-  if (!localStorage.getItem('theme')) setTheme(e.matches ? 'sakura' : 'midnight', false);
-});
 
 // ---------- you ----------
 function renderMe(stats) {
@@ -340,7 +364,7 @@ async function home() {
     <div class="section-title">Curated lists</div>${listTiles(cat)}
     ${Object.keys(LANGS).map(l => coachHead(l, cat) + patternTiles(cat, l)).join('')}
     ${reviewCard()}
-    <footer class="foot">Spotted a mistake in a problem? Use <b>⚑ Report</b> in the workspace. · <a href="#/feedback">All reviews & reports →</a></footer>
+    <footer class="foot">Spotted a mistake in a problem? Use <b>${ic('flag', 12)} Report a mistake</b> in the workspace. · <a href="#/feedback">All reviews & reports →</a></footer>
   </div>`;
   startDemo($('#demo'));
   bindReview();
@@ -365,15 +389,14 @@ async function problemList(kind, id) {
   const { cat } = await load();
   const meta = (kind === 'pattern' ? cat.patterns : cat.lists).find(x => x.id === id);
   if (!meta) return $('#app').innerHTML = '<div class="empty">Not found</div>';
-  const all = cat.problems.filter(p => kind === 'pattern' ? p.pattern === id : (p.lists || []).includes(id))
-    .sort((a, b) => ['easy', 'medium', 'hard'].indexOf(a.difficulty) - ['easy', 'medium', 'hard'].indexOf(b.difficulty));
+  const all = byDifficulty(cat.problems.filter(p => kind === 'pattern' ? p.pattern === id : (p.lists || []).includes(id)));
   const [d, t] = count(all);
   const coach = CAST[kind === 'pattern' ? meta.lang : 'sensei'];
   let filter = 'all';
   const render = () => {
     const ps = all.filter(p => filter === 'all' || p.difficulty === filter || (filter === 'todo' && !p.solved));
     $('#cards').innerHTML = ps.map(p => `<div class="card pcard"><div class="row"><span class="check ${p.solved ? 'done' : ''}">${p.solved ? '✓' : ''}</span>
-      <div><h4>${esc(p.title)}</h4><div style="margin-top:6px;display:flex;gap:6px">${diffTag(p.difficulty)}${kind === 'list' ? langTag(p.lang) : ''}</div></div></div>
+      <div><h4><span class="pnum">${all.indexOf(p) + 1}.</span>${esc(p.title)}</h4><div style="margin-top:6px;display:flex;gap:6px">${diffTag(p.difficulty)}${kind === 'list' ? langTag(p.lang) : ''}</div></div></div>
       <a class="start" href="#/p/${p.id}"><button class="primary">${p.solved ? 'Practice again' : 'Start session'}</button></a></div>`).join('')
       || `<div class="empty">${blob(coach.seed, { size: 64, mood: 'shy' })}<p>Nothing here yet.</p></div>`;
     document.querySelectorAll('.chips button').forEach(b => b.classList.toggle('on', b.dataset.f === filter));
@@ -399,9 +422,11 @@ const monacoReady = new Promise(res => {
   require(['vs/editor/editor.main'], () => { monacoTheme(); res(window.monaco); }, () => res(null));
 });
 
+// problems in a list are ordered easy -> hard; list pages and the problem title share this order for numbering
+const byDifficulty = ps => [...ps].sort((a, b) => ['easy', 'medium', 'hard'].indexOf(a.difficulty) - ['easy', 'medium', 'hard'].indexOf(b.difficulty));
+
 async function workspace(id) {
-  const p = await api('/api/problems/' + id);
-  load();
+  const [p, { cat }] = await Promise.all([api('/api/problems/' + id), load()]);
   if (p.error) return $('#app').innerHTML = '<div class="empty">Problem not found</div>';
   const coach = CAST[p.lang], you = me() || 'you';
   const chatKey = 'chat:' + id, stageKey = 'stage:' + id;
@@ -412,34 +437,36 @@ async function workspace(id) {
 
   $('#app').innerHTML = `
     <div class="ws-top"><a class="back" href="#/pattern/${p.pattern}" title="Back">←</a>
-      <span class="timer">⏱ <span id="clock">00:00</span><button id="pause" title="Pause">⏸</button><button id="rst" title="Reset">↺</button></span>
-      <button id="subs">📋 Submissions</button>
-      <button id="report" title="Wrong expected output, unclear statement, typo…">⚑ Report a mistake${p.open_reports ? ` <span class="badge">${p.open_reports}</span>` : ''}</button>
+      <span class="timer">${ic('timer', 14)}<span id="clock">00:00</span><button id="pause" title="Pause" aria-label="Pause">${ic('pause', 13)}</button><button id="rst" title="Reset timer" aria-label="Reset timer">${ic('reset', 13)}</button></span>
+      <button id="subs">${ic('history')}Submissions</button>
+      <button id="report" title="Wrong expected output, unclear statement, typo…">${ic('flag')}Report a mistake${p.open_reports ? ` <span class="badge">${p.open_reports}</span>` : ''}</button>
       <div class="stages" id="stages"></div></div>
     <div class="cols">
       <section class="col"><div class="col-h"># Problem</div><div class="scroll prob">
-        <h2>${esc(p.title)}</h2>
+        <h2>${(n => n ? `<span class="pnum">${n}.</span>` : '')(byDifficulty(cat.problems.filter(x => x.pattern === p.pattern)).findIndex(x => x.id === id) + 1)}${esc(p.title)}</h2>
         <div class="tags">${langTag(p.lang)}${diffTag(p.difficulty)}<span class="tag">${p.tests} tests</span>${p.solved ? '<span class="tag easy">solved ✓</span>' : ''}</div>
         ${md(p.statement)}
         <div class="col-h" style="padding:10px 0 2px">Example input</div>
         ${p.sample.tables ? tables(p.sample.tables) : `<pre>${esc(p.function)}(${p.sample.args.map(a => JSON.stringify(a)).join(', ')})</pre>`}
-        ${hints.length ? `<div class="hints"><div class="h">💡 Hints <button id="more-hint">Show a hint (${hints.length})</button></div><ol id="hint-list"></ol></div>` : ''}
+        ${hints.length ? `<div class="hints"><button class="hint-row" id="more-hint">${ic('bulb', 16)}<span id="hint-label">Stuck? <b>Reveal hint 1</b></span>
+          <span class="hint-dots">${hints.map(() => '<i></i>').join('')}</span></button><div id="hint-list"></div></div>` : ''}
         ${p.source_url ? `<div class="faint">Inspired by: <a href="${esc(p.source_url)}" target="_blank" rel="noreferrer" style="text-decoration:underline">${esc(new URL(p.source_url).hostname)}</a></div>` : ''}
       </div></section>
       <div class="gutter" id="g1" title="Drag to resize · double-click to reset"></div>
       <section class="col"><div class="col-h"># Editor</div>
-        <div class="toolbar"><select id="engine" title="Engine / version"></select>${p.function ? `<code>${esc(p.function)}()</code>` : ''}<span class="sp"></span>
+        <div class="toolbar"><select id="engine" title="Engine / version"></select><span class="sp"></span>
           <button class="ghost" id="fs-dn">A-</button><span class="faint" id="fs">${fontSize}</span><button class="ghost" id="fs-up">A+</button>
-          <button id="reset">Reset</button><button id="sol">Solution</button><button class="primary" id="run" title="Run tests (⌘/Ctrl + Enter)">▶ Run</button></div>
+          <button id="fmt" title="Format code (Shift + Alt + F)" aria-label="Format code">${ic('format', 14)}</button><button id="reset">Reset</button><button id="sol">Solution</button><button class="primary" id="run" title="Run tests (⌘/Ctrl + Enter)">${ic('play', 13)}Run</button></div>
         <div id="editor-wrap"><div id="editor"></div><textarea id="fallback" spellcheck="false"></textarea></div>
         <div class="gutter h" id="g-out" title="Drag to resize · double-click to reset"></div>
-        <div id="out-box"><div class="col-h out-h"># Results<button class="out-x" id="out-x" title="Close results (Run opens them again)">✕</button></div>
+        <div id="out-box"><div class="col-h out-h"># Results<button class="out-x" id="out-x" title="Close results (Run opens them again)" aria-label="Close results">${ic('x', 14)}</button></div>
           <div id="out"><div class="faint">Test results will appear here. Run with ⌘/Ctrl + Enter.</div></div></div>
       </section>
       <div class="gutter" id="g2" title="Drag to resize · double-click to reset"></div>
       <section class="col">
         <div class="coach-head"><div id="coach">${blob(coach.seed, { size: 58, live: true, cls: 'live' })}</div>
           <div><b>${coach.name}</b><div class="dim" style="font-size:11.5px">${coach.role}</div></div><span class="sp"></span>
+          <button class="ghost new-chat" id="new-chat" title="Clear this chat and start fresh">↺ New chat</button>
           <span class="status" id="status"><i></i>listening</span></div>
         <div class="chat" id="chat"></div>
         <div class="chat-in"><textarea id="say" placeholder="Talk to ${coach.name}… (Enter to send, Shift+Enter for a new line)"></textarea>
@@ -494,7 +521,7 @@ async function workspace(id) {
     $('#clock').textContent = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
   }, 1000);
   cleanups.push(() => clearInterval(tick));
-  $('#pause').onclick = () => { ticking = !ticking; $('#pause').textContent = ticking ? '⏸' : '▶'; };
+  $('#pause').onclick = () => { ticking = !ticking; $('#pause').innerHTML = ic(ticking ? 'pause' : 'play', 13); $('#pause').title = ticking ? 'Pause' : 'Resume'; };
   $('#rst').onclick = () => { secs = -1; ticking = true; };
 
   // engine / dialect / version picker; remembered per language
@@ -533,8 +560,12 @@ async function workspace(id) {
     }
     inst = m.editor.create($('#editor'), { value: $('#fallback').value, language: p.lang === 'sql' ? 'sql' : 'python', theme: 'dojo',
       fontSize, fontFamily: getComputedStyle(document.body).getPropertyValue('--body'), minimap: { enabled: false }, automaticLayout: true,
-      scrollBeyondLastLine: false, tabSize: 4, padding: { top: 10 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on' });
+      scrollBeyondLastLine: false, tabSize: 4, padding: { top: 10 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on',
+      // slim scrollbars without the track box or the right-hand overview strip, matching the rest of the app
+      scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false }, overviewRulerLanes: 0,
+      overviewRulerBorder: false, hideCursorInOverviewRuler: true });
     inst.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.Enter, runTests);
+    inst.addAction({ id: 'datadojo.format', label: 'Format code', keybindings: [m.KeyMod.Shift | m.KeyMod.Alt | m.KeyCode.KeyF], run: formatCode });
     inst.onDidFocusEditorText(() => gz && gz.lookAt($('#editor-wrap')));
     inst.onDidBlurEditorText(() => gz && gz.lookAt('pointer'));
     cleanups.push(() => inst.dispose());
@@ -565,8 +596,13 @@ async function workspace(id) {
 
   // hints
   if (hints.length) $('#more-hint').onclick = () => {
-    if (hintsShown < hints.length) $('#hint-list').insertAdjacentHTML('beforeend', `<li>${inline(hints[hintsShown++])}</li>`);
-    $('#more-hint').textContent = hintsShown < hints.length ? `Next hint (${hints.length - hintsShown} left)` : 'No more hints';
+    if (hintsShown >= hints.length) return;
+    hintsShown++;
+    $('#hint-list').insertAdjacentHTML('beforeend', `<div class="hint-card"><span class="hint-n">${hintsShown}</span><div>${inline(hints[hintsShown - 1])}</div></div>`);
+    document.querySelectorAll('.hint-dots i').forEach((d, i) => d.classList.toggle('on', i < hintsShown));
+    const done = hintsShown >= hints.length;
+    $('#hint-label').innerHTML = done ? `All ${hints.length} hint${hints.length === 1 ? '' : 's'} shown` : `Stuck? <b>Reveal hint ${hintsShown + 1}</b>`;
+    $('#more-hint').classList.toggle('done', done);
     react('wink');
   };
 
@@ -595,6 +631,10 @@ async function workspace(id) {
   };
   $('#stages').onclick = e => { const b = e.target.closest('.stage'); if (b) goStage(+b.dataset.i); };
   if (!messages.length) goStage(stage); else { renderStages(); renderChat(); }
+  $('#new-chat').onclick = async () => {  // only on request: wipe this problem's chat and greet again from stage 1
+    if (!await ask(`Clear your chat with ${coach.name} on this problem and start fresh?`, { ok: 'Start new chat', seed: coach.seed })) return;
+    messages = []; stage = 0; save(); goStage(0);
+  };
 
   const send = async text => {
     if (!text.trim()) return;
@@ -619,7 +659,7 @@ async function workspace(id) {
     status('watching…', 'thinking');
     $('#out').innerHTML = `<div class="dim"><span class="spinner"></span>Running${p.lang === 'pyspark' ? ' (Spark needs ~10s to start)' : ''}…</div>`;
     last = await api('/api/run', { id, code: code(), engine: $('#engine').value });
-    $('#run').disabled = false; $('#run').innerHTML = '▶ Run';
+    $('#run').disabled = false; $('#run').innerHTML = `${ic('play', 13)}Run`;
     status('listening');
     if (last.error) {
       $('#out').innerHTML = `<div class="verdict fail">Error</div><pre class="fail">${esc(last.error)}</pre>`;
@@ -627,17 +667,19 @@ async function workspace(id) {
       return say("Whoa, that didn't run. Check the error in the results panel; I can help you read it.", 'surprised', true);
     }
     const n = last.results.filter(t => t.passed).length, total = last.results.length;
-    $('#out').innerHTML = `<div class="verdict ${last.passed ? 'pass' : 'fail'}">${last.passed ? `All ${n} tests passed 🎉` : `${n}/${total} tests passed`}</div>`
+    $('#out').innerHTML = `<div class="verdict ${last.passed ? 'pass' : 'fail'}">${last.passed ? `All ${n} tests passed` : `${n}/${total} tests passed`}</div>${testBar(last.results.map(t => t.passed))}`
       + `<div class="faint" style="margin:-4px 0 8px">ran on ${esc($('#engine').selectedOptions[0]?.textContent || last.engine)} · expected output from the default engine</div>`
-      + (last.translated ? `<details><summary>SQL as executed (translated to DuckDB)</summary><pre>${esc(last.translated)}</pre></details>` : '')
+      + (last.translated ? `<details ${last.translated_by === 'ai' ? 'open' : ''}><summary>SQL as executed (translated to DuckDB${last.translated_by === 'ai' ? ` by ${esc(coach.name)}, because the automatic translator couldn't` : ''})</summary><pre>${esc(last.translated)}</pre></details>` : '')
       + (last.stdout ? `<details open><summary>stdout</summary><pre>${esc(last.stdout)}</pre></details>` : '')
       + last.results.map(t => `<details ${t.passed ? '' : 'open'}><summary class="${t.passed ? 'pass' : 'fail'}">Test ${t.test} ${t.passed ? 'passed' : 'failed'}</summary>
           ${t.error ? `<pre class="fail">${esc(t.error)}</pre>` : ''}
           <div class="lbl">Input</div>${Array.isArray(t.input) ? `<pre>${esc(t.input.map(a => JSON.stringify(a)).join(', '))}</pre>` : tables(t.input)}
-          <div class="lbl">Expected</div>${value(t.expected)}${'got' in t ? `<div class="lbl">Your output</div>${value(t.got)}` : ''}</details>`).join('');
+          <div class="lbl">Expected</div>${value(t.expected, t.expected_columns)}${'got' in t ? `<div class="lbl">Your output</div>${value(t.got, t.got_columns)}` : ''}</details>`).join('');
     if (last.passed) {
+      $('#out .test-bar').insertAdjacentHTML('afterend', `<button class="primary map-btn" id="map-btn">${ic('map', 16)}See execution map</button>`);
+      $('#map-btn').onclick = () => showMap();
       resting = 'happy'; react('love', 2500); confetti($('#out .verdict'));
-      say(`All ${n} tests pass! 🎉 Nicely done${me() ? ', ' + me().split(' ')[0] : ''}. Want me to review it, or try the edge cases on another engine?`, 'love', true);
+      say(`All ${n} tests pass! Nicely done${me() ? ', ' + me().split(' ')[0] : ''}. Want me to review it, or try the edge cases on another engine?`, 'love', true);
       if (stage < STAGES.length - 1) { stage = STAGES.length - 2; goStage(STAGES.length - 1); }
     } else {
       resting = n ? 'unsure' : 'sad'; react(n ? 'unsure' : 'sad', 2000);
@@ -646,6 +688,220 @@ async function workspace(id) {
     }
   }
   $('#run').onclick = runTests;
+  async function formatCode() {  // one undoable edit, so Ctrl/Cmd+Z brings the old layout back
+    const r = await api('/api/format', { id, code: code(), engine: $('#engine').value });
+    if (r.error === 'not found') return say("Formatting needs a restart of DataDojo: the running app is older than this page.", 'unsure', true);
+    if (r.error) return say(r.error, 'unsure', true);
+    if (r.code === code()) return;
+    if (inst) { inst.pushUndoStop(); inst.executeEdits('format', [{ range: inst.getModel().getFullModelRange(), text: r.code }]); inst.pushUndoStop(); }
+    else setCode(r.code);
+  }
+  $('#fmt').onclick = formatCode;
+
+  // execution map: what the engine did with the passing code, next to the reference solution
+  async function showMap(engine = $('#engine').value) {  // engine: a one-off override, never saved as the learner's choice
+    const graph = p.lang !== 'python', duck = p.lang === 'sql' && engine !== 'spark-sql', other = engine !== $('#engine').value;
+    modal(`<div class="map-head"><h3>Execution map</h3>${other ? `<span class="dim">on Spark SQL · <a href="#" id="map-home">back to the ${esc($('#engine').selectedOptions[0]?.textContent || 'usual')} map</a></span>` : ''}</div>
+      <div id="map-body"><div class="dim"><span class="spinner"></span>Running your code once more to watch the engine${p.lang === 'pyspark' ? ' (Spark needs ~10s)' : ''}…</div></div>`);
+    $('.modal-box').classList.add('map');
+    if ($('#map-home')) $('#map-home').onclick = e => { e.preventDefault(); showMap(); };
+    const m = await api('/api/map', { id, code: code(), engine });
+    const box = $('#map-body'); if (!box) return;
+    const y = m.yours || {}, r = m.reference || {};
+    if (y.error) return box.innerHTML = (other ? `<p>Spark SQL can't run this query: it uses syntax or functions only ${esc($('#engine').selectedOptions[0]?.textContent || 'your engine')} supports.</p>` : '') + `<pre class="fail">${esc(y.error)}</pre>`;
+
+    // the one-line verdict: what to take away before reading any box
+    const GROW = ['O(1)', 'O(log n)', 'O(n)', 'O(n²)', 'O(n³) or worse'];
+    const rank = v => typeof v === 'number' ? v : GROW.indexOf(v);
+    let head, good = true;
+    if (!graph) {
+      const ratio = r.stats?.Steps ? y.stats.Steps / r.stats.Steps : 1;
+      if (r.stats && rank(y.stats['Grows like']) > rank(r.stats['Grows like'])) { good = false; head = `Your code grows like ${y.stats['Grows like']}; the reference grows like ${r.stats['Grows like']}`; }
+      else if (ratio > 1.3) { good = false; head = `Your code does ${ratio.toFixed(1)}× the work of the reference`; }
+      else head = ratio < .8 ? 'Leaner than the reference. Nice!' : 'As efficient as the reference';
+    } else {
+      const [key, noun] = duck ? ['Blocking steps', 'blocking step'] : ['Shuffles', 'shuffle'];
+      const d = r.stats ? y.stats[key] - r.stats[key] : 0, pl = n => `${n} ${noun}${n === 1 ? '' : 's'}`;
+      good = d <= 0;
+      head = d > 0 ? `${pl(d)} more than the reference` : d < 0 ? `${pl(-d)} fewer than the reference. Nice!` : `Same shape as the reference: ${pl(y.stats[key])}`;
+    }
+    const notes = (y.notes || []).filter(n => !n.startsWith('Mapped on'));
+    const tip = { pyspark: 'Each shuffle sends rows across the network and starts a new stage. Fewer shuffles, faster job.',
+      sql: 'Blocking steps must read all their input before passing anything on. Fewer of them, on fewer rows, is faster.',
+      python: 'Each bar shows how many times that line ran across all tests. Long bars are where the time goes.' }[p.lang];
+    const f = v => v == null ? '–' : typeof v === 'number' ? v.toLocaleString() : esc(v);
+    const chips = Object.keys(y.stats).map(k => { const a = y.stats[k], b = r.stats?.[k], w = b != null && rank(a) > rank(b), bt = b != null && rank(a) < rank(b);
+      return `<div class="map-stat ${w ? 'worse' : bt ? 'better' : ''}"><span>${esc(k)}</span><b>${f(a)}</b><small>ref ${f(b)}</small></div>`; }).join('');
+    const legend = graph ? `<div class="map-legend">${(duck ? [['source', 'read', 'Reads a table'], ['narrow', 'streaming', 'Rows flow straight through'], ['wide', 'blocking', 'Must read all input first'], ['warn', 'watch out', 'Slow at scale']]
+      : [['source', 'read', 'Reads a table'], ['narrow', 'narrow', 'Works partition by partition, no data moves'], ['wide', 'wide', 'Needs rows with the same key together'], ['shuffle', 'shuffle', 'Moves rows across the network; ends a stage'], ['warn', 'watch out', 'Slow at scale']])
+      .map(([c, l, t]) => `<span title="${t}"><i class="mk ${c}"></i>${l}</span>`).join('')}</div>` : '';
+    const hmax = Math.max(1, ...Object.values(y.lines || {}), ...Object.values(r.lines || {}));  // one scale for both, so bars compare
+    const heat = d => { const max = hmax;
+      return `<div class="line-heat">${d.code.replace(/\n$/, '').split('\n').map((ln, i) => { const c = d.lines[i + 1] || 0;
+        return `<div style="--h:${Math.round(100 * c / max)}%"><b>${c ? c.toLocaleString() + '×' : ''}</b><code>${esc(ln) || ' '}</code></div>`; }).join('')}</div>`; };
+    const ask = `<button class="map-ask" id="map-ask" aria-label="Ask ${coach.name} to explain my map">${blob(coach.seed, { size: 38, mood: 'happy' })}<span class="map-tip">Ask ${coach.name} to explain my map</span></button>`;
+    box.innerHTML = `<div class="map-verdict ${good ? 'good' : 'bad'}"><i>${good ? '✓' : '!'}</i><div><b>${esc(head)}</b><span>${esc(notes[0] || tip)}</span></div></div>
+      <div class="map-stats">${chips}${graph ? '' : ask}</div>
+      ${y.order?.length ? `<div class="map-order"><small>Runs in this order</small>${y.order.map(c => `<span>${c}</span>`).join('<i>→</i>')}</div>` : ''}
+      ${graph ? `<div class="map-bar">
+        <div class="seg" id="map-who"><button data-v="yours" class="on">Your code</button><button data-v="reference">Reference</button></div>
+        <div class="seg" id="map-view"><button data-v="key" class="on" title="Only the steps that matter">Compact</button><button data-v="all" title="Every step the engine ran">Expanded</button></div>
+        ${legend}
+        ${ask}
+      </div>` : ''}
+      ${graph ? `<div class="map-main"><div class="map-stage" id="map-stage"><div class="map-pan" id="map-pan"></div>
+          <div class="map-ctl"><button id="map-in" title="Zoom in">+</button><button id="map-out" title="Zoom out">−</button><button id="map-fit" title="Fit to screen">⛶</button></div>
+          <div class="map-hint">${duck ? 'Data flows left to right · each pipeline has its own colour bar' : 'Data flows left to right · each stage has its own colour bar · dashed links are shuffles'} · drag to move, scroll to zoom</div></div>
+        <aside class="map-side" id="map-side"></aside></div>`
+        : `<div class="map-py"><div><div class="lbl">Your code</div>${heat(y)}</div><div><div class="lbl">Reference solution</div>${r.error ? `<p class="fail">${esc(r.error)}</p>` : heat(r)}</div></div>`}
+      ${notes.length > 1 ? `<ul class="map-notes">${notes.slice(1).map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}`;
+    $('#map-ask').onclick = () => { closeModal(); send(`Explain my execution map. Mine: ${JSON.stringify(y.stats)}; reference: ${JSON.stringify(r.stats || {})}. `
+      + `Notes: ${(y.notes || []).join(' ')} What should I change to make my code as efficient as the reference?`); };
+    if (graph) mapViewer(y, r, duck);
+  }
+
+  // plan cards: laid out as a tree (sources left, result right), pan / zoom, click to inspect, overview panel
+  function mapViewer(y, r, duck) {
+    const W = 210, H = 104, GX = 74, GY = 28, STAGE = ['#7dd3fc', '#f472b6', '#a3e635', '#fbbf24', '#c084fc', '#2dd4bf', '#fb923c', '#94a3b8'];
+    const stage = $('#map-stage'), pan = $('#map-pan'), side = $('#map-side'), unit = duck ? 'Pipeline' : 'Stage';
+    const spark = [...$('#engine').options].some(o => o.value === 'spark-sql');
+    let who = 'yours', view = 'key', d = y, L = null, t = { x: 0, y: 0, k: 1 }, sel = null, drag = null;
+    const apply = () => pan.style.transform = `translate(${t.x}px,${t.y}px) scale(${t.k})`;
+    const nf = v => (v ?? 0).toLocaleString(), rowsTxt = v => v == null ? '' : `${nf(v)} row${v === 1 ? '' : 's'}`;
+
+    function layout() {  // leaves get their own row; a parent sits level with the middle of its children
+      const N = d.nodes, kids = {}, depth = {}, yv = {};
+      const kept = c => view === 'all' || !N[c].minor ? [c] : N[c].inputs.flatMap(kept);
+      const visit = i => { if (kids[i]) return; kids[i] = N[i].inputs.flatMap(c => kept(c).map(k => ({ k, c, rows: N[c].rows }))); kids[i].forEach(e => visit(e.k)); };
+      const roots = kept(0); roots.forEach(visit);
+      const deep = (i, n) => { if ((depth[i] ?? -1) >= n) return; depth[i] = n; kids[i].forEach(e => deep(e.k, n + 1)); };
+      roots.forEach(i => deep(i, 0));
+      let slot = 0;
+      const place = i => i in yv ? yv[i] : (yv[i] = kids[i].length ? kids[i].map(e => place(e.k)).reduce((a, b) => a + b) / kids[i].length : slot++);
+      roots.forEach(place);
+      const ids = Object.keys(kids).map(Number), maxD = Math.max(...ids.map(i => depth[i]));
+      const pos = Object.fromEntries(ids.map(i => [i, { x: (maxD - depth[i]) * (W + GX), y: yv[i] * (H + GY) }]));
+      return { ids, kids, pos, w: (maxD + 1) * (W + GX) - GX, h: slot * (H + GY) - GY };
+    }
+    function card(i) {
+      const n = d.nodes[i], p = L.pos[i], tot = L.ids.reduce((s, j) => s + (d.nodes[j].ms || 0), 0);
+      const most = Math.max(...L.ids.map(j => d.nodes[j].rows || 0)), slow = Math.max(...L.ids.map(j => d.nodes[j].ms || 0));
+      const pill = duck && tot ? `<span class="pc-pill ${n.ms === slow && slow ? 'hot' : ''}">${(100 * (n.ms || 0) / tot).toFixed(1)}% time</span>`
+        : `<span class="pc-pill">${{ narrow: 'narrow', wide: 'wide', shuffle: 'shuffle', source: 'read', warn: 'slow' }[n.cls]}</span>`;
+      const only = (v, m, f) => v && v === m && L.ids.filter(j => f(d.nodes[j]) === m).length === 1;  // badge a clear winner only, not a tie
+      const badges = [only(n.rows, most, x => x.rows) ? 'Most rows' : '', duck && only(n.ms, slow, x => x.ms) ? 'Slowest' : ''].filter(Boolean);
+      return `<div class="pc c-${n.cls} ${n.warn ? 'has-warn' : ''}" data-i="${i}" style="left:${p.x}px;top:${p.y}px;width:${W}px;height:${H}px">
+        ${n.warn ? `<div class="pc-warn">⚠ ${esc(n.warn)}</div>` : ''}
+        <div class="pc-top"><div><b>${esc(n.label)}</b><small>${esc(n.short || '')}</small></div>${pill}</div>
+        <div class="pc-big">${n.rows != null ? `<b>${nf(n.rows)}</b> row${n.rows === 1 ? '' : 's'} out` : '<span class="faint">–</span>'}${badges.map(b => `<em>${b}</em>`).join('')}</div>
+        <i class="pc-bar" style="background:${n.group ? STAGE[(n.group - 1) % STAGE.length] : 'transparent'}"></i></div>`;
+    }
+    function edges() {
+      const max = Math.max(1, ...L.ids.flatMap(i => L.kids[i].map(e => e.rows || 0)));
+      return L.ids.flatMap(i => L.kids[i].map(e => {
+        const a = L.pos[e.k], b = L.pos[i], x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, mx = (x1 + x2) / 2;
+        const w = 2 + 10 * Math.log10((e.rows || 0) + 1) / Math.log10(max + 1);  // band width grows with rows
+        const cross = !duck && d.nodes[e.k].group !== d.nodes[i].group;  // a Spark stage change is a shuffle
+        return { k: e.k, c: e.c, i, path: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`, w, cross, rows: e.rows, lx: mx, ly: (y1 + y2) / 2 };
+      }));
+    }
+    function draw() {
+      d = who === 'yours' ? y : r; sel = null;
+      if (d.error) { pan.innerHTML = `<p class="fail" style="padding:20px">${esc(d.error)}</p>`; return overview(); }
+      L = layout();
+      const E = edges();
+      pan.innerHTML = `<svg class="pe" width="${L.w}" height="${L.h}">${E.map(e => `<path class="${e.cross ? 'x' : ''}" data-e="${e.k}-${e.i}" d="${e.path}" stroke-width="${e.w.toFixed(1)}"/>`).join('')}</svg>
+        ${E.filter(e => e.rows != null).map(e => `<span class="pe-pill ${d.nodes[e.c].data ? 'has-data' : ''}" data-e="${e.k}-${e.i}" data-c="${e.c}" title="Click to see these rows" style="left:${e.lx}px;top:${e.ly}px">${rowsTxt(e.rows)}</span>`).join('')}
+        ${L.ids.map(card).join('')}`;
+      fit(); overview();
+    }
+    function fit() { if (!L) return; const cw = stage.clientWidth - 40, ch = stage.clientHeight - 60;
+      t.k = Math.max(.72, Math.min(cw / L.w, ch / L.h, 1.1));  // never shrink cards past readable; wide plans pan instead
+      t.x = L.w * t.k > cw ? 20 : (stage.clientWidth - L.w * t.k) / 2;  // too wide: start at the sources, on the left
+      t.y = L.h * t.k > ch ? 20 : (stage.clientHeight - L.h * t.k) / 2 - 8; apply(); }
+    const zoom = (f, cx = stage.clientWidth / 2, cy = stage.clientHeight / 2) => {
+      const k = Math.max(.2, Math.min(3, t.k * f)); t.x = cx - (cx - t.x) * k / t.k; t.y = cy - (cy - t.y) * k / t.k; t.k = k; apply(); };
+    const centre = i => { const p = L.pos[i]; if (t.k < .8) t.k = .8; t.x = stage.clientWidth / 2 - (p.x + W / 2) * t.k; t.y = stage.clientHeight / 2 - (p.y + H / 2) * t.k; apply(); };
+
+    function overview() {  // what to look at first, like Spanner's "prominent operators" and SQL Server's node-type table
+      pan.classList.remove('picking'); pan.querySelectorAll('.lit').forEach(x => x.classList.remove('lit'));
+      if (!L) return side.innerHTML = '';
+      const N = d.nodes, ids = L.ids, by = f => ids.reduce((a, b) => (f(N[b]) > f(N[a]) ? b : a), ids[0]);
+      const prom = [['Most rows', by(n => n.rows || 0), n => rowsTxt(n.rows)], ...(duck ? [['Slowest step', by(n => n.ms || 0), n => `${n.ms} ms`]] : []),
+        ...ids.filter(i => N[i].cls === 'warn').map(i => ['Watch out', i, n => n.warn])];
+      const types = {}; ids.forEach(i => { const k = N[i].label; types[k] = types[k] || { n: 0, rows: 0 }; types[k].n++; types[k].rows += N[i].rows || 0; });
+      const maxR = Math.max(1, ...Object.values(types).map(v => v.rows));
+      const groups = new Set(ids.map(i => N[i].group).filter(Boolean)).size;
+      side.innerHTML = `<h4>${who === 'yours' ? 'Your code' : 'Reference'}</h4>
+        <p class="dim">${ids.length} steps in ${groups} ${unit.toLowerCase()}${groups === 1 ? '' : 's'}. Click a card for details.</p>
+        <div class="lbl">Look here first</div>${prom.map(([k, i, f]) => `<button class="map-jump" data-i="${i}"><span>${k}</span><b>${esc(N[i].label)}</b><small>${esc(f(N[i]) || '')}</small></button>`).join('')}
+        <div class="lbl">Steps by type</div><table class="map-types">${Object.entries(types).sort((a, b) => b[1].rows - a[1].rows).map(([k, v]) =>
+          `<tr><td>${esc(k)}</td><td>${v.n}</td><td><i style="width:${Math.round(60 * v.rows / maxR)}px"></i></td></tr>`).join('')}</table>
+        <div class="faint" style="font-size:11px;margin-top:4px">count · rows produced</div>`;
+      side.querySelectorAll('.map-jump').forEach(b => b.onclick = () => { select(+b.dataset.i); centre(+b.dataset.i); });
+    }
+    function select(i) {
+      if (sel === i) return unselect();
+      sel = i; const N = d.nodes, n = N[i], up = new Set([i]), walk = j => (L.kids[j] || []).forEach(e => { up.add(e.k); walk(e.k); });
+      walk(i);
+      pan.classList.add('picking'); pan.querySelectorAll('.lit').forEach(x => x.classList.remove('lit'));
+      pan.querySelectorAll('.pc').forEach(x => up.has(+x.dataset.i) && x.classList.add('lit'));
+      pan.querySelectorAll('[data-e]').forEach(x => { const [a, b] = x.dataset.e.split('-').map(Number); up.has(a) && up.has(b) && x.classList.add('lit'); });
+      const el = pan.querySelector(`.pc[data-i="${i}"]`); el?.classList.add('sel');
+      const cr = el?.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+      if (cr && (cr.left < sr.left || cr.right > sr.right || cr.top < sr.top || cr.bottom > sr.bottom)) centre(i);  // bring a clipped card into view
+      const ins = L.kids[i] || [], rowsIn = ins.reduce((s, e) => s + (e.rows || 0), 0);
+      side.innerHTML = `<button class="map-back" id="map-back">← Overview</button>
+        <div class="kicker"><i class="mk ${n.cls}"></i>${n.group ? `${unit} ${n.group}` : 'Between stages'}</div>
+        <h4>${esc(n.label)}</h4>${n.short ? `<div class="dim">${esc(n.short)}</div>` : ''}
+        ${n.warn ? `<div class="map-warn">⚠ ${esc(n.warn)}</div>` : ''}
+        ${n.rows != null ? `<div class="map-io">${ins.length ? `<b>${nf(rowsIn)}</b> in <i>→</i> ` : ''}<b>${nf(n.rows)}</b> rows out</div>` : ''}
+        ${n.ms != null ? `<div class="dim">${n.ms} ms</div>` : ''}
+        ${n.data ? `<button class="primary map-see" id="map-see">See the ${nf(n.data.total)} row${n.data.total === 1 ? '' : 's'} out</button>` : ''}
+        <p>${esc(n.why)}</p>
+        ${ins.length ? `<div class="lbl">Fed by</div>${ins.map(e => `<button class="map-jump" data-i="${e.k}"><b>${esc(N[e.k].label)}</b><small>${rowsTxt(e.rows)}</small></button>`).join('')}` : ''}
+        ${n.detail ? `<details><summary>Raw plan details</summary><pre>${esc(n.detail)}</pre></details>` : ''}`;
+      $('#map-back').onclick = unselect;
+      if ($('#map-see')) $('#map-see').onclick = () => showRows(i);
+      side.querySelectorAll('.map-jump').forEach(b => b.onclick = () => { select(+b.dataset.i); centre(+b.dataset.i); });
+    }
+    function showRows(c) {  // the actual rows that left step c, as a small table over the map
+      $('#map-rows')?.remove();
+      const n = d.nodes[c], D = n.data, cell = v => v === null ? '<span class="faint">NULL</span>' : esc(typeof v === 'object' ? JSON.stringify(v) : String(v));
+      stage.insertAdjacentHTML('beforeend', `<div class="map-rows" id="map-rows"><div class="map-rows-h">
+          <div><b>Rows out of ${esc(n.label)}</b><small>${esc(n.short || '')}</small></div><button class="x" id="map-rows-x" title="Close (Esc)" aria-label="Close">${ic('x', 14)}</button></div>
+        ${D ? `<div class="map-rows-t"><table><tr>${D.cols.map(h => `<th>${esc(h)}</th>`).join('')}</tr>
+            ${D.rows.map(r => `<tr>${r.map(v => `<td>${cell(v)}</td>`).join('')}</tr>`).join('')}</table></div>
+          <div class="faint">${D.total > D.rows.length ? `First ${D.rows.length} of ${nf(D.total)} rows` : `${nf(D.total)} row${D.total === 1 ? '' : 's'}`}${n.cls === 'shuffle' ? ' · same rows as before the shuffle, now grouped by key across partitions' : ''}</div>`
+          : duck ? `<p class="dim">DuckDB runs these steps fused together and never hands out the rows between them; it only shows rows for table reads and the final result.
+              Spark SQL runs every step on its own, so its map shows the rows at every arrow.</p>
+              ${spark ? '<button class="primary" id="map-spark">Open this map on Spark SQL</button>' : '<p class="faint">Install PySpark (open any PySpark problem) to get the Spark SQL engine.</p>'}`
+          : `<p class="dim">Spark can't run this step on its own (it's a broadcast), so there are no rows to show.</p>`}</div>`);
+      $('#map-rows-x').onclick = () => $('#map-rows').remove();
+      if ($('#map-spark')) $('#map-spark').onclick = () => showMap('spark-sql');
+    }
+    function unselect() { sel = null; pan.querySelectorAll('.sel').forEach(x => x.classList.remove('sel')); overview(); }
+
+    const seg = (el, set) => el.onclick = e => { const b = e.target.closest('button'); if (!b) return;
+      el.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); set(b.dataset.v); draw(); };
+    seg($('#map-who'), v => who = v); seg($('#map-view'), v => view = v);
+    $('#map-in').onclick = () => zoom(1.25); $('#map-out').onclick = () => zoom(.8); $('#map-fit').onclick = fit;
+    stage.onwheel = e => { e.preventDefault(); const b = stage.getBoundingClientRect(); zoom(e.deltaY < 0 ? 1.1 : .9, e.clientX - b.left, e.clientY - b.top); };
+    stage.onpointerdown = e => { if (e.target.closest('.map-ctl, .map-rows')) return; drag = { x: e.clientX, y: e.clientY, tx: t.x, ty: t.y, moved: false }; };
+    stage.onpointermove = e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) { drag.moved = true; stage.classList.add('dragging'); }
+      if (drag.moved) { t.x = drag.tx + dx; t.y = drag.ty + dy; apply(); } };
+    stage.onpointerup = e => { const moved = drag?.moved; drag = null; stage.classList.remove('dragging');
+      if (moved || e.target.closest('.map-ctl, .map-rows')) return;
+      const pill = e.target.closest('.pe-pill'); if (pill) return showRows(+pill.dataset.c);
+      const c = e.target.closest('.pc'); c ? select(+c.dataset.i) : unselect(); };  // empty space clears the selection
+    const onKey = e => { if (e.key !== 'Escape') return;
+      if ($('#map-rows')) { e.stopImmediatePropagation(); return $('#map-rows').remove(); }
+      if (sel !== null) { e.stopImmediatePropagation(); unselect(); } };
+    window.addEventListener('keydown', onKey, true);
+    onModalClose = () => window.removeEventListener('keydown', onKey, true);
+    draw();
+  }
 
   $('#report').onclick = () => {
     react('shy', 4000);
@@ -724,7 +980,7 @@ async function feedbackPage() {
   const reviews = items.filter(f => f.kind === 'review'), avg = reviews.length ? reviews.reduce((a, f) => a + f.rating, 0) / reviews.length : 0;
   const card = f => `<div class="card fb ${f.resolved ? 'done' : ''}">
     <div class="fb-head">${f.kind === 'review' ? `<span class="stars">${'★'.repeat(f.rating)}<i>${'★'.repeat(5 - f.rating)}</i></span>`
-      : `<span class="tag hard">⚑ ${esc(f.category || 'report')}</span><a href="#/p/${f.problem}"><b>${esc(title[f.problem] || f.problem)}</b></a>`}
+      : `<span class="tag hard">${ic('flag', 11)} ${esc(f.category || 'report')}</span><a href="#/p/${f.problem}"><b>${esc(title[f.problem] || f.problem)}</b></a>`}
       <span class="dim">${esc(f.name || 'Anonymous')} · ${esc(f.ts)} UTC</span><span class="sp"></span>
       <button data-fid="${f.id}">${f.resolved ? 'Reopen' : 'Mark resolved'}</button></div>
     <p>${esc(f.text)}</p>${f.code ? `<details><summary>Attached code</summary><pre>${esc(f.code)}</pre></details>` : ''}</div>`;
@@ -757,7 +1013,7 @@ const DEMOS = [
   { tab: 'Coach, everywhere', coach: 'sql', path: 'sql/nulls/customers-without-orders', chat: [
     ['me', 'Why does my NOT IN return nothing?'],
     ['them', 'Look at orders.customer_id: one row is NULL. x NOT IN (…, NULL) is never true. What could you use instead?'],
-    ['me', 'NOT EXISTS?'], ['them', 'Exactly! NOT EXISTS ignores that NULL. Run it and see. 🎉']] },
+    ['me', 'NOT EXISTS?'], ['them', 'Exactly! NOT EXISTS ignores that NULL. Run it and see.']] },
   { tab: 'Any engine', coach: 'sql', path: 'sql/basics · SQL Server (T-SQL) → DuckDB', engines: ['DuckDB 2.0', 'PostgreSQL 14', 'SQLite 3.53', 'SQL Server (emulated)'],
     code: 'SELECT TOP 5 name FROM customers ORDER BY spend DESC', translated: 'SELECT name FROM customers ORDER BY spend DESC LIMIT 5' },
 ];
@@ -781,7 +1037,7 @@ function startDemo(root) {
       body().innerHTML = `<div class="demo-chat"></div><div class="demo-coach">${coach}</div>`;
       const face = $('.demo-coach svg', root), box = $('.demo-chat', root);
       for (const [who, text] of d.chat) {
-        if (who === 'them') { setMood(face, 'thinking'); await wait(900, t); setMood(face, text.includes('🎉') ? 'love' : 'happy'); }
+        if (who === 'them') { setMood(face, 'thinking'); await wait(900, t); setMood(face, text.startsWith('Exactly') ? 'love' : 'happy'); }
         box.insertAdjacentHTML('beforeend', `<div class="demo-msg ${who}"></div>`);
         await type(box.lastChild, text, t, 'none', who === 'me' ? 28 : 14);
         await wait(700, t);
@@ -804,7 +1060,7 @@ function startDemo(root) {
     out.innerHTML = '';
     for (const name of d.tests) { await wait(380, t); out.insertAdjacentHTML('beforeend', `<div class="pass demo-test">✓ ${esc(name)}</div>`); }
     $('.demo-run', root).classList.remove('go');
-    out.insertAdjacentHTML('beforeend', `<div class="verdict pass">All ${d.tests.length} tests passed 🎉</div>`);
+    out.insertAdjacentHTML('beforeend', `<div class="verdict pass">All ${d.tests.length} tests passed</div>${testBar(d.tests.map(() => true))}`);
     setMood(face, 'love'); await wait(400, t);
     await type($('.demo-say', root), d.said, t, 'none', 12);
     return wait(3200, t);
@@ -852,13 +1108,13 @@ function mermaidFrame() {
   });
   return mmFrame;
 }
-async function mermaidSvg(text) {
+async function mermaidSvg(text, fontSize = '13px') {
   const f = await mermaidFrame(), id = ++mmSeq;
   const css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
   const cfg = { startOnLoad: false, securityLevel: 'strict', theme: 'base', fontFamily: v('--body'),
     themeVariables: { background: v('--card'), primaryColor: v('--bg2'), primaryTextColor: v('--text'), primaryBorderColor: v('--acc'),
                       lineColor: v('--dim'), secondaryColor: v('--card'), tertiaryColor: v('--bg2'), clusterBkg: v('--bg2'),
-                      clusterBorder: v('--line2'), fontSize: '13px' } };
+                      clusterBorder: v('--line2'), fontSize } };
   return new Promise(res => { mmWait.set(id, res); f.contentWindow.postMessage({ id, text, cfg }, '*'); setTimeout(() => res({ error: 'timeout' }), 15000); });
 }
 async function renderDiagrams(root) {
@@ -931,9 +1187,10 @@ async function designLesson(id) {
       <div class="ds-foot"><button class="primary" id="ds-done">${d.done ? '✓ Completed' : 'Mark as complete'}</button><span class="sp"></span>
         ${d.prev ? `<a href="#/design/${d.prev}"><button>← Previous</button></a>` : ''}${d.next ? `<a href="#/design/${d.next}"><button>Next →</button></a>` : ''}</div>
     </article>
-    <aside class="ds-side card">
+    <aside class="ds-coach card">
       <div class="coach-head"><div id="coach">${blob(CAST.sensei.seed, { size: 52, live: true })}</div><div><b>Sensei</b><div class="dim" style="font-size:11.5px">sees what you see</div></div>
-        <span class="sp"></span><span class="status" id="status"><i></i>listening</span></div>
+        <span class="sp"></span><button class="ghost new-chat" id="new-chat" title="Clear this chat and start fresh">↺ New chat</button>
+        <span class="status" id="status"><i></i>listening</span></div>
       <div class="chat" id="chat"></div>
       <div class="chips ds-suggest">${['Explain the diagram', 'A real-world example?', 'Quiz me', 'What would an interviewer push on?'].map(s => `<button>${s}</button>`).join('')}</div>
       <div class="chat-in"><textarea id="say" placeholder="Ask about this ${d.kind === 'case_study' ? 'case study' : 'lesson'}…"></textarea>
@@ -958,6 +1215,10 @@ async function designLesson(id) {
     setMood(face, 'happy'); $('#status').lastChild.textContent = 'listening'; render();
   };
   $('#send').onclick = () => send($('#say').value);
+  $('#new-chat').onclick = async () => {
+    if (!await ask('Clear your chat with Sensei on this lesson and start fresh?', { ok: 'Start new chat', seed: CAST.sensei.seed })) return;
+    messages = []; localStorage.removeItem(key); render();  // render() shows the greeting again
+  };
   $('#say').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send($('#say').value); } };
   $('#say').onfocus = () => gz && gz.lookAt($('#say')); $('#say').onblur = () => gz && gz.lookAt('pointer');
   $('.ds-suggest').onclick = e => { const b = e.target.closest('button'); if (b) send(b.textContent); };
@@ -974,7 +1235,7 @@ async function designLesson(id) {
     if (quizDone === d.quiz.length) {
       const all = quizRight === d.quiz.length;
       setMood(face, all ? 'love' : 'happy'); if (all) confetti(card);
-      messages.push({ role: 'assistant', mood: all ? 'love' : 'happy', content: all ? `Perfect ${quizRight}/${d.quiz.length}! 🎉 Mark it complete and move on, or ask me to go deeper.`
+      messages.push({ role: 'assistant', mood: all ? 'love' : 'happy', content: all ? `Perfect ${quizRight}/${d.quiz.length}! Mark it complete and move on, or ask me to go deeper.`
         : `You got ${quizRight}/${d.quiz.length}. Want me to explain the ones you missed?` });
       render();
     }
@@ -1010,7 +1271,7 @@ async function gamePlay(gid) {
   let rounds = await api(`/api/games/${gid}/rounds`), i = 0, score = 0, combo = 0, left = 60, over = false, locked = false, misses = [];
   if (!rounds.length) return $('#app').innerHTML = `<div class="empty">${blob(coachSeed, { size: 64, mood: 'thinking' })}<p>Rounds for this game are still being written.</p></div>`;
   $('#app').innerHTML = `<div class="page enter game"><div class="game-head"><a class="back" href="#/games">← Games</a><h2>${esc(g.title)}</h2><span class="sp"></span>
-      <span class="g-stat">Score <b id="g-score">0</b></span><span class="g-stat" id="g-combo"></span><span class="g-stat">⏱ <b id="g-time">60</b>s</span></div>
+      <span class="g-stat">Score <b id="g-score">0</b></span><span class="g-stat" id="g-combo"></span><span class="g-stat">${ic('timer', 13)} <b id="g-time">60</b>s</span></div>
     <div class="g-timer"><i id="g-bar"></i></div>
     <div class="game-body"><div class="card g-card" id="g-card"></div><div class="g-coach" id="g-coach">${blob(coachSeed, { size: 88, live: true })}<div class="g-say" id="g-say">Ready? Go!</div></div></div></div>`;
   const face = $('#g-coach svg'); follow(face);
@@ -1110,25 +1371,83 @@ async function setupPage() {
         </div>`);
       document.querySelectorAll('.su-path').forEach(b => b.onclick = () => { path = b.dataset.p; step = 2; render(); });
     }
+    const SSO = {
+      anthropic: { btn: 'Sign in with your Anthropic account', note: 'Opens your browser, no key to copy. Usage is billed to your Anthropic Console account.',
+        tool: "Sign-in uses Anthropic's <code>ant</code> command-line tool. Install it, then click again:",
+        install: '<code>brew install anthropics/tap/ant</code> (Mac) · other systems: <a href="https://github.com/anthropics/anthropic-cli/releases" target="_blank" rel="noreferrer">download a release</a>' },
+      openai: { btn: 'Sign in with ChatGPT', note: 'Opens your browser. Coaching then uses your personal ChatGPT plan (Plus or Pro) instead of API billing. OpenAI doesn\'t allow this for Enterprise or Team workspaces yet; use an API key there.' },
+      gemini: { btn: 'Sign in with Google', note: 'Runs Gemini on Google Cloud (Vertex AI), billed to your Google Cloud project. Needs the gcloud tool and the Vertex AI API turned on in that project.',
+        tool: "Sign-in uses Google's <code>gcloud</code> command-line tool. Install it, then click again:",
+        install: '<a href="https://cloud.google.com/sdk/docs/install" target="_blank" rel="noreferrer">Install the Google Cloud CLI</a>' },
+    };
     if (step === 2 && path === 'api') {
       const p = P[provider];
-      $('#app').innerHTML = shell(`<div class="kicker dot">Bring your own key</div><h2>Connect ${esc(p.title)}</h2>
+      $('#app').innerHTML = shell(`<div class="kicker dot">Connect your account</div><h2>Connect ${esc(p.title)}</h2>
         <div class="chips su-prov">${Object.entries(P).map(([id, v]) => `<button data-v="${id}" class="${id === provider ? 'on' : ''}">${esc(v.title)}${id === 'anthropic' ? ' · recommended' : ''}</button>`).join('')}</div>
+        <div class="su-signin">
+          ${provider === 'gemini' ? `<input class="field" id="su-proj" placeholder="Your Google Cloud project ID (optional if gcloud has one set)" value="${esc(st.settings.gcp_project || '')}" spellcheck="false">` : ''}
+          <button class="primary" id="su-sso">${SSO[provider].btn}</button>
+          <div class="faint" id="su-sso-msg">${st.settings.provider === provider && st.settings.auth === 'signin' ? '✓ Signed in. ' : ''}${SSO[provider].note}</div></div>
+        <div class="su-or"><span>or paste an API key</span></div>
         <ol class="su-how"><li>Open <a href="${p.key_url}" target="_blank" rel="noreferrer">${esc(new URL(p.key_url).hostname)}</a> and sign in.</li>
           <li>Create a new API key and copy it.</li><li>Paste it below. It's stored in your DataDojo folder (readable only by you) and never shown again.</li></ol>
         <label>API key</label><div class="su-key"><input class="field" id="su-key" type="password" placeholder="${esc(p.key_hint)}" autocomplete="off" spellcheck="false">
-          <button class="ghost" id="su-eye" title="Show / hide">👁</button></div>
+          <button class="ghost" id="su-eye" title="Show / hide" aria-label="Show or hide the key">${ic('eye', 16)}</button></div>
         ${st.settings.provider === provider && st.settings.key_hint ? `<div class="faint" style="margin-top:6px">Saved key: ${esc(st.settings.key_hint)}. Leave empty to keep it.</div>` : ''}
         <label>Model</label><select id="su-model" class="field">${p.models.map((m, i) => `<option ${st.settings.model === m ? 'selected' : ''}>${m}</option>`).join('')}</select>
+        <div class="faint" id="su-models-note" style="margin-top:6px"></div>
         ${provider === 'anthropic' ? '<div class="faint" style="margin-top:6px">Opus is the sharpest; Sonnet and Haiku are faster and cheaper. Claude requests use automatic safety fallbacks.</div>' : ''}
         <div class="su-msg" id="su-msg"></div>
         <div class="row-end"><button class="ghost" id="su-back">← Back</button><button class="primary" id="su-save">Test & continue</button></div>`);
       document.querySelectorAll('.su-prov button').forEach(b => b.onclick = () => { provider = b.dataset.v; render(); });
+      const loadModels = async () => {  // live list from the provider: new models appear, retired ones vanish
+        const r = await api('/api/setup/models', { provider, api_key: $('#su-key').value.trim() });
+        if (!r.models?.length || !$('#su-model')) return;
+        const cur = $('#su-model').value;
+        const ms = [...r.models, ...(st.settings.provider === provider && !r.models.includes(st.settings.model) && r.live === undefined ? [st.settings.model] : [])];
+        $('#su-model').innerHTML = ms.map(m => `<option ${m === cur || m === st.settings.model ? 'selected' : ''}>${esc(m)}</option>`).join('');
+        $('#su-models-note').textContent = r.live ? `All ${r.models.length} chat models available to you, newest first.`
+          : `${r.models.length} current models, updated daily. Sign in or paste a key to see exactly what your account can use.`;
+      };
+      let typing; $('#su-key').oninput = () => { clearTimeout(typing); typing = setTimeout(loadModels, 500); };  // list updates as soon as a key is pasted
+      loadModels();
+      $('#su-sso').onclick = async () => {  // browser sign-in instead of a key
+        const msg = t => $('#su-sso-msg') && ($('#su-sso-msg').innerHTML = t), how = SSO[provider];
+        let a = await api('/api/setup/signin', { provider, project: $('#su-proj')?.value.trim() || null });
+        if (a.error) return msg(`<span class="fail">✗ ${esc(a.error)}</span>`);
+        if (a.installed === false && a.can_install) {  // Claude: offer to install Anthropic's ant tool with Homebrew, then sign in
+          if (!await ask("Signing in with Claude uses Anthropic's free `ant` tool, which isn't installed yet. Install it now with Homebrew? It takes about a minute, then your browser opens to sign in.",
+            { ok: 'Install and sign in', seed: CAST.sensei.seed, mood: 'happy' })) return msg(`${how.tool}<br>${how.install}`);
+          a = await api('/api/setup/signin', { provider, install: true });
+        }
+        if (a.installed === false && a.status !== 'running') return msg(`${how.tool}<br>${how.install}`);
+        $('#su-sso').disabled = true;
+        // stop waiting after 3 minutes or on Cancel: a provider that blocks the sign-in never sends the browser back here
+        let cancelled = false, until = Date.now() + 180000;
+        const waiting = t => { msg(`<span class="su-wait"><span><span class="spinner"></span>${t}${a.url ? ` <a href="${esc(a.url)}" target="_blank" rel="noreferrer">Open it again</a>` : ''}</span>
+            <button class="su-cancel" id="su-cancel">Cancel</button></span>`);
+          $('#su-cancel').onclick = () => { cancelled = true; $('#su-cancel').disabled = true; $('#su-cancel').textContent = 'Cancelling…'; }; };
+        waiting('Finish signing in in the browser window that just opened…');
+        do {
+          await new Promise(r => setTimeout(r, 1500)); a = (await api('/api/setup')).signin[provider];
+          if (a.step === 'installing') waiting('Installing Anthropic\'s ant tool with Homebrew…'), until = Date.now() + 180000;
+        } while (a.status === 'running' && !cancelled && Date.now() < until && $('#su-sso'));
+        if (!$('#su-sso')) return;
+        $('#su-sso').disabled = false;
+        if (a.status === 'running') return msg(`<span class="fail">✗ Stopped waiting for the sign-in.</span> If the provider showed an error page,
+          your account may not allow this sign-in (for ChatGPT: Enterprise and Team workspaces). You can paste an API key below instead.`);
+        if (a.status !== 'done') return msg(`<span class="fail">✗ ${esc(a.error || 'Sign-in did not finish.').replace(/https:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noreferrer">${u}</a>`)}</span>`);
+        msg('✓ Signed in. Loading your models…'); await loadModels();
+        const r = await api('/api/setup/save', { provider, model: $('#su-model').value, signin: true });
+        if (r.error) return msg(`<span class="fail">✗ ${esc(r.error)}</span>`);
+        st.settings = r.settings; step = 3; render();
+      };
       $('#su-eye').onclick = () => { $('#su-key').type = $('#su-key').type === 'password' ? 'text' : 'password'; };
       $('#su-back').onclick = () => { step = 1; render(); };
       $('#su-save').onclick = async () => {
         const key = $('#su-key').value.trim(), keep = !key && st.settings.provider === provider && st.settings.key_hint;
-        if (!key && !keep) return void ($('#su-msg').innerHTML = '<span class="fail">Paste your API key first.</span>');
+        if (!key && !keep && $('#su-proj')?.value.trim()) return $('#su-sso').click();  // a project ID typed in means: sign in with Google
+        if (!key && !keep) return void ($('#su-msg').innerHTML = '<span class="fail">Paste your API key, or use the sign-in button above.</span>');
         $('#su-save').disabled = true; $('#su-save').innerHTML = '<span class="spinner"></span>Checking your key…';
         const r = await api('/api/setup/save', { provider, model: $('#su-model').value, api_key: keep ? null : key });
         $('#su-save').disabled = false; $('#su-save').textContent = 'Test & continue';
@@ -1264,7 +1583,7 @@ async function interviewTrack(tid) {
     <div class="iv-step">Or drill one topic</div>
     <div class="chips iv-topics">${t.topics.map(x => `<button data-t="${x.id}" title="${esc(x.desc)}">${esc(x.title)} <span class="faint">${x.count}</span></button>`).join('')}</div>
     <div class="iv-step">Study</div>
-    <a class="card tile" href="#/interview/${tid}/cheatsheet" ${t.sheet ? '' : 'style="pointer-events:none;opacity:.5"'}><span style="font-size:22px">📒</span>
+    <a class="card tile" href="#/interview/${tid}/cheatsheet" ${t.sheet ? '' : 'style="pointer-events:none;opacity:.5"'}><span class="sheet-ic">${ic('notes', 20)}</span>
       <div class="t"><h4>${esc(t.title)} cheatsheet</h4><p>${t.sheet} sections in plain English, with how it works, real-world use and the interview-ready details. Every question links here.</p></div><span class="go">→</span></a>
     <div id="iv-voice-slot"></div></div>`;
   const mark = () => document.querySelectorAll('.iv-opt').forEach(b => b.classList.toggle('on', b.dataset.l === level));
@@ -1351,7 +1670,7 @@ async function interviewSession(tid, mode, level, topic) {
     $('#app').innerHTML = `<div class="page iv-page enter">
       <div class="iv-bar"><span class="kicker">${mode === 'drill' ? `Drill · ${esc(q.topic_title)}` : `${KIND_LABEL[q.kind]} question`} · ${i + 1} of ${qs.length}</span>
         <span class="iv-dots">${qs.map((_, k) => `<i class="${k < i ? 'done' : k === i ? 'on' : ''}"></i>`).join('')}</span><span class="sp"></span>
-        <span class="faint">⏱ <span id="iv-clock">00:00</span></span><button class="ghost" id="iv-end">${mode === 'drill' ? 'Finish drill' : 'End interview'}</button></div>
+        <span class="faint">${ic('timer', 13)} <span id="iv-clock">00:00</span></span><button class="ghost" id="iv-end">${mode === 'drill' ? 'Finish drill' : 'End interview'}</button></div>
       <div class="card iv-card">
         <div class="iv-q">${blob(CAST.sensei.seed, { size: 54, live: true, cls: 'live', mood: it?.grade ? (it.grade.score >= 7 ? 'love' : it.grade.score >= 4 ? 'happy' : 'unsure') : 'idle' })}
           <div><div class="faint" style="font-size:11px">${esc(LEVEL_INFO[q.level][0])} · ${esc(q.topic_title)} · ${KIND_LABEL[q.kind]}</div><h2>${esc(q.q)}</h2></div></div>
@@ -1359,7 +1678,7 @@ async function interviewSession(tid, mode, level, topic) {
         <div class="iv-ctrl" id="iv-ctrl"></div>
         <div id="iv-mic-msg"></div>
         <div id="iv-result">${it?.grade ? gradeView(it.grade) : ''}</div>
-        ${it?.grade && it.grade.study ? `<button class="ghost" id="iv-study">📒 Study this in the cheatsheet</button>` : ''}
+        ${it?.grade && it.grade.study ? `<button class="ghost" id="iv-study">${ic('notes', 14)}Study this in the cheatsheet</button>` : ''}
       </div></div>`;
     $('#iv-end').onclick = async () => { if (items.length || await ask('End now? Nothing has been graded yet.', { ok: 'End', seed: CAST.sensei.seed })) finish(); };
     if ($('#iv-study')) $('#iv-study').onclick = async () => {
@@ -1478,7 +1797,7 @@ async function interviewReview(id) {
       <span class="sp"></span>${it.grade?.score != null ? `<span class="tag ${it.grade.score >= 7 ? 'easy' : it.grade.score >= 4 ? 'medium' : 'hard'}">${it.grade.score}/10</span>` : `<span class="tag">${it.skipped ? 'skipped' : 'not graded'}</span>`}</summary>
       ${it.answer ? `<div class="lbl">Your answer</div><p class="iv-your">${esc(it.answer)}</p>` : ''}${gradeView(it.grade)}</details>`).join('')}
     <div class="row-end" style="margin-top:20px"><button class="ghost" id="iv-del-one">Delete this interview</button>
-      <a href="#/interview/${d.track}/cheatsheet"><button>📒 Open the cheatsheet</button></a>
+      <a href="#/interview/${d.track}/cheatsheet"><button>${ic('notes', 14)}Open the cheatsheet</button></a>
       <a href="#/interview/${d.track}"><button class="primary">Practice again</button></a></div></div>`;
   $('#iv-del-one').onclick = async () => {
     if (!await ask('Delete this interview and its report?', { ok: 'Delete', seed: CAST.sensei.seed, mood: 'unsure' })) return;
@@ -1584,4 +1903,24 @@ function updateModal(v) {
     <div class="row-end"><a class="faint" href="${esc(v.url)}" target="_blank" rel="noreferrer" style="text-decoration:underline">Release page on GitHub</a></div>`);
   if ($('#up-copy')) $('#up-copy').onclick = () => navigator.clipboard.writeText('uv tool upgrade datadojo').then(() => { $('#up-copy').textContent = 'Copied ✓'; });
 }
+// ---------- launch intro ----------
+// The intro's markup and critical CSS live in index.html so it is on screen from the very first paint (no flash of the
+// home page first). Here we only start it once the logo font is ready, and lift it: after ~2.9s, on click, or on a key.
+function intro() {
+  const el = document.getElementById('intro'); if (!el) return;
+  let done = false;
+  const finish = () => {
+    if (done) return; done = true; removeEventListener('keydown', finish);
+    const root = document.documentElement;  // one smooth handover: the intro dissolves while the app eases in as a whole
+    el.classList.add('out'); root.classList.add('intro-reveal'); root.classList.remove('intro-on');
+    setTimeout(() => { el.remove(); root.classList.remove('intro-reveal'); }, 1300);
+  };
+  el.onclick = finish; addEventListener('keydown', finish);
+  const font = document.fonts ? document.fonts.load('800 150px "JetBrains Mono"') : Promise.resolve();
+  Promise.race([font, new Promise(r => setTimeout(r, 450))]).then(() => {  // never wait long for the font
+    if (done) return;
+    el.classList.add('play'); setTimeout(finish, 2900);
+  });
+}
+intro();
 route();

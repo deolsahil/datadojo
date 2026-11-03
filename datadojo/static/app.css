@@ -31,9 +31,14 @@
 /* ---------- base ---------- */
 * { box-sizing: border-box }
 html { color-scheme: var(--scheme, dark) }
-html, body { margin: 0; background: var(--bg); color: var(--text); font: 13.5px/1.6 var(--body) }
-body { background: var(--art), var(--bg); background-attachment: fixed; min-height: 100vh;
-       transition: background-color .35s, color .35s }
+html, body { margin: 0; color: var(--text); font: 13.5px/1.6 var(--body) }
+html { background: var(--bg); transition: background-color .35s }
+body { min-height: 100vh; transition: color .35s }
+/* the background art sits on its own fixed layer: the browser composites it instead of repainting on every scroll
+   frame (a fixed background repaints, which flickers on fast scrolls, mostly in WebKit / the desktop app) */
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--art) }
+/* while scrolling, cards don't react to the pointer sliding over them (hover lifts flickering on and off) */
+html.scrolling body { pointer-events: none }
 a { color: inherit; text-decoration: none }
 ::selection { background: color-mix(in srgb, var(--acc) 35%, transparent) }
 button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line2);
@@ -218,7 +223,7 @@ h1, h2, h3, .logo, .hero h1, .verdict { font-family: var(--display) }
 .check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line2); flex: none; display: grid; place-items: center; font-size: 12px }
 .check.done { border-color: var(--easy); background: var(--easy); color: var(--bg); animation: pop .4s both }
 .pcard h4 { margin: 0; font-size: 14px }
-.pcard .start { align-self: center }
+.pcard .start { align-self: flex-start; margin-left: 34px }  /* lines up with the title, past the check circle */
 
 /* ---------- workspace ---------- */
 body.ws { height: 100vh; overflow: hidden; display: flex; flex-direction: column }
@@ -257,12 +262,7 @@ table.data th { color: var(--dim); font-weight: 500; background: var(--bg2) }
 table.data tr:hover td { background: color-mix(in srgb, var(--acc) 5%, transparent) }
 table.data i { color: var(--faint) }
 .tblname { color: var(--acc); font-size: 12px; margin-top: 6px }
-.hints { border: 1px solid color-mix(in srgb, var(--acc2) 35%, var(--line)); background: color-mix(in srgb, var(--acc2) 7%, var(--card));
-         border-radius: 12px; padding: 10px 14px; margin: 14px 0 }
-.hints .h { display: flex; color: var(--acc2); font-weight: 700 }
-.hints .h button { margin-left: auto; background: none; border: 0; color: var(--acc2); padding: 0; font-size: 12px }
-.hints ol { margin: 8px 0 0; padding-left: 18px; color: var(--text2) } .hints li { animation: rise .35s both }
-.toolbar { display: flex; gap: 6px; align-items: center; padding: 0 12px 8px }
+.toolbar { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; padding: 0 12px 8px }
 #editor-wrap { flex: 1; min-height: 120px; border-top: 1px solid var(--line) }
 #editor, #fallback { width: 100%; height: 100% }
 #fallback { display: none; background: var(--pre); color: var(--text); border: 0; padding: 10px; font: 13px var(--body); resize: none }
@@ -311,7 +311,7 @@ details .lbl { color: var(--dim); font-size: 11px; text-transform: uppercase; le
 .empty svg { display: block; margin: 0 auto 6px }
 select { font: inherit; font-size: 12px; color: var(--text); background: var(--card); border: 1px solid var(--line2);
          border-radius: 9px; padding: 4px 6px; max-width: 200px }
-.toolbar button { padding: 4px 9px; font-size: 12px; white-space: nowrap }
+.toolbar button { padding: 4px 8px; font-size: 12px; white-space: nowrap }
 
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 20; animation: fade .2s both }
 .modal[hidden] { display: none }
@@ -449,7 +449,7 @@ button.wide { width: 100%; margin-top: 20px; padding: 12px; font-size: 15px; bor
 .qz-opts button.wrong { border-color: var(--hard); background: color-mix(in srgb, var(--hard) 12%, var(--card)); animation: shake .4s }
 .qz-opts button.off { opacity: .55 } .qz-why { margin-top: 8px; font-size: 13px; color: var(--text2) } .qz-why:empty { display: none }
 .ds-foot { display: flex; gap: 10px; align-items: center; margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--line) }
-.ds-side { position: sticky; top: 80px; height: calc(100vh - 110px); display: flex; flex-direction: column; overflow: hidden }
+.ds-coach { position: sticky; top: 80px; height: calc(100vh - 110px); display: flex; flex-direction: column; overflow: hidden }  /* lesson coach; .ds-side is the section rail */
 .ds-suggest { padding: 0 16px; margin: 6px 0 0 } .ds-suggest button { font-size: 11.5px; padding: 3px 9px }
 
 /* ---------- brain games ---------- */
@@ -601,3 +601,145 @@ select.field { max-width: none; padding: 10px 12px }
 .up-notes { max-height: 42vh; overflow: auto; color: var(--text2); font-size: 13px; border-top: 1px solid var(--line); padding-top: 8px }
 .up-notes ul { padding-left: 18px; margin: 4px 0 10px }
 button.pill-update { border: 0; cursor: pointer; font-family: inherit }
+
+/* ---------- execution map ---------- */
+.map-btn { margin: 0 0 10px; display: inline-flex; align-items: center; gap: 8px }
+.modal-box.map { width: min(1280px, 96vw); max-height: 94vh; overflow: auto }
+.map-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px } .map-head h3 { margin: 0 }
+.map-verdict { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--line2); border-radius: var(--radius); background: var(--card); margin-bottom: 12px }
+.map-verdict i { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; font-style: normal; font-weight: 800; font-size: 13px }
+.map-verdict.good i { background: color-mix(in srgb, var(--easy) 16%, transparent); color: var(--easy) }
+.map-verdict.bad i { background: color-mix(in srgb, var(--hard) 16%, transparent); color: var(--hard) }
+.map-verdict b { display: block; font-size: 15px; color: var(--text) } .map-verdict span { color: var(--dim); font-size: 12.5px }
+.map-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px }
+.map-stat { display: flex; flex-direction: column; padding: 8px 14px; min-width: 110px; border: 1px solid var(--line2); border-radius: 10px; background: var(--card) }
+.map-stat span { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .08em } .map-stat b { font-size: 20px } .map-stat small { color: var(--faint) }
+.map-stat.worse b { color: var(--hard) } .map-stat.better b { color: var(--easy) }
+.map-order { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px } .map-order i { color: var(--faint); font-style: normal }
+.map-order small { color: var(--dim); margin-right: 4px } .map-order span { padding: 1px 9px; border: 1px solid var(--line2); border-radius: 999px; font-size: 12px }
+.map-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px }
+.seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 10px; overflow: hidden }
+.seg button { border: 0; border-radius: 0; background: transparent; padding: 5px 12px; font-size: 12.5px } .seg button + button { border-left: 1px solid var(--line2) }
+.seg button.on { background: var(--acc); color: var(--on-acc) }
+.map-legend { display: flex; gap: 12px; color: var(--dim); font-size: 12px } .map-legend span { cursor: help }
+.mk { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; border: 1.5px solid }
+.mk.source { background: #1f3a5f; border-color: #5b8def } .mk.narrow { background: #1e4030; border-color: #3fb27f }
+.mk.wide { background: #4a3714; border-color: #e0a030 } .mk.shuffle { background: #4a1d24; border-color: #e5534b } .mk.warn { background: #5a1414; border-color: #ff4d4d }
+.map-ask { margin-left: auto; position: relative; padding: 3px; border: 2px solid var(--line2); background: var(--card); border-radius: 50%; transition: transform .15s, border-color .15s; line-height: 0 }
+.map-ask:hover { border-color: var(--acc) }
+.map-ask:hover { transform: scale(1.08) }
+.map-tip { line-height: 1.4; position: absolute; right: 0; bottom: calc(100% + 8px); white-space: nowrap; background: var(--text); color: var(--bg); font-size: 12px; padding: 5px 10px; border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity .15s }
+.map-ask:hover .map-tip, .map-ask:focus-visible .map-tip { opacity: 1 }
+.map-main { display: grid; grid-template-columns: 1fr 300px; gap: 12px; align-items: stretch }
+.map-stage { position: relative; height: min(62vh, 620px); border: 1px solid var(--line2); border-radius: var(--radius); background: var(--pre); overflow: hidden; cursor: grab; touch-action: none; user-select: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--dim) 22%, transparent) 1px, transparent 1px); background-size: 22px 22px }
+.map-stage.dragging { cursor: grabbing }
+.map-pan { transform-origin: 0 0; position: absolute; left: 0; top: 0 }
+.map-ctl { position: absolute; left: 10px; top: 10px; z-index: 2; display: flex; flex-direction: column; border: 1px solid var(--line2); border-radius: 10px; overflow: hidden; background: var(--card); box-shadow: var(--shadow) }
+.map-ctl button { border: 0; border-radius: 0; width: 34px; height: 32px; padding: 0; background: transparent; font-size: 16px } .map-ctl button + button { border-top: 1px solid var(--line2) }
+.map-ctl button:hover { background: var(--bg2) }
+.map-hint { position: absolute; left: 56px; bottom: 8px; right: 12px; color: var(--faint); font-size: 11.5px; pointer-events: none }
+/* plan cards */
+.pe { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none }
+.pe path { fill: none; stroke: color-mix(in srgb, var(--dim) 55%, transparent); stroke-linecap: round; transition: opacity .15s }
+.pe path.x { stroke: color-mix(in srgb, var(--hard) 55%, transparent); stroke-dasharray: 2 7 }
+.pe-pill { position: absolute; transform: translate(-50%, -50%); background: var(--card); border: 1px solid var(--line2); border-radius: 999px; padding: 1px 9px; font-size: 11.5px; color: var(--text2); white-space: nowrap; pointer-events: none }
+.pc { position: absolute; display: flex; flex-direction: column; border: 1px solid var(--line2); border-radius: 10px; background: var(--card); overflow: hidden; cursor: pointer;
+  box-shadow: 0 4px 14px -8px rgba(0,0,0,.5); transition: box-shadow .15s, opacity .15s, transform .15s }
+.pc:hover { box-shadow: 0 0 0 2px var(--acc), 0 6px 18px -8px rgba(0,0,0,.6) }
+.pc.sel { box-shadow: 0 0 0 3px var(--acc) }
+.pc-warn { background: var(--hard); color: #fff; font-size: 11.5px; font-weight: 700; padding: 3px 10px }
+.pc.c-warn { border-color: var(--hard) }
+.pc-top { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px 0 }
+.pc-top > div { min-width: 0 } .pc-top b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis } .pc-top small { display: block; color: var(--dim); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.pc-pill { flex: none; align-self: flex-start; font-size: 10.5px; padding: 1px 7px; border-radius: 6px; background: var(--bg2); border: 1px solid var(--line2); color: var(--text2) }
+.pc-pill.hot { background: var(--acc2); color: #111; border-color: transparent; font-weight: 700 }
+.c-shuffle .pc-pill { background: color-mix(in srgb, var(--hard) 18%, transparent); color: var(--hard); border-color: transparent }
+.c-wide .pc-pill { background: color-mix(in srgb, var(--medium) 18%, transparent); color: var(--medium); border-color: transparent }
+.c-narrow .pc-pill { background: color-mix(in srgb, var(--easy) 15%, transparent); color: var(--easy); border-color: transparent }
+.c-source .pc-pill { background: color-mix(in srgb, #5b8def 18%, transparent); color: #5b8def; border-color: transparent }
+.pc-big { margin-top: auto; padding: 4px 10px 8px; font-size: 12px; color: var(--dim); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap }
+.pc-big b { font-size: 20px; color: var(--text) }
+.pc-big em { font-style: normal; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--acc) }
+.pc-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px }
+.map-pan.picking .pc:not(.lit), .map-pan.picking .pe path:not(.lit), .map-pan.picking .pe-pill:not(.lit) { opacity: .2 }
+/* side panel */
+.map-side { border: 1px solid var(--line2); border-radius: var(--radius); background: var(--card); padding: 14px 16px; font-size: 12.5px; overflow: auto; height: min(62vh, 620px); box-sizing: border-box }
+.map-side h4 { margin: 4px 0 4px; font-size: 17px } .map-side p { color: var(--text2); margin: 10px 0 }
+.map-jump { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; margin: 0 0 6px; padding: 7px 10px; border-radius: 9px }
+.map-jump span { font-size: 10.5px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em } .map-jump small { color: var(--dim) }
+.map-jump:hover { border-color: var(--acc) }
+.map-types { width: 100%; border-collapse: collapse } .map-types td { padding: 4px 0 } .map-types td:nth-child(2) { color: var(--dim); text-align: right; padding-right: 10px }
+.map-types td:last-child { width: 64px } .map-types i { display: block; height: 7px; border-radius: 4px; background: var(--acc) }
+.map-back { background: none; border: 0; padding: 0; color: var(--acc); margin-bottom: 8px }
+.map-warn { margin-top: 8px; color: var(--hard); font-weight: 700 }
+.map-io { margin-top: 10px; font-size: 13px } .map-io b { font-size: 18px } .map-io i { color: var(--faint); font-style: normal; margin: 0 4px }
+.map-side pre { white-space: pre-wrap; word-break: break-word; font-size: 11.5px; margin: 6px 0 0 }
+@media (max-width: 900px) { .map-main { grid-template-columns: 1fr } .map-side { height: auto } }
+.map-notes { margin: 10px 0 0; padding-left: 18px; color: var(--text2) } .map-notes li { margin: 3px 0 }
+.map-py { display: grid; grid-template-columns: 1fr 1fr; gap: 16px } .map-py > div { min-width: 0 }
+.line-heat { border: 1px solid var(--line); border-radius: var(--radius); background: var(--pre); padding: 8px 0; font-size: 12.5px; overflow-x: auto }
+.line-heat div { display: grid; grid-template-columns: 64px 1fr; background: linear-gradient(90deg, color-mix(in srgb, var(--hard) 32%, transparent) var(--h), transparent var(--h)) }
+.line-heat b { color: var(--dim); font-weight: 500; text-align: right; padding-right: 10px; font-size: 11px }
+.line-heat code { white-space: pre; background: none; padding: 0 }
+.pe-pill { pointer-events: auto; cursor: pointer } .pe-pill:hover { border-color: var(--acc); color: var(--acc) }
+.pe-pill.has-data { border-color: color-mix(in srgb, var(--acc) 45%, var(--line2)) }
+.map-see { width: 100%; margin-top: 10px }
+.map-rows { position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(640px, 90%); max-height: 80%; display: flex; flex-direction: column; gap: 8px;
+  background: var(--bg2); border: 1px solid var(--line2); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; cursor: default; user-select: text; animation: fade .15s both }
+.map-rows-h { display: flex; justify-content: space-between; gap: 10px } .map-rows-h b { display: block; font-size: 14px } .map-rows-h small { color: var(--dim) }
+.map-rows-h .x { background: none; border: 0; align-self: flex-start }
+.map-rows-t { overflow: auto; border: 1px solid var(--line); border-radius: 8px }
+.map-rows table { border-collapse: collapse; width: 100%; font-size: 12px }
+.map-rows th { position: sticky; top: 0; background: var(--card); text-align: left; color: var(--dim); font-weight: 600 }
+.map-rows th, .map-rows td { padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap }
+.new-chat { font-size: 11.5px; padding: 3px 9px; margin-right: 6px; color: var(--dim); white-space: nowrap } .new-chat:hover { color: var(--text) }
+.su-signin { display: flex; flex-direction: column; gap: 6px; margin: 14px 0 4px } .su-signin button { align-self: flex-start }
+.su-or { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; margin: 14px 0 0 } .su-or::before, .su-or::after { content: ""; flex: 1; height: 1px; background: var(--line2) }
+.su-signin #su-proj { max-width: 420px }
+/* line icons */
+.ic { flex: none; display: inline-block; vertical-align: -2px }
+button:has(> .ic) { display: inline-flex; align-items: center; justify-content: center; gap: 7px }
+.timer { display: inline-flex; align-items: center; gap: 6px } .timer > .ic { color: var(--dim) }
+.test-bar { display: flex; flex-wrap: wrap; gap: 4px; margin: -2px 0 12px }
+.test-bar i { width: 22px; height: 6px; border-radius: 3px; animation: pop .35s both; animation-delay: var(--d) }
+.test-bar i.ok { background: var(--easy) } .test-bar i.no { background: var(--hard) }
+/* hints: a reveal row, then one card per hint; number circles sit in the bulb's column so the text lines up */
+.hints { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 }
+.hints .hint-row, .hint-card { display: grid; grid-template-columns: 20px 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 12px }
+.hint-row { width: 100%; text-align: left; border: 0; background: var(--card); color: var(--text2); font-size: 13px; cursor: pointer; transition: background .15s }
+.hint-row:hover { background: color-mix(in srgb, var(--acc2) 9%, var(--card)) }
+.hint-row .ic { color: var(--acc2); justify-self: center } .hint-row b { color: var(--text) }
+.hint-row.done { cursor: default; color: var(--dim) } .hint-row.done:hover { background: var(--card) }
+.hint-dots { display: flex; gap: 5px } .hint-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line2); transition: background .2s }
+.hint-dots i.on { background: var(--acc2) }
+.hint-card { grid-template-columns: 20px 1fr; align-items: start; background: color-mix(in srgb, var(--acc2) 7%, var(--card)); color: var(--text2); animation: rise .35s both }
+.hint-n { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; margin-top: 1px;
+  background: color-mix(in srgb, var(--acc2) 20%, transparent); color: var(--acc2); font-size: 11px; font-weight: 800 }
+.pnum { color: var(--faint); font-weight: 600; margin-right: 8px }
+#hint-list { display: flex; flex-direction: column; gap: 8px } #hint-list:empty { display: none }
+/* scrollbars: no track box, a slim thumb that shows only while you're over the scrolling area */
+::-webkit-scrollbar { width: 10px; height: 10px; background: transparent }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent }
+::-webkit-scrollbar-thumb { background-color: transparent; border-radius: 10px; border: 3px solid transparent; background-clip: padding-box }
+:hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--dim) 45%, transparent) }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--dim) 75%, transparent) }
+@supports not selector(::-webkit-scrollbar) { * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--dim) 45%, transparent) transparent } }
+.monaco-editor .scrollbar .slider { border-radius: 8px; background: color-mix(in srgb, var(--dim) 40%, transparent) !important }
+.monaco-editor .scrollbar .slider:hover { background: color-mix(in srgb, var(--dim) 70%, transparent) !important }
+.coach-head { gap: 8px } .coach-head > div:not(#coach) { min-width: 0; flex: 0 1 auto }
+.coach-head .dim { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }  /* the subtitle gives way before the status pill does */
+#engine { flex: 1 1 84px; min-width: 0; max-width: 200px }  /* shrinks before the toolbar wraps */
+.ds-coach .status { font-size: 0; padding: 7px; gap: 0 } .ds-coach .status i { margin: 0 }  /* narrow panel: the dot alone; the coach's face shows thinking */
+/* editor toolbar: every control the same height; single-glyph buttons are squares */
+.toolbar > button, .toolbar > select, .toolbar > code { box-sizing: border-box; height: 28px; display: inline-flex; align-items: center; justify-content: center; line-height: 1 }
+.toolbar > select { padding-top: 0; padding-bottom: 0 }
+.toolbar > #fs-dn, .toolbar > #fs-up, .toolbar > #fmt { width: 28px; padding: 0 }
+.toolbar > #fs { min-width: 18px; text-align: center }
+.map-stats .map-ask { margin-left: auto; align-self: center }
+.map-py { align-items: stretch } .map-py > div { display: flex; flex-direction: column } .map-py .line-heat { flex: 1 }  /* both panels the same height */
+.sheet-ic { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: color-mix(in srgb, var(--acc2) 14%, transparent); color: var(--acc2) }
+.su-wait { display: flex; align-items: center; gap: 12px; flex-wrap: wrap }
+.su-cancel { padding: 4px 14px; font-size: 12px; font-weight: 700; color: var(--hard); border: 1px solid color-mix(in srgb, var(--hard) 55%, transparent);
+  background: color-mix(in srgb, var(--hard) 10%, transparent); border-radius: 8px }
+.su-cancel:hover { background: color-mix(in srgb, var(--hard) 20%, transparent) }

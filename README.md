@@ -1,11 +1,11 @@
 # DataDojo
 
-**Practice SQL, Python and PySpark like it's the real interview, with friendly AI coaches.**
+**Practice for Data and AI interviews like it's the real thing: SQL, Python, PySpark, AI and ML, with friendly AI coaches.**
 
 DataDojo runs entirely on your own computer: 234 coding problems graded by real engines, mock interviews
 for Data Engineer, AI Engineer, ML Engineer and Data Analyst roles that you can answer out loud, a System Design
 course (data systems and production AI, 40 lessons and case studies), brain games, streaks and a heatmap.
-Coaches (Sensei, Duck, Pip and Sparky) give hints instead of answers, powered by your own API key
+Coaches (Sensei, Duck, Pip and Sparky) give hints instead of answers, powered by your own API key or account sign-in
 (Claude, OpenAI or Gemini) or a free local model through Ollama.
 
 ## Download
@@ -68,6 +68,9 @@ SQL on DuckDB, SQLite and emulated dialects, and all Python problems, need nothi
 - **Any engine:** DuckDB, SQLite, PostgreSQL, Spark SQL, and MySQL / Snowflake / BigQuery / SQL Server /
   Oracle / Redshift syntax (translated with sqlglot); Python 3.10 to 3.15; PySpark 3.4 to 4.x.
 - **Coaching workspace:** six-stage coach chat, timer, hints, submissions, and "Report a mistake" on every problem.
+- **Execution map:** after a solve, see what the engine did next to the reference solution: Spark stages and shuffles,
+  SQL steps with row counts, Python line counts and growth. Click any step for the rows that passed through it.
+- **Format code** in the editor: black for Python and PySpark, sqlglot in your engine's SQL dialect.
 - **Interview practice:** mock interviews and topic drills for Data Engineer, AI Engineer, ML Engineer and Data
   Analyst at entry, mid or senior level. Speak or type; each answer is graded point by point against a rubric, with
   what to improve, delivery feedback and a suggested answer, a report at the end, and a cheatsheet per role.
@@ -75,7 +78,7 @@ SQL on DuckDB, SQLite and emulated dialects, and all Python problems, need nothi
   plus data fundamentals, modeling, reliability, building blocks and 12 full case studies, with diagrams, quizzes
   and a coach that has read the page.
 - **Brain games:** Guess the Output, Join Size, Spot the Bug, Big-O Sprint.
-- Midnight (dark) and Sakura (light) themes, following your system setting.
+- Midnight (dark) and Sakura (light) themes; DataDojo starts dark, and remembers the one you pick.
 
 Mascots are [blobatar](https://blobatar.dev) creatures (MIT). Problem statements are written in DataDojo's own
 words; where a problem follows a well-known public one, it links to the source.

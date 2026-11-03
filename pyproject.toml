@@ -1,7 +1,7 @@
 [project]
 name = "datadojo"
-version = "0.2.1"
-description = "Local SQL, Python and PySpark practice with friendly AI coaches."
+version = "0.3.0"
+description = "Local Data & AI interview practice (SQL, Python, PySpark, AI, ML) with friendly AI coaches."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = "MIT"
@@ -11,6 +11,7 @@ dependencies = [
     "sqlglot>=25",
     "psycopg[binary]>=3.2",
     "anthropic>=0.70",
+    "black>=24",
 ]
 
 [project.optional-dependencies]
