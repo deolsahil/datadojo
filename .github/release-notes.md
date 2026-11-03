@@ -1,4 +1,11 @@
-## What's new in 0.3.2
+## What's new in 0.3.3
+
+**🛠️ Fixes for the desktop app**
+- **Opening a problem no longer opens a second DataDojo window** on the setup screen.
+- **Sign in with ChatGPT works on Mac.** The last step used to fail with "URLError": the app couldn't check secure connections. It now uses your Mac's own certificates, and if a sign-in fails it says why.
+- **Practice without a coach.** Skip the coach setup and you can still solve every problem and run the tests; the coaches tell you they're off and how to turn them on. A name you typed before skipping is kept.
+
+## New in 0.3.2
 
 **⚡ Faster**
 - Pages open in about a tenth of a second: problems are read once instead of on every page, and nothing waits on a setup check.

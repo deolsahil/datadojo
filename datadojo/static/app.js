@@ -661,7 +661,9 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
     stage = i;
     messages.push({ role: 'sys', content: STAGES[i][1] });
     say(i === 0 && !messages.some(m => m.role === 'assistant')
-      ? `Hi ${me() ? me().split(' ')[0] : 'there'}! I'm ${coach.name}. ${STAGES[i][2]}` : STAGES[i][2], i === STAGES.length - 1 ? 'love' : 'happy');
+      ? `Hi ${me() ? me().split(' ')[0] : 'there'}! I'm ${coach.name}. ${localStorage.getItem('coachOff')
+          ? "Coaching isn't turned on yet, so I can't chat or give hints. You can still solve the problem and run the tests. Open **coach setup** below to turn me on."
+          : STAGES[i][2]}` : STAGES[i][2], i === STAGES.length - 1 ? 'love' : 'happy');
     renderStages(); react('happy');
   };
   $('#stages').onclick = e => { const b = e.target.closest('.stage'); if (b) goStage(+b.dataset.i); };
@@ -1675,10 +1677,13 @@ async function setupPage() {
         <p class="dim">Your coaches are connected to <b>${esc(coachLabel(st.settings))}</b>. Pick any pattern and start a session; they'll be right there in the chat.</p>
         <button class="primary wide" id="su-go">Start practicing →</button>`);
       follow($('#nm-blob svg')); confetti($('.setup-card h2'));
-      setupKnown = true; $('#su-go').onclick = () => { location.hash = '#/'; };
+      setupKnown = true; localStorage.removeItem('coachOff'); $('#su-go').onclick = () => { location.hash = '#/'; };
     }
     const skip = $('#su-skip');
-    if (skip) skip.onclick = async () => { await api('/api/setup/skip', {}); setupKnown = true; location.hash = '#/'; };
+    if (skip) skip.onclick = async () => {
+      if ($('#nm-in')?.value.trim()) { localStorage.setItem('displayName', $('#nm-in').value.trim().slice(0, 40)); renderMe(); }  // keep a typed name
+      await api('/api/setup/skip', {}); localStorage.setItem('coachOff', '1'); setupKnown = true; location.hash = '#/';
+    };
   };
   render();
 }

@@ -166,7 +166,10 @@ def engines():
         v = f"3.{minor}"
         path = sys.executable if v == DEFAULT_ENGINE["python"] else sh("uv", "python", "find", v)
         if path:
-            python.append({"id": v, "label": sh(path, "--version") or f"Python {v}", "kind": "native", "path": path})
+            # never run sys.executable to ask its version: in the desktop app it IS DataDojo, and a second
+            # window opened on the setup screen every time a problem loaded the engine list
+            label = f"Python {sys.version.split()[0]}" if path == sys.executable else sh(path, "--version") or f"Python {v}"
+            python.append({"id": v, "label": label, "kind": "native", "path": path})
 
     pyspark_envs = [{"id": "default", "label": f"PySpark {bundled_spark}", "kind": "native",
                      "path": sys.executable, "java": None}] if bundled_spark else []
@@ -793,7 +796,7 @@ class Handler(SimpleHTTPRequestHandler):
             if signin and llm.signins[provider]["status"] != "done" and not (provider == "openai" and (cur.get("openai_oauth") or {}).get("access_token")):
                 return self.send_json({"error": "Sign in first."}, 400)
             extra = {"gcp_project": llm.signins["gemini"].get("project") or cur.get("gcp_project")} if signin and provider == "gemini" else {}
-            llm.save(cur | {"provider": provider, "model": model, "api_key": key, "auth": "signin" if signin else "key", "setup_done": True} | extra)
+            llm.save(cur | {"provider": provider, "model": model, "api_key": key, "auth": "signin" if signin else "key", "setup_done": True, "coach_skipped": False} | extra)
             return self.send_json({"ok": True, "settings": llm.public()})
         if self.path == "/api/setup/models":  # the key typed in setup, else the saved one for that provider
             cur, provider = llm.load(), body.get("provider")
@@ -811,7 +814,7 @@ class Handler(SimpleHTTPRequestHandler):
                 webbrowser.open(res["url"])  # the system browser, also from the desktop app's window
             return self.send_json(res)
         if self.path == "/api/setup/skip":
-            llm.save(llm.load() | {"setup_done": True})
+            llm.save(llm.load() | {"setup_done": True, "coach_skipped": True})  # solve freely; coaches explain they are off
             return self.send_json({"ok": True})
         if self.path == "/api/setup/pyspark":
             install_pyspark()

@@ -8,7 +8,22 @@ import sys
 import threading
 
 
+def use_system_certificates():
+    """The bundled OpenSSL looks for certificates at a path from the build machine (/tmp/libpq.build/cert.pem),
+    so every HTTPS call through urllib failed (ChatGPT sign-in: "URLError"). Point it at the OS bundle instead.
+    Windows reads its own certificate store, so this only matters on macOS and Linux."""
+    import os
+    import ssl
+    if os.environ.get("SSL_CERT_FILE") or os.path.exists(ssl.get_default_verify_paths().openssl_cafile or ""):
+        return
+    for f in ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"):
+        if os.path.exists(f):
+            os.environ["SSL_CERT_FILE"] = f  # inherited by the code runner too
+            return
+
+
 def main():
+    use_system_certificates()
     if sys.argv[1:2] == ["--runner"]:
         from datadojo import runner
         return runner.main(sys.argv[2:])

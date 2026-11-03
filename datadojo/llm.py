@@ -3,7 +3,7 @@
 Settings live in DATA_HOME/settings.json (mode 0600). Keys and sign-in tokens never leave this machine except to
 the provider they belong to, and are never sent back to the browser (only a masked hint).
 """
-import base64, hashlib, json, os, re, secrets, shutil, subprocess, threading, time, urllib.error, urllib.parse, urllib.request, uuid
+import base64, hashlib, json, os, re, secrets, shutil, ssl, subprocess, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 
 from datadojo.paths import DATA_HOME
 
@@ -125,6 +125,10 @@ def chat(system, messages, strict=False, json_mode=False):
     except Exception as e:  # coaching is best-effort; the page tells the learner how to fix it
         if strict:
             raise
+        if s.get("coach_skipped") and s["provider"] not in PROVIDERS:  # setup was skipped and no local model answers
+            return ("Coaching isn't turned on yet, so I can't give hints or reviews. You can still solve every problem and "
+                    "run the tests as usual. To turn me on, open **coach setup** under this chat and pick an API key, "
+                    "a sign-in, or a free local model.")
         where = PROVIDERS.get(s["provider"], {}).get("title", "Ollama")
         return f"I can't reach my brain right now ({where}: {_reason(e)}). Open **Coach setup** from your profile to fix it."
 
@@ -139,6 +143,11 @@ def _body(e):
 def _reason(e):
     if isinstance(e, urllib.error.HTTPError):
         return f"HTTP {e.code}"
+    if isinstance(e, urllib.error.URLError):  # say what failed underneath ("URLError" alone told the learner nothing)
+        r = e.reason
+        if isinstance(r, ssl.SSLCertVerificationError):
+            return "this computer's security certificates couldn't be checked"
+        return f"no connection: {getattr(r, 'strerror', None) or r}"
     return getattr(e, "message", None) or type(e).__name__
 
 
