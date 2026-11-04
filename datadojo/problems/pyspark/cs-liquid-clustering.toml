@@ -1,0 +1,25 @@
+title = "Case: high-cardinality filters"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["databricks"]
+statement = """
+A new Delta table on Databricks stores orders. Queries filter on `customer_id` (high cardinality) and
+`order_date`, and the filter patterns may change next year.
+"""
+question = "What layout should you choose?"
+options = [
+  "`PARTITIONED BY (customer_id)`",
+  "`CLUSTER BY (customer_id, order_date)`: **liquid clustering**",
+  "No layout, rely on caching",
+  "`PARTITIONED BY (order_date)` plus a daily full table rewrite",
+]
+answer = 1
+explain = """
+**Liquid clustering** keeps rows with similar `customer_id` and `order_date` together in files, so data skipping
+works for both filters, without the tiny files that partitioning by a high-cardinality column creates. It is
+incremental (OPTIMIZE only clusters new data), and you can change the keys later with `ALTER TABLE ... CLUSTER BY`
+without rewriting the table. It replaces partitioning and Z-order on new tables.
+"""

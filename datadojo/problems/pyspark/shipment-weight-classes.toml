@@ -7,7 +7,7 @@ statement = """
 The warehouse system records `shipments(shipment_id, weight_kg)`. The carrier prices by weight
 class, so every shipment needs one.
 
-Write `solve(spark, shipments)` returning `shipment_id, weight_class` where `weight_class` is:
+Build `result` as `shipment_id, weight_class` where `weight_class` is:
 
 - `"small"` when `weight_kg` is below 1
 - `"medium"` when it is at least 1 and below 10
@@ -23,19 +23,20 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, shipments):
-    return shipments
+# shipments is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, shipments): ... return it.
+result = shipments
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, shipments):
-    w = F.col("weight_kg")
-    cls = (F.when(w.isNull(), "unknown")
-            .when(w < 1, "small")
-            .when(w < 10, "medium")
-            .otherwise("large"))
-    return shipments.select("shipment_id", cls.alias("weight_class"))
+w = F.col("weight_kg")
+cls = (F.when(w.isNull(), "unknown")
+        .when(w < 1, "small")
+        .when(w < 10, "medium")
+        .otherwise("large"))
+
+result = shipments.select("shipment_id", cls.alias("weight_class"))
 """
 
 [[tests]]

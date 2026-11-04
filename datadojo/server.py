@@ -32,7 +32,10 @@ def parse_problem(text, stem, catalog):
     """Parse and normalize one problem file. Raises ValueError/TOMLDecodeError if malformed."""
     p = tomllib.loads(text)
     p.setdefault("id", stem)
-    missing = REQUIRED - p.keys() | ({"function"} - p.keys() if p.get("lang") in ("python", "pyspark") else set())
+    choice = p.get("kind") == "choice"  # a case study with options instead of code: no starter, solution or tests
+    need = {"title", "lang", "difficulty", "pattern", "statement", "options", "answer", "explain"} if choice else \
+        REQUIRED | ({"function"} if p.get("lang") in ("python", "pyspark") else set())
+    missing = need - p.keys()
     if missing:
         raise ValueError(f"missing keys: {sorted(missing)}")
     patterns = {x["id"]: x["lang"] for x in catalog["patterns"]}
@@ -43,6 +46,10 @@ def parse_problem(text, stem, catalog):
         raise ValueError(f"difficulty must be one of {DIFFICULTIES}")
     if set(p.get("lists", [])) - lists:
         raise ValueError(f"unknown lists: {sorted(set(p['lists']) - lists)}")
+    if choice:
+        if not (isinstance(p["answer"], int) and 0 <= p["answer"] < len(p["options"]) and len(p["options"]) >= 2):
+            raise ValueError("answer must be the index of one of 2+ options")
+        return p
     if not p["tests"]:
         raise ValueError("no tests")
     for t in p["tests"]:  # TOML has no null: rows/args may be given as a JSON string instead
@@ -490,6 +497,11 @@ STAGES = {
 }
 
 
+STYLE_NOTE = ("PySpark answers can be notebook-style code that leaves the answer DataFrame in `result` (the input tables "
+              "and `spark` are already defined as variables), or a solve(spark, ...) function that returns it. Both are "
+              "correct; never ask the learner to switch styles.\n")
+
+
 def coach(p, code, result, stage, messages, solution=False):
     rules = f"""The learner already opened the reference solution below and wants to understand it.
 EXPLAIN it directly: do not quiz them, do not answer with questions, do not hold anything back. Walk through
@@ -506,7 +518,7 @@ Current stage: {stage}. {STAGES.get(stage, '')}"""
 
 Problem ({p['lang']}, {p['difficulty']}): {p['title']}
 {p['statement']}
-
+{STYLE_NOTE if p['lang'] == 'pyspark' else ''}
 Learner's current code:
 {code}
 
@@ -683,7 +695,7 @@ class Handler(SimpleHTTPRequestHandler):
         probs = load_problems()  # re-read each time so edited TOML shows up without restart
         if parts[1:] == ["catalog"]:
             solved = {r[0] for r in db().execute("SELECT DISTINCT problem FROM submissions WHERE passed")}
-            summary = [{k: p.get(k) for k in ("id", "title", "lang", "difficulty", "pattern", "lists")}
+            summary = [{k: p.get(k) for k in ("id", "title", "lang", "difficulty", "pattern", "lists", "tags", "kind")}
                        | {"solved": p["id"] in solved} for p in probs.values()]
             return self.send_json(load_catalog() | {"problems": summary})
         if parts[1:] == ["engines"]:
@@ -741,6 +753,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"settings": llm.public(), "ollama": llm.ollama_status(),
                                    "local_models": llm.LOCAL_MODELS, "signin": llm.signin_state(),
                                    "providers": {k: v | {"models": llm.catalog_models(k)} for k, v in llm.PROVIDERS.items()}})
+        if parts[1:] == ["coach", "connections"]:  # the coach summary in setup: current brain + everything else connected
+            s, cur = llm.load(), llm.current_conn()
+            hint = lambda k: f"{k[:6]}…{k[-4:]}" if len(k) > 12 else ""
+            return self.send_json({"current": cur, "brain": llm.coach_brain(), "project": s.get("gcp_project"),
+                                   "list": [{"id": i, "label": llm.LABELS.get(i, i), "model": c.get("model"),
+                                             "key_hint": hint(c.get("api_key", ""))} for i, c in llm.connections(s).items()]})
         if parts[1:] == ["coach-brain"]:  # which model the coaches use, shown on home and in the coach panel
             return self.send_json(llm.coach_brain())
         if parts[1:] == ["update", "status"]:  # in-app update progress
@@ -769,6 +787,9 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(subs)
             reports = db().execute("SELECT COUNT(*) FROM feedback WHERE kind='report' AND problem=? AND NOT resolved",
                                    (p["id"],)).fetchone()[0]
+            if p.get("kind") == "choice":  # the answer and explanation come only after a pick (/api/choice)
+                return self.send_json({k: v for k, v in p.items() if k not in ("answer", "explain")}
+                                      | {"solved": any(s["passed"] for s in subs), "open_reports": reports})
             return self.send_json({k: v for k, v in p.items() if k != "solution"}
                                   | {"sample": p["tests"][0], "tests": len(p["tests"]), "open_reports": reports,
                                      "test_rows": max((len(t["rows"]) for x in p["tests"] for t in x.get("tables", {}).values()), default=0),
@@ -800,7 +821,9 @@ class Handler(SimpleHTTPRequestHandler):
             if signin and llm.signins[provider]["status"] != "done" and not (provider == "openai" and (cur.get("openai_oauth") or {}).get("access_token")):
                 return self.send_json({"error": "Sign in first."}, 400)
             extra = {"gcp_project": llm.signins["gemini"].get("project") or cur.get("gcp_project")} if signin and provider == "gemini" else {}
-            llm.save(cur | {"provider": provider, "model": model, "api_key": key, "auth": "signin" if signin else "key", "setup_done": True, "coach_skipped": False} | extra)
+            new = cur | {"provider": provider, "model": model, "api_key": key, "auth": "signin" if signin else "key",
+                         "setup_done": True, "coach_skipped": False, "coach_off": False} | extra
+            llm.save(llm.remember(new, provider, new["auth"], model, key))
             return self.send_json({"ok": True, "settings": llm.public()})
         if self.path == "/api/setup/models":  # the key typed in setup, else the saved one for that provider
             cur, provider = llm.load(), body.get("provider")
@@ -831,6 +854,14 @@ class Handler(SimpleHTTPRequestHandler):
             elif target and os.path.exists(target):
                 os.startfile(target) if sys.platform == "win32" else subprocess.Popen(["open", target])
             return self.send_json({"ok": bool(target)})
+        if self.path == "/api/coach/check":  # is the current brain answering? (no tokens spent)
+            return self.send_json(llm.check_current())
+        if self.path == "/api/coach/use":  # switch to another connected brain, no new sign-in
+            err = llm.use_conn(str(body.get("id", "")))
+            return self.send_json({"error": err} if err else {"ok": True, "brain": llm.coach_brain()}, 400 if err else 200)
+        if self.path == "/api/coach/disconnect":
+            llm.disconnect(str(body.get("id", "")))
+            return self.send_json({"ok": True, "brain": llm.coach_brain()})
         if self.path == "/api/setup/skip":
             llm.save(llm.load() | {"setup_done": True, "coach_skipped": True})  # solve freely; coaches explain they are off
             return self.send_json({"ok": True})
@@ -922,9 +953,23 @@ class Handler(SimpleHTTPRequestHandler):
         p = load_problems().get(body.get("id"))
         if not p:
             return self.send_json({"error": "unknown problem"}, 404)
+        if self.path == "/api/choice":  # a case study answered: record it like a run, then explain
+            if p.get("kind") != "choice":
+                return self.send_json({"error": "not a case study"}, 400)
+            pick = body.get("pick")
+            correct = pick == p["answer"]
+            with db() as con:
+                con.execute("INSERT INTO submissions (problem, passed, code, engine) VALUES (?,?,?,?)",
+                            (p["id"], correct, f"choice: {pick}", "choice"))
+            return self.send_json({"correct": correct, "answer": p["answer"], "explain": p["explain"]})
         if self.path == "/api/run":
             res = run(p, body["code"], body.get("engine"))
             passed = bool(res.get("results")) and all(t["passed"] for t in res["results"])
+            if passed and p.get("requires"):  # the technique the problem teaches must show up in Spark's real plan
+                need = p["requires"]
+                yours = execution_map(p, body["code"], res.get("engine") or body.get("engine")).get("yours") or {}
+                if not any(n.get("label") == need["plan"] for n in yours.get("nodes", [])):
+                    passed, res["requirement"] = False, need["say"]
             with db() as con:
                 con.execute("INSERT INTO submissions (problem, passed, code, engine) VALUES (?,?,?,?)",
                             (p["id"], passed, body["code"], res.get("engine")))
@@ -960,6 +1005,8 @@ def check(selectors=(), engine=None):
     bad = 0
     for p in load_problems().values():
         if selectors and not {p["id"], p["pattern"], p["lang"]} & set(selectors):
+            continue
+        if p.get("kind") == "choice":  # nothing to run; its shape was validated when it loaded
             continue
         if engine:
             code = p["solution"]

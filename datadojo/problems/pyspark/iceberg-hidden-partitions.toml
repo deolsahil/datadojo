@@ -1,0 +1,45 @@
+title = "Iceberg hidden partitioning"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-lakehouse"
+lists = ["pyspark-de", "lakehouse"]
+tags = ["iceberg"]
+function = "solve"
+statement = """
+Iceberg tables partition by a **transform** of a column, for example `PARTITIONED BY (days(ts))`, and keep the
+partition value hidden: queries just filter on `ts` and Iceberg prunes the partitions itself. In storage paths
+the values look like `ts_year=2024`, `ts_month=2024-03`, `ts_day=2024-03-15`, `ts_hour=2024-03-15-09`.
+
+- `events(id, ts)`
+- `spec(transform)`: one row, `year`, `month`, `day` or `hour`.
+
+Build `result` as `id, partition`: the partition value of each row in that format.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# events and spec are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, events, spec): ... return it.
+result = events
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+FORMATS = {"year": "yyyy", "month": "yyyy-MM", "day": "yyyy-MM-dd", "hour": "yyyy-MM-dd-HH"}
+
+fmt = FORMATS[spec.first()["transform"]]
+
+result = events.select("id", F.date_format("ts", fmt).alias("partition"))
+"""
+
+[[tests]]
+tables.events = { columns = "id INT, ts TIMESTAMP", rows = [[1, "2024-03-15 09:12:00"], [2, "2024-03-15 23:59:59"], [3, "2024-12-31 00:00:01"]] }
+tables.spec = { columns = "transform STRING", rows = [["day"]] }
+
+[[tests]]
+tables.events = { columns = "id INT, ts TIMESTAMP", rows = [[1, "2024-03-15 09:12:00"], [2, "2023-01-02 10:00:00"]] }
+tables.spec = { columns = "transform STRING", rows = [["month"]] }
+
+[[tests]]
+tables.events = { columns = "id INT, ts TIMESTAMP", rows = [[1, "2024-03-15 09:12:00"], [2, "2024-03-15 09:59:00"], [3, "2024-03-15 10:00:00"]] }
+tables.spec = { columns = "transform STRING", rows = [["hour"]] }

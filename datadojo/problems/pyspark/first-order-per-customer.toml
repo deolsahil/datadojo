@@ -8,7 +8,7 @@ Growth wants the first-ever order of every customer to analyze acquisition.
 
 `orders(order_id, customer_id, order_ts, amount)`
 
-Write `solve(spark, orders)` returning `customer_id, order_id, amount` for each customer's earliest
+Build `result` as `customer_id, order_id, amount` for each customer's earliest
 order by `order_ts`. If two orders share the earliest timestamp, take the smaller `order_id`.
 Exactly one row per customer.
 """
@@ -19,16 +19,17 @@ hints = [
 starter = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, orders):
-    return orders.select("customer_id", "order_id", "amount")
+# orders is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, orders): ... return it.
+result = orders
 """
 solution = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, orders):
-    w = Window.partitionBy("customer_id").orderBy("order_ts", "order_id")
-    return (orders.withColumn("rn", F.row_number().over(w)).filter("rn = 1")
-            .select("customer_id", "order_id", "amount"))
+w = Window.partitionBy("customer_id").orderBy("order_ts", "order_id")
+
+result = (orders.withColumn("rn", F.row_number().over(w)).filter("rn = 1")
+         .select("customer_id", "order_id", "amount"))
 """
 
 [[tests]]

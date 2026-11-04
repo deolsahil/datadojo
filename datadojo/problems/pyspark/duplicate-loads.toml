@@ -7,7 +7,7 @@ statement = """
 A flaky ingestion job sometimes reloads the same file. `loads(order_id, status, amount, loaded_at)`
 now contains repeats that differ only in `loaded_at`.
 
-Write `solve(spark, loads)` returning `order_id, status, amount, copies` for every
+Build `result` as `order_id, status, amount, copies` for every
 `(order_id, status, amount)` combination that appears **more than once**, where `copies` is how many
 times it appears. Ignore `loaded_at`. For this check two NULLs in the same column count as equal.
 """
@@ -18,15 +18,15 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, loads):
-    return loads
+# loads is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, loads): ... return it.
+result = loads
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, loads):
-    return (loads.groupBy("order_id", "status", "amount").agg(F.count("*").alias("copies"))
-            .filter(F.col("copies") > 1))
+result = (loads.groupBy("order_id", "status", "amount").agg(F.count("*").alias("copies"))
+         .filter(F.col("copies") > 1))
 """
 
 [[tests]]

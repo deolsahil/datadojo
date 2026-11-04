@@ -1,0 +1,23 @@
+title = "Case: 40 small loads run one by one"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+A job copies 40 small, independent tables, one after another. Each copy uses only a few cores, so a 64-core
+cluster is mostly idle and the job takes two hours.
+"""
+question = "How do you use the cluster better?"
+options = [
+  "Union all 40 tables into one DataFrame",
+  "Submit the loads **concurrently** from the driver, for example with a `ThreadPoolExecutor`, so several Spark jobs run at once",
+  "Increase `spark.sql.shuffle.partitions`",
+  "Run each load twice",
+]
+answer = 1
+explain = """
+A SparkSession can run several jobs at the same time when they're submitted from different driver threads.
+Running independent loads in a **thread pool** keeps all the cores busy; the FAIR scheduler stops one job from
+starving the others. Unioning unrelated tables with different schemas doesn't make sense.
+"""

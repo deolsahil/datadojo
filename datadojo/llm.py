@@ -52,7 +52,7 @@ def public(s=None):
     """Settings safe to show in the UI: the key is masked."""
     s = s or load()
     k = s.get("api_key") or ""
-    return {k2: v for k2, v in s.items() if k2 not in ("api_key", "openai_oauth")} | {"key_hint": f"{k[:6]}…{k[-4:]}" if len(k) > 12 else ("set" if k else "")}
+    return {k2: v for k2, v in s.items() if k2 not in ("api_key", "openai_oauth", "connections")} | {"key_hint": f"{k[:6]}…{k[-4:]}" if len(k) > 12 else ("set" if k else "")}
 
 
 # ---- providers --------------------------------------------------------------
@@ -107,6 +107,10 @@ def chat(system, messages, strict=False, json_mode=False):
     """strict=True raises instead of returning the friendly error text (for replies we cache).
     json_mode=True asks the provider to emit valid JSON (local models otherwise break it now and then)."""
     s = load()
+    if s.get("coach_off"):  # disconnected on purpose: don't try any provider
+        if strict:
+            raise RuntimeError("coaching is off")
+        return OFF_MSG
     messages = [m for m in messages[-12:] if m.get("content")]
     fn = {"anthropic": _anthropic, "openai": _openai, "gemini": _gemini}.get(s["provider"], _ollama)
     try:
@@ -126,9 +130,7 @@ def chat(system, messages, strict=False, json_mode=False):
         if strict:
             raise
         if s.get("coach_skipped") and s["provider"] not in PROVIDERS:  # setup was skipped and no local model answers
-            return ("Coaching isn't turned on yet, so I can't give hints or reviews. You can still solve every problem and "
-                    "run the tests as usual. To turn me on, open **coach setup** under this chat and pick an API key, "
-                    "a sign-in, or a free local model.")
+            return OFF_MSG
         where = PROVIDERS.get(s["provider"], {}).get("title", "Ollama")
         return f"I can't reach my brain right now ({where}: {_reason(e)}). Open **Coach setup** from your profile to fix it."
 
@@ -140,15 +142,108 @@ def _body(e):
         return ""
 
 
-def coach_brain():
-    """What powers the coaches, for the UI: {"model", "via"}, or {"off": True} when setup was skipped."""
+OFF_MSG = ("Coaching isn't turned on yet, so I can't give hints or reviews. You can still solve every problem and run "
+           "the tests as usual. To turn me on, open **coach setup** under this chat and pick an API key, a sign-in, "
+           "or a free local model.")
+
+# ---- connections: every coach brain set up on this computer, so switching never means signing in again -----
+# id = "<provider>:<auth>": openai:signin (ChatGPT plan), openai:key, anthropic:signin (Claude account via `ant`),
+# anthropic:key, gemini:signin (Google Cloud via gcloud), gemini:key, ollama:local
+LABELS = {"openai:signin": "ChatGPT plan", "openai:key": "OpenAI API key", "anthropic:signin": "Claude account",
+          "anthropic:key": "Anthropic API key", "gemini:signin": "Google Cloud", "gemini:key": "Gemini API key",
+          "ollama:local": "On this computer (Ollama)"}
+
+
+def conn_id(provider, auth):
+    return "ollama:local" if provider not in PROVIDERS else f"{provider}:{'signin' if auth == 'signin' else 'key'}"
+
+
+def _local_ok(s):
+    st = ollama_status()
+    return st["running"] and s.get("model") in st["models"]
+
+
+def current_conn(s=None):
+    """The connection the coaches use now, or None when coaching is off."""
+    s = s or load()
+    if s.get("coach_off") or not s.get("setup_done"):
+        return None
+    if s.get("coach_skipped") and s.get("provider") not in PROVIDERS and not _local_ok(s):
+        return None  # setup was skipped and no local model answers
+    return conn_id(s.get("provider"), s.get("auth"))
+
+
+def connections(s=None):
+    """{id: {"model", "api_key"?}}. Older settings had only the current brain (and a ChatGPT login): fill those in."""
+    s = s or load()
+    c = dict(s.get("connections") or {})
+    cur = current_conn(s)
+    if cur and cur not in c:
+        c[cur] = {"model": s.get("model")} | ({"api_key": s["api_key"]} if s.get("api_key") and cur.endswith(":key") else {})
+    if (s.get("openai_oauth") or {}).get("access_token") and "openai:signin" not in c:
+        c["openai:signin"] = {"model": s["model"] if cur == "openai:signin" else catalog_models("openai")[0]}
+    return c
+
+
+def remember(s, provider, auth, model, key=""):
+    """Record a brain the learner just set up (settings dict, saved by the caller)."""
+    c = connections(s)
+    c[conn_id(provider, auth)] = {"model": model} | ({"api_key": key} if key else {})
+    return s | {"connections": c}
+
+
+def use_conn(cid):
     s = load()
-    p, signin = s.get("provider"), s.get("auth") == "signin"
-    if p not in PROVIDERS and s.get("coach_skipped"):
+    c = connections(s).get(cid)
+    if not c:
+        return "That coach isn't connected any more."
+    provider, auth = cid.split(":")
+    save(s | {"connections": connections(s), "provider": provider, "model": c.get("model") or "", "auth": "signin" if auth == "signin" else "key",
+              "api_key": c.get("api_key", ""), "setup_done": True, "coach_skipped": False, "coach_off": False})
+    return None
+
+
+def disconnect(cid):
+    """Forget a connection. ChatGPT: DataDojo's own tokens are deleted (a real sign-out for DataDojo). Claude and Google
+    sign-ins live in the `ant` / `gcloud` tools that other programs share, so only DataDojo stops using them."""
+    s = load()
+    c = connections(s)
+    c.pop(cid, None)
+    s = s | {"connections": c}
+    if cid == "openai:signin":
+        s.pop("openai_oauth", None)
+    if current_conn(load()) == cid:
+        s |= {"coach_off": True, "api_key": ""}
+    save(s)
+
+
+def check_current():
+    """Is the current brain answering? {"ok": True} or {"ok": False, "error"}; {"off": True} when coaching is off."""
+    s = load()
+    cid = current_conn(s)
+    if not cid:
         return {"off": True}
-    via = {"openai": "ChatGPT plan" if signin else "OpenAI API key", "anthropic": "Claude account" if signin else "Anthropic API key",
-           "gemini": "Google Cloud" if signin else "Gemini API key"}.get(p, "on this computer (Ollama)")
-    return {"model": s.get("model") or "", "via": via, "provider": p, "signin": signin}
+    try:
+        if cid == "openai:signin":
+            _http("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {_openai_token(s)}"}, timeout=20)
+            return {"ok": True}
+        if cid == "gemini:signin":
+            _gemini_token()
+            return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": f"The sign-in isn't working any more ({_reason(e)}). Sign in again."}
+    err = test(s["provider"], s["model"], s.get("api_key") or "")
+    return {"ok": not err, "error": err}
+
+
+def coach_brain():
+    """What powers the coaches, for the UI: {"model", "via", "provider", "signin"}, or {"off": True}."""
+    s = load()
+    cid = current_conn(s)
+    if not cid:
+        return {"off": True}
+    return {"model": s.get("model") or "", "via": LABELS[cid] if cid != "ollama:local" else "on this computer (Ollama)",
+            "provider": s.get("provider"), "signin": s.get("auth") == "signin", "conn": cid}
 
 
 def _reason(e):

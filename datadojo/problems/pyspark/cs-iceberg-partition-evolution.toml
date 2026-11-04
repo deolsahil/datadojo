@@ -1,0 +1,24 @@
+title = "Case: monthly partitions grew too big"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["iceberg"]
+statement = """
+An Iceberg table was partitioned by `months(ts)` when it was small. Now each month is 3 TB, and most queries look
+at a single day. Rewriting five years of data is not an option.
+"""
+question = "What should you do?"
+options = [
+  "`ALTER TABLE t REPLACE PARTITION FIELD months(ts) WITH days(ts)`: **partition evolution**",
+  "Create a new table and copy everything",
+  "Add a `day` column and ask analysts to filter on it",
+  "Z-order by `ts` on Iceberg",
+]
+answer = 0
+explain = """
+Iceberg supports **partition evolution**: new data is written with the new spec (daily), old files keep the old
+one (monthly), and query planning prunes both correctly, with no rewrite. Because partitioning is hidden,
+queries keep filtering on `ts`, and nothing changes for analysts.
+"""

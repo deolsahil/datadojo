@@ -1,0 +1,41 @@
+title = "Data skipping with file statistics"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-lakehouse"
+lists = ["pyspark-de", "lakehouse"]
+tags = ["databricks", "iceberg"]
+function = "solve"
+statement = """
+Delta and Iceberg store **min/max statistics** for each data file. A query reads only the files whose ranges
+could contain matching rows; the rest are skipped. Good clustering (Z-order, liquid clustering) makes these
+ranges tight, so more files are skipped.
+
+- `file_stats(file, min_day, max_day, min_amount, max_amount)`
+- `predicate(day_from, day_to, amount_at_least)`: one row, for
+  `WHERE day BETWEEN day_from AND day_to AND amount >= amount_at_least`.
+
+Build `result` as the `file` names that must be read.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# file_stats and predicate are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, file_stats, predicate): ... return it.
+result = file_stats
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+result = (file_stats.crossJoin(predicate)
+         .filter((F.col("max_day") >= F.col("day_from")) & (F.col("min_day") <= F.col("day_to"))
+         & (F.col("max_amount") >= F.col("amount_at_least")))
+         .select("file"))
+"""
+
+[[tests]]
+tables.file_stats = { columns = "file STRING, min_day DATE, max_day DATE, min_amount INT, max_amount INT", rows = [["f1", "2024-01-01", "2024-01-10", 1, 50], ["f2", "2024-01-08", "2024-01-20", 10, 900], ["f3", "2024-01-21", "2024-01-31", 5, 2000], ["f4", "2024-01-15", "2024-01-15", 100, 100], ["f5", "2023-12-01", "2023-12-31", 1, 5000]] }
+tables.predicate = { columns = "day_from DATE, day_to DATE, amount_at_least INT", rows = [["2024-01-10", "2024-01-21", 100]] }
+
+[[tests]]
+tables.file_stats = { columns = "file STRING, min_day DATE, max_day DATE, min_amount INT, max_amount INT", rows = [["f1", "2024-01-01", "2024-01-31", 1, 9]] }
+tables.predicate = { columns = "day_from DATE, day_to DATE, amount_at_least INT", rows = [["2024-01-05", "2024-01-06", 10]] }

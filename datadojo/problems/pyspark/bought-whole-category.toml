@@ -10,7 +10,7 @@ A loyalty program rewards customers who have bought **every** product in a categ
 - `purchases(customer_id, product_id)`: one row per purchase; repeats are common, and some rows
   reference discontinued product ids that are no longer in `products` (ignore those).
 
-Write `solve(spark, products, purchases)` returning `customer_id, category` for every customer and
+Build `result` as `customer_id, category` for every customer and
 category where the customer bought each product of that category at least once.
 """
 hints = [
@@ -21,17 +21,18 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, products, purchases):
-    return purchases.join(products, "product_id").select("customer_id", "category").distinct()
+# products and purchases are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, products, purchases): ... return it.
+result = products
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, products, purchases):
-    need = products.groupBy("category").agg(F.countDistinct("product_id").alias("n"))
-    have = (purchases.join(products, "product_id")
-            .groupBy("customer_id", "category").agg(F.countDistinct("product_id").alias("n")))
-    return have.join(need, ["category", "n"]).select("customer_id", "category")
+need = products.groupBy("category").agg(F.countDistinct("product_id").alias("n"))
+have = (purchases.join(products, "product_id")
+        .groupBy("customer_id", "category").agg(F.countDistinct("product_id").alias("n")))
+
+result = have.join(need, ["category", "n"]).select("customer_id", "category")
 """
 
 [[tests]]

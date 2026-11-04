@@ -13,7 +13,7 @@ For every transaction, count the transactions on the same card whose `ts` is wit
 **ending at** this transaction's `ts`: from `ts - 10 minutes` to `ts`, both inclusive, counting the
 transaction itself and any others at the exact same `ts`.
 
-Write `solve(spark, txns)` returning `txn_id, card_id, recent_count` only for transactions with
+Build `result` as `txn_id, card_id, recent_count` only for transactions with
 `recent_count >= 3`.
 """
 hints = [
@@ -24,16 +24,17 @@ hints = [
 starter = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, txns):
-    return txns.select("txn_id", "card_id", F.lit(3))
+# txns is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, txns): ... return it.
+result = txns
 """
 solution = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, txns):
-    w = Window.partitionBy("card_id").orderBy(F.col("ts").cast("long")).rangeBetween(-600, 0)
-    return (txns.select("txn_id", "card_id", F.count("*").over(w).alias("recent_count"))
-            .filter("recent_count >= 3"))
+w = Window.partitionBy("card_id").orderBy(F.col("ts").cast("long")).rangeBetween(-600, 0)
+
+result = (txns.select("txn_id", "card_id", F.count("*").over(w).alias("recent_count"))
+         .filter("recent_count >= 3"))
 """
 
 [[tests]]

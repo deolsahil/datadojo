@@ -1,0 +1,26 @@
+title = "Case: one task runs forever"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+A daily job joins `orders` (3 billion rows) with `customers` on `customer_id`. One marketplace account places
+about 40% of all orders. In the Spark UI, 199 of 200 tasks in the join stage finish in a minute; the last one
+runs for 50 minutes and spills to disk.
+"""
+question = "What fixes this best?"
+options = [
+  "Increase `spark.sql.shuffle.partitions` to 2000",
+  "`cache()` the orders table before the join",
+  "Handle the skew: turn on AQE skew-join handling, or salt the hot `customer_id` so its rows spread over many tasks",
+  "`coalesce(1)` the customers table",
+]
+answer = 2
+explain = """
+This is **data skew**: one key holds a huge share of the rows, and a shuffle sends all rows of a key to the same
+task. More partitions don't help, because that key still lands in one partition. AQE's skew-join handling
+(`spark.sql.adaptive.skewJoin.enabled`) splits oversized partitions automatically. Salting does it by hand: add
+a random salt to the big side and copy the small side once per salt value. Caching and `coalesce` don't change
+how the key is distributed.
+"""

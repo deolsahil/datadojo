@@ -1,0 +1,23 @@
+title = "Case: a job with quiet and busy phases"
+lang = "pyspark"
+kind = "choice"
+difficulty = "easy"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+A nightly pipeline has one huge join stage and long stretches of small, single-threaded work. On a fixed 50-node
+cluster, most executors sit idle for two of its three hours.
+"""
+question = "What reduces the waste?"
+options = [
+  "**Dynamic allocation** (or cluster autoscaling): add executors when tasks queue up and release idle ones",
+  "Double the fixed cluster size",
+  "Set `spark.sql.shuffle.partitions` to 1",
+  "Cache every DataFrame",
+]
+answer = 0
+explain = """
+**Dynamic allocation** (`spark.dynamicAllocation.enabled`, with min and max executors) scales executors with the
+backlog of tasks and removes idle ones after a timeout. On Databricks, cluster autoscaling does the same. A bigger
+fixed cluster wastes even more during the quiet phases.
+"""

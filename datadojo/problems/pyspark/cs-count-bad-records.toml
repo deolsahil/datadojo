@@ -1,0 +1,24 @@
+title = "Case: counting bad records while parsing"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+A parser runs on every executor. You want to know how many records were malformed in the run, without a second
+pass over the data or a separate `count()` job.
+"""
+question = "What Spark feature fits?"
+options = [
+  "A broadcast variable",
+  "An **accumulator**: tasks add to it, and the driver reads the total after the action",
+  "A global Python variable",
+  "`collect()` the bad rows to the driver and count them",
+]
+answer = 1
+explain = """
+**Accumulators** are shared variables that tasks can only add to and the driver can read: ideal for counters and
+metrics. A broadcast variable is the opposite (read-only data sent to executors), and a global Python variable is
+separate in every executor process. Count accumulators inside actions only: in transformations they can be
+counted twice when Spark retries a task.
+"""

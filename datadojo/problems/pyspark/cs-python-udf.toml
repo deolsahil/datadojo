@@ -1,0 +1,23 @@
+title = "Case: a slow Python UDF"
+lang = "pyspark"
+kind = "choice"
+difficulty = "easy"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+A job cleans phone numbers with a Python `@udf` that strips characters and adds a country code. That one step
+takes 70% of the runtime.
+"""
+question = "What is usually the best first fix?"
+options = [
+  "Give the cluster more cores",
+  "Rewrite it with built-in functions (`regexp_replace`, `concat`, `when`), which run inside the JVM",
+  "Wrap the UDF in `cache()`",
+  "Call the UDF twice",
+]
+answer = 1
+explain = """
+A plain Python UDF sends every row from the JVM to a Python worker and back, and Catalyst can't optimize what's
+inside it. **Built-in functions** avoid all of that, and most string and date cleaning has a built-in. When you truly
+need Python, a vectorized `pandas_udf` (Arrow) is much faster than a row-at-a-time UDF.
+"""

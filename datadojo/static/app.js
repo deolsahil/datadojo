@@ -91,7 +91,7 @@ const md = (src = '') => src.trim().split(/```\w*\n?/).map((chunk, i) => i % 2
   ? `<pre>${esc(chunk.replace(/\n$/, ''))}</pre>`
   : chunk.split(/\n\s*\n/).filter(b => b.trim()).map(b => block(b.trim())).join('')).join('');
 
-// "gpt-5.5 · ChatGPT plan": which model the coaches use, into every .coach-brain link on the page
+// "gpt-5.5": which model the coaches use, in the coach panel of every problem (.coach-brain)
 async function showBrain() {
   const b = await api('/api/coach-brain');
   b.off ? localStorage.setItem('coachOff', '1') : localStorage.removeItem('coachOff');  // the coach greeting reads this
@@ -104,7 +104,7 @@ async function showBrain() {
   });
 }
 // switch model within the current provider and sign-in (a ChatGPT plan, an API key, local Ollama) without redoing setup
-async function brainPicker(b) {
+async function brainPicker(b, back = null) {  // back: reopen the popup it was opened from
   modal(`<div class="kicker dot">Coach model</div><h3 style="margin:6px 0 2px">Which model should your coaches use?</h3>
     <div class="faint">${esc(b.via)}</div><div id="bp-list" class="bp-list"><div class="dim"><span class="spinner"></span>Loading the models you can use…</div></div>
     <div class="row-end"><a href="#/setup/brain" class="faint" style="margin-right:auto;text-decoration:underline">Change provider or sign-in</a>
@@ -122,6 +122,7 @@ async function brainPicker(b) {
     const res = await api('/api/setup/save', { provider: b.provider, model: pick, signin: b.signin });
     if (res.error) { $('#bp-msg').textContent = res.error; $('#bp-save').disabled = false; return; }
     closeModal(); showBrain();
+    if (back) back();
   };
 }
 function ring(done, total, size = 44, color = 'var(--acc)') {
@@ -142,6 +143,9 @@ const value = (v, cols) => Array.isArray(v) && v.length && v.every(Array.isArray
   : `<pre>${esc(JSON.stringify(v, null, 1))}</pre>`;
 const langTag = l => `<span class="lang-tag ${l}">${LANGS[l]}</span>`;
 const diffTag = d => `<span class="tag ${d}">${d}</span>`;
+// Databricks / Iceberg: the table-format concept a problem is about
+const TECH = { databricks: 'Databricks', iceberg: 'Iceberg' };
+const techTags = p => (p.tags || []).filter(t => TECH[t]).map(t => `<span class="tech-tag ${t}">${TECH[t]}</span>`).join('');
 const count = ps => [ps.filter(p => p.solved).length, ps.length];
 
 const ICONS = {
@@ -265,7 +269,6 @@ function askName() {
   $('#nm-save').onclick = () => save(input.value);
   input.onkeydown = e => { if (e.key === 'Enter') save(input.value); if (e.key === 'Escape') closeModal(); };
   if ($('#nm-clear')) $('#nm-clear').onclick = () => save('');
-  $('#nm-coach').onclick = () => { closeModal(); $('.modal-box').classList.remove('narrow'); };
 }
 $('#me').onclick = askName;
 
@@ -405,8 +408,7 @@ async function home() {
       ${links.length ? `<div class="socials">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer" title="${esc(l.icon)}">${icon(l.icon)}</a>`).join('')}</div>` : ''}</div>
     <div class="welcome card"><div class="sensei-big" id="sensei">${blob(CAST.sensei.seed, { size: 104, mood, live: true, cls: 'live' })}</div>
       <div class="bubble"><div class="kicker dot">${stats.runs ? 'Welcome back' : 'Welcome'}</div><p>${esc(line)}</p>
-        ${me() ? '' : '<button id="set-name" class="primary">Tell Sensei your name</button>'}
-        <a class="coach-brain" href="#/setup" hidden></a></div>
+        ${me() ? '' : '<button id="set-name" class="primary">Tell Sensei your name</button>'}</div>
       <span class="sp"></span><div class="streak-big ${streakState(stats)}">${FLAME}<b data-count="${stats.streak}">0</b><small>day streak</small></div></div>
     <div class="card progress">
       <div class="top">${ring(stats.solved, stats.total, 56)}<div><b>Overall progress</b><div class="dim">${stats.solved} of ${stats.total} problems solved</div></div>
@@ -433,7 +435,6 @@ async function home() {
   $('#sensei').onmouseleave = () => setMood(s, mood);
   $('#sensei').onclick = () => { setMood(s, 'wink'); setTimeout(() => setMood(s, mood), 900); };
   if ($('#set-name')) $('#set-name').onclick = askName;
-  showBrain();
 }
 
 async function langPage(lang) {
@@ -456,7 +457,7 @@ async function problemList(kind, id) {
   const render = () => {
     const ps = all.filter(p => filter === 'all' || p.difficulty === filter || (filter === 'todo' && !p.solved));
     $('#cards').innerHTML = ps.map(p => `<div class="card pcard"><div class="row"><span class="check ${p.solved ? 'done' : ''}">${p.solved ? '✓' : ''}</span>
-      <div><h4><span class="pnum">${all.indexOf(p) + 1}.</span>${esc(p.title)}</h4><div style="margin-top:6px;display:flex;gap:6px">${diffTag(p.difficulty)}${kind === 'list' ? langTag(p.lang) : ''}</div></div></div>
+      <div><h4><span class="pnum">${all.indexOf(p) + 1}.</span>${esc(p.title)}</h4><div style="margin-top:6px;display:flex;gap:6px">${diffTag(p.difficulty)}${kind === 'list' ? langTag(p.lang) : ''}${techTags(p)}</div></div></div>
       <a class="start" href="#/p/${p.id}"><button class="primary">${p.solved ? 'Practice again' : 'Start session'}</button></a></div>`).join('')
       || `<div class="empty">${blob(coach.seed, { size: 64, mood: 'shy' })}<p>Nothing here yet.</p></div>`;
     document.querySelectorAll('.chips button').forEach(b => b.classList.toggle('on', b.dataset.f === filter));
@@ -491,11 +492,38 @@ const monacoReady = new Promise(res => {
 // problems in a list are ordered easy -> hard; list pages and the problem title share this order for numbering
 const byDifficulty = ps => [...ps].sort((a, b) => ['easy', 'medium', 'hard'].indexOf(a.difficulty) - ['easy', 'medium', 'hard'].indexOf(b.difficulty));
 
+// a case study: a real situation, pick what you would use, then see why (no code to write)
+function caseStudy(p, cat) {
+  const coach = CAST[p.lang], pat = cat.patterns.find(x => x.id === p.pattern);
+  const siblings = cat.problems.filter(q => q.pattern === p.pattern), next = siblings[siblings.findIndex(q => q.id === p.id) + 1];
+  $('#app').innerHTML = `<div class="page enter case">
+    <a class="back" href="#/pattern/${p.pattern}">← ${esc(pat?.title || 'Back')}</a>
+    <div class="case-card card">
+      <div class="tags">${langTag(p.lang)}${diffTag(p.difficulty)}${techTags(p)}<span class="tag">Case study</span>${p.solved ? '<span class="tag easy">solved ✓</span>' : ''}</div>
+      <h2>${esc(p.title)}</h2>
+      <div class="case-text">${md(p.statement)}</div>
+      <div class="case-q">${blob(coach.seed, { size: 30, mood: 'happy' })}<b>${esc(p.question || 'What would you use here?')}</b></div>
+      <div class="case-opts">${p.options.map((o, i) => `<button class="case-opt" data-i="${i}"><i>${'ABCDEF'[i]}</i><span>${md(o).replace(/^<p>|<\/p>$/g, '')}</span></button>`).join('')}</div>
+      <div id="case-result"></div>
+    </div></div>`;
+  $('.case-opts').onclick = async e => {
+    const btn = e.target.closest('.case-opt'); if (!btn || $('.case-opts').classList.contains('done')) return;
+    const r = await api('/api/choice', { id: p.id, pick: +btn.dataset.i });
+    $('.case-opts').classList.add('done');
+    document.querySelectorAll('.case-opt').forEach((b, i) => b.classList.add(i === r.answer ? 'right' : i === +btn.dataset.i ? 'wrong' : 'dim'));
+    if (r.correct) confetti(btn);
+    $('#case-result').innerHTML = `<div class="case-explain ${r.correct ? 'good' : 'bad'}"><b>${r.correct ? 'Correct!' : `Not quite. The answer is ${'ABCDEF'[r.answer]}.`}</b>${md(r.explain)}</div>
+      <div class="row-end"><button class="ghost" id="case-again">Try again</button>${next ? `<a href="#/p/${next.id}"><button class="primary">Next: ${esc(next.title)} →</button></a>` : ''}</div>`;
+    $('#case-again').onclick = () => caseStudy(p, cat);
+  };
+}
+
 async function workspace(id, mode) {  // mode "review" (practice queue) or "round" (mock coding round): start from the blank starter
   const review = mode === 'review';
   let round = mode === 'round' ? JSON.parse(sessionStorage.getItem('round:' + id) || 'null') : null;
   const [p, { cat }] = await Promise.all([api('/api/problems/' + id), load()]);
   if (p.error) return $('#app').innerHTML = '<div class="empty">Problem not found</div>';
+  if (p.kind === 'choice') return caseStudy(p, cat);
   const coach = CAST[p.lang], you = me() || 'you';
   const chatKey = (round ? 'roundchat:' : 'chat:') + id, stageKey = 'stage:' + id;
   let messages = JSON.parse(localStorage.getItem(chatKey) || '[]');
@@ -512,7 +540,7 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
     <div class="cols">
       <section class="col"><div class="col-h"># Problem</div><div class="scroll prob">
         <h2>${(n => n ? `<span class="pnum">${n}.</span>` : '')(byDifficulty(cat.problems.filter(x => x.pattern === p.pattern)).findIndex(x => x.id === id) + 1)}${esc(p.title)}</h2>
-        <div class="tags">${langTag(p.lang)}${diffTag(p.difficulty)}<span class="tag">${p.tests} tests</span>${p.solved ? '<span class="tag easy">solved ✓</span>' : ''}</div>
+        <div class="tags">${langTag(p.lang)}${diffTag(p.difficulty)}${techTags(p)}<span class="tag">${p.tests} tests</span>${p.solved ? '<span class="tag easy">solved ✓</span>' : ''}</div>
         ${round ? `<div class="round-bar" id="round-bar">${ic('timer', 15)}<div><b>Coding round</b><span id="round-left"></span><small id="round-hints"></small></div>
           <span class="sp"></span><button class="primary" id="round-next" hidden>Continue to follow-up</button><button class="ghost" id="round-end">End round</button></div>` : ''}
         ${review ? `<div class="review-banner">${ic('reset', 14)}<div><b>Review</b> · solve it again from scratch. Pass on your first run to move it to the next review.</div></div>` : ''}
@@ -742,7 +770,8 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
       return say("Whoa, that didn't run. Check the error in the results panel; I can help you read it.", 'surprised', true);
     }
     const n = last.results.filter(t => t.passed).length, total = last.results.length;
-    $('#out').innerHTML = `<div class="verdict ${last.passed ? 'pass' : 'fail'}">${last.passed ? `All ${n} tests passed` : `${n}/${total} tests passed`}</div>${testBar(last.results.map(t => t.passed))}`
+    $('#out').innerHTML = `<div class="verdict ${last.passed ? 'pass' : 'fail'}">${last.passed ? `All ${n} tests passed` : last.requirement ? `All ${n} tests pass, but not with the technique this problem asks for` : `${n}/${total} tests passed`}</div>${testBar(last.results.map(t => t.passed))}`
+      + (last.requirement ? `<p class="fail requirement">${esc(last.requirement)}</p>` : '')
       + `<div class="faint" style="margin:-4px 0 8px">ran on ${esc($('#engine').selectedOptions[0]?.textContent || last.engine)} · expected output from the default engine</div>`
       + (last.translated ? `<details ${last.translated_by === 'ai' ? 'open' : ''}><summary>SQL as executed (translated to DuckDB${last.translated_by === 'ai' ? ` by ${esc(coach.name)}, because the automatic translator couldn't` : ''})</summary><pre>${esc(last.translated)}</pre></details>` : '')
       + (last.stdout ? `<details open><summary>stdout</summary><pre>${esc(last.stdout)}</pre></details>` : '')
@@ -761,7 +790,7 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
       if (stage < STAGES.length - 1) { stage = STAGES.length - 2; goStage(STAGES.length - 1); }
     } else {
       resting = n ? 'unsure' : 'sad'; react(n ? 'unsure' : 'sad', 2000);
-      say(n ? `${n} of ${total} passing, so you're close! Compare "Expected" and "Your output" on the failing test.`
+      say(last.requirement ? `Your output is right! ${last.requirement}` : n ? `${n} of ${total} passing, so you're close! Compare "Expected" and "Your output" on the failing test.`
             : `None passing yet, and that's okay. Look at the first failing test and check the shape of your output.`, n ? 'unsure' : 'sad', true);
     }
   }
@@ -1555,7 +1584,55 @@ async function gamePlay(gid) {
 
 // ---------- first-run setup ("sign in" for the coaches' brain) ----------
 const coachLabel = s => s.provider === 'ollama' ? `Local · ${s.model}` : `${({ anthropic: 'Claude', openai: 'OpenAI', gemini: 'Gemini' })[s.provider]} · ${s.model}`;
+// "Your coach": what powers the coaches now, a live check, change model, switch to another connected brain, sign out
+async function coachSummary() {
+  const d = await api('/api/coach/connections'), b = d.brain, cur = d.list.find(c => c.id === d.current);
+  const how = id => ({ 'openai:signin': 'Signed in with your ChatGPT plan', 'anthropic:signin': 'Signed in with your Claude account (ant)',
+    'gemini:signin': `Signed in with Google Cloud${d.project ? ` · project ${d.project}` : ''}`, 'ollama:local': 'Runs on this computer with Ollama, free and private' }[id]
+    || `API key ${cur?.key_hint || ''}`.trim());
+  const outLabel = id => id.endsWith(':signin') ? (id === 'openai:signin' ? 'Sign out' : 'Disconnect') : id === 'ollama:local' ? 'Stop using' : 'Remove key';
+  const others = d.list.filter(c => c.id !== d.current);
+  modal(`<div class="cs-card"><div class="kicker dot">Coach setup</div><h3 style="margin:6px 0 14px">Your coach</h3>
+    ${b.off ? `<div class="cs-now off"><div><b>Coaching is off</b><span>You can still solve every problem and run the tests. Connect a coach for hints, reviews and interviews.</span></div></div>
+        <div class="cs-actions"><a href="#/setup/brain"><button class="primary">Connect a coach</button></a></div>`
+      : `<div class="cs-now"><div class="cs-ico">${blob(CAST.sensei.seed, { size: 40, mood: 'happy' })}</div>
+        <div><b>${esc(b.model)}</b><span>${esc(how(d.current))}</span><small id="cs-check" class="cs-check"><span class="spinner"></span>Checking the connection…</small></div></div>
+        <div class="cs-actions"><button class="primary" id="cs-model">Change model</button><a href="#/setup/brain"><button>Switch provider</button></a>
+          <button class="ghost cs-out" data-id="${esc(d.current)}">${outLabel(d.current)}</button></div>`}
+    ${others.length ? `<div class="lbl">Also connected</div><div class="cs-list">${others.map(c => `<div class="cs-row"><div><b>${esc(c.label)}</b>
+        <span>${esc(c.model || '')}${c.key_hint ? ` · ${esc(c.key_hint)}` : ''}</span></div>
+        <button class="cs-use" data-id="${esc(c.id)}">Use this</button><button class="ghost cs-out" data-id="${esc(c.id)}">${outLabel(c.id)}</button></div>`).join('')}</div>` : ''}
+    <div id="cs-msg" class="cs-msg"></div></div>`);
+  $('.modal-box').classList.add('coachbox');
+  if (!b.off) {
+    $('#cs-model').onclick = () => brainPicker(b, coachSummary);
+    api('/api/coach/check', {}).then(r => { const el = $('#cs-check'); if (!el) return;
+      el.className = 'cs-check ' + (r.ok ? 'ok' : 'bad'); el.textContent = r.ok ? '✓ Working' : r.error || 'Not answering'; });
+  }
+  document.querySelectorAll('.cs-use').forEach(x => x.onclick = async () => {
+    x.disabled = true; const r = await api('/api/coach/use', { id: x.dataset.id });
+    if (r.error) { $('#cs-msg').textContent = r.error; x.disabled = false; return; }
+    localStorage.removeItem('coachOff'); coachSummary();
+  });
+  document.querySelectorAll('.cs-out').forEach(x => x.onclick = async () => {
+    const id = x.dataset.id, label = d.list.find(c => c.id === id)?.label || id;
+    const note = { 'anthropic:signin': 'DataDojo will stop using your Claude login. The `ant` tool on this computer stays signed in for other apps; run `ant auth logout` to sign out of it everywhere.',
+      'gemini:signin': 'DataDojo will stop using your Google Cloud login. gcloud stays signed in for other apps; run `gcloud auth application-default revoke` to sign out of it everywhere.',
+      'openai:signin': 'DataDojo deletes its ChatGPT login from this computer. Your ChatGPT account itself is not affected.',
+      'ollama:local': 'The model stays downloaded, so you can switch back any time.' }[id] || 'The saved key is removed from this computer.';
+    if (!await ask(`${outLabel(id)}: ${label}? ${note.replace(/`/g, '')}`, { ok: outLabel(id), seed: CAST.sensei.seed, mood: 'unsure' })) return coachSummary();
+    await api('/api/coach/disconnect', { id });
+    coachSummary();
+    if (id.endsWith(':signin') && id !== 'openai:signin') setTimeout(() => { if ($('#cs-msg')) $('#cs-msg').innerHTML = md(note); }, 50);
+  });
+}
+
 async function setupPage(start = 0) {  // start 1: straight to "what powers your coaches" (from the model label)
+  // paint the setup background in this same frame, before any data loads, so the previous page never shows through
+  if (!$('#app > .setup')) $('#app').innerHTML = '<div class="setup"></div>';
+  if (start === 0 && (await api('/api/setup')).settings.setup_done) {  // set up before: "Your coach" is a popup over home
+    location.replace('#/'); setTimeout(coachSummary, 350); return;
+  }
   let st = await api('/api/setup'), step = start, path = null, provider = 'anthropic', localModel = st.settings.provider === 'ollama' ? st.settings.model : 'gemma2:9b';
   const P = st.providers, steps = ['Welcome', 'Coach brain', 'Connect', 'Ready'];
   let poll = null; cleanups.push(() => clearInterval(poll));
@@ -2065,8 +2142,21 @@ async function interviewReview(id) {
 
 // ---------- modal + router ----------
 let onModalClose = null;
-function modal(html) { onModalClose = null; $('.modal-box').className = 'modal-box'; $('#modal-body').innerHTML = html; $('#modal').hidden = false; }
-function closeModal() { $('#modal').hidden = true; const f = onModalClose; onModalClose = null; f && f(); }
+let modalFade = null;
+function modal(html) {
+  const swap = !$('#modal').hidden && !$('#modal').classList.contains('closing');  // one popup turning into another
+  clearTimeout(modalFade); $('#modal').classList.remove('closing'); onModalClose = null; $('.modal-box').className = 'modal-box'; $('#modal-body').innerHTML = html;
+  if (swap) $('#modal-body').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: 'ease-out' });  // a soft swap, not a hard cut
+  $('#modal').hidden = false; }
+function closeModal(instant = false) {  // fades out (0.2s); instant when the page itself is changing
+  const m = $('#modal');
+  if (instant) { clearTimeout(modalFade); m.classList.remove('closing'); m.hidden = true; }
+  else if (!m.hidden && !m.classList.contains('closing')) {
+    m.classList.add('closing');
+    modalFade = setTimeout(() => { m.hidden = true; m.classList.remove('closing'); }, 200);
+  }
+  const f = onModalClose; onModalClose = null; f && f();
+}
 // themed replacement for confirm(); resolves false on Cancel, ✕, Esc or a click outside
 function ask(text, { ok = 'OK', cancel = 'Cancel', seed, mood = 'shy' } = {}) {
   return new Promise(res => {
@@ -2079,6 +2169,11 @@ function ask(text, { ok = 'OK', cancel = 'Cancel', seed, mood = 'shy' } = {}) {
     $('#ask-ok').focus();
   });
 }
+// "Coach setup" links: once set up, "Your coach" opens as a popup over the current page, like every other card
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href="#/setup"]');
+  if (a && setupKnown) { e.preventDefault(); coachSummary(); }
+});
 $('#modal-x').onclick = closeModal;
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
@@ -2098,7 +2193,7 @@ let firstRoute = true;
 addEventListener('pagehide', () => sessionStorage.setItem('scroll:' + location.hash, scrollY));
 async function route() {
   cleanups.forEach(f => f()); cleanups = [];
-  closeModal();
+  closeModal(true);  // leaving the page: the popup goes at once (a fade would show it over the next page)
   await blobReady;
   let [, page, arg, ...rest] = location.hash.replace(/^#/, '').split('/');
   if (page !== 'setup' && !(await setupDone())) { location.replace('#/setup'); page = 'setup'; }

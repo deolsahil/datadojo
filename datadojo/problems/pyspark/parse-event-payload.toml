@@ -13,7 +13,7 @@ A tracking service lands raw events as `events(event_id, payload)`, where `paylo
 
 Fields may be missing, extra fields may appear, and some payloads are not valid JSON at all (or NULL).
 
-Write `solve(spark, events)` returning `event_id, user_id, country, action, value`:
+Build `result` as `event_id, user_id, country, action, value`:
 
 - `user_id` is an integer, `country` is upper-cased, `value` is a double (NULL when absent).
 - Drop events whose payload cannot be parsed or has no `user.id`.
@@ -26,20 +26,21 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, events):
-    return events
+# events is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, events): ... return it.
+result = events
 """
 solution = """
 from pyspark.sql import functions as F
 
 SCHEMA = "user STRUCT<id INT, country STRING>, action STRING, value DOUBLE"
 
-def solve(spark, events):
-    p = events.select("event_id", F.from_json("payload", SCHEMA).alias("p"))
-    return (p.filter(F.col("p.user.id").isNotNull())
-            .select("event_id", F.col("p.user.id").alias("user_id"),
-                    F.upper("p.user.country").alias("country"),
-                    F.col("p.action").alias("action"), F.col("p.value").alias("value")))
+p = events.select("event_id", F.from_json("payload", SCHEMA).alias("p"))
+
+result = (p.filter(F.col("p.user.id").isNotNull())
+         .select("event_id", F.col("p.user.id").alias("user_id"),
+         F.upper("p.user.country").alias("country"),
+         F.col("p.action").alias("action"), F.col("p.value").alias("value")))
 """
 
 [[tests]]

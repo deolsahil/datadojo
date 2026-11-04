@@ -1,0 +1,24 @@
+title = "Case: a second filter on a partitioned table"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["databricks"]
+statement = """
+An existing Delta table is partitioned by `event_date`. Most queries also filter on `device_id`, and inside a day
+the rows for one device are spread over all of that day's files, so nothing gets skipped.
+"""
+question = "What improves those queries without changing the partitioning?"
+options = [
+  "Partition by `device_id` as well",
+  "`VACUUM events`",
+  "`OPTIMIZE events ZORDER BY (device_id)`",
+  "`CACHE TABLE events`",
+]
+answer = 2
+explain = """
+**Z-ordering** rewrites files inside each partition so rows with nearby `device_id` values sit in the same files.
+The per-file min/max statistics then become narrow, and a filter on `device_id` skips most files. Adding
+`device_id` as a partition column would explode the number of folders, and VACUUM only deletes old files.
+"""

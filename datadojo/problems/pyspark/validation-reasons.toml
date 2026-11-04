@@ -13,7 +13,7 @@ quarantine bad rows and say why. The rules:
 - `bad_status`: `status`, trimmed and lower-cased, is not one of `new`, `paid`, `shipped` (NULL is bad).
 - `missing_date`: `order_date` is NULL.
 
-Write `solve(spark, orders)` returning `order_id, reasons` for rows that fail **at least one** rule.
+Build `result` as `order_id, reasons` for rows that fail **at least one** rule.
 `reasons` is an array of the failed rule names, sorted alphabetically.
 """
 hints = [
@@ -24,23 +24,24 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, orders):
-    return orders
+# orders is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, orders): ... return it.
+result = orders
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, orders):
-    status = F.lower(F.trim("status"))
-    rules = [
-        ("missing_customer", F.col("customer_id").isNull()),
-        ("bad_amount", F.col("amount").isNull() | (F.col("amount") <= 0)),
-        ("bad_status", F.col("status").isNull() | ~status.isin("new", "paid", "shipped")),
-        ("missing_date", F.col("order_date").isNull()),
-    ]
-    reasons = F.array_sort(F.filter(F.array(*[F.when(c, F.lit(n)) for n, c in rules]),
-                                    lambda x: x.isNotNull()))
-    return orders.select("order_id", reasons.alias("reasons")).filter(F.size("reasons") > 0)
+status = F.lower(F.trim("status"))
+rules = [
+    ("missing_customer", F.col("customer_id").isNull()),
+    ("bad_amount", F.col("amount").isNull() | (F.col("amount") <= 0)),
+    ("bad_status", F.col("status").isNull() | ~status.isin("new", "paid", "shipped")),
+    ("missing_date", F.col("order_date").isNull()),
+]
+reasons = F.array_sort(F.filter(F.array(*[F.when(c, F.lit(n)) for n, c in rules]),
+                                lambda x: x.isNotNull()))
+
+result = orders.select("order_id", reasons.alias("reasons")).filter(F.size("reasons") > 0)
 """
 
 [[tests]]

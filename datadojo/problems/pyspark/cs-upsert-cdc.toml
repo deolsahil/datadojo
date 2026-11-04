@@ -1,0 +1,24 @@
+title = "Case: applying CDC to a target table"
+lang = "pyspark"
+kind = "choice"
+difficulty = "easy"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["databricks", "iceberg"]
+statement = """
+Every hour you receive a batch of inserts, updates and deletes from an OLTP database and must apply it to a
+lakehouse table, atomically.
+"""
+question = "Which statement fits?"
+options = [
+  "`INSERT OVERWRITE` the whole table every hour",
+  "Append the changes and let readers deduplicate",
+  "`TRUNCATE` and reload",
+  "`MERGE INTO target USING changes ON key ... WHEN MATCHED ... WHEN NOT MATCHED ...`",
+]
+answer = 3
+explain = """
+**MERGE INTO** applies inserts, updates and deletes in a single ACID transaction on both Delta and Iceberg.
+Deduplicate the batch first (keep the latest change per key), or the MERGE fails when several source rows match
+one target row. Overwriting or reloading the whole table every hour wastes compute and loses history.
+"""

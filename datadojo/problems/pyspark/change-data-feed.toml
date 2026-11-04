@@ -1,0 +1,52 @@
+title = "Change data feed between versions"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-lakehouse"
+lists = ["pyspark-de", "lakehouse"]
+tags = ["databricks", "iceberg"]
+function = "solve"
+statement = """
+Delta's **Change Data Feed** (`table_changes`) and Iceberg's changelog view report row-level changes between
+two versions. An update is reported as two rows: the old values (`update_preimage`) and the new values
+(`update_postimage`).
+
+`v1(id, plan, seats)` and `v2(id, plan, seats)` are the table at two consecutive versions (`id` is unique;
+`plan` can be NULL).
+
+Build `result` as `id, plan, seats, _change_type` with:
+- `insert` for ids only in `v2` (new values), `delete` for ids only in `v1` (old values),
+- for ids in both whose `plan` or `seats` changed (NULL vs NULL is no change): an `update_preimage` row with
+  the `v1` values and an `update_postimage` row with the `v2` values.
+Unchanged rows produce nothing.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# v1 and v2 are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, v1, v2): ... return it.
+result = v1
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+a, b = v1.alias("a"), v2.alias("b")
+j = a.join(b, F.col("a.id") == F.col("b.id"), "full")
+changed = ~(F.col("a.plan").eqNullSafe(F.col("b.plan")) & F.col("a.seats").eqNullSafe(F.col("b.seats")))
+old = [F.col("a.id").alias("id"), F.col("a.plan").alias("plan"), F.col("a.seats").alias("seats")]
+new = [F.col("b.id").alias("id"), F.col("b.plan").alias("plan"), F.col("b.seats").alias("seats")]
+ins = j.filter(F.col("a.id").isNull()).select(*new, F.lit("insert").alias("_change_type"))
+dele = j.filter(F.col("b.id").isNull()).select(*old, F.lit("delete").alias("_change_type"))
+both = j.filter(F.col("a.id").isNotNull() & F.col("b.id").isNotNull() & changed)
+pre = both.select(*old, F.lit("update_preimage").alias("_change_type"))
+post = both.select(*new, F.lit("update_postimage").alias("_change_type"))
+
+result = ins.unionByName(dele).unionByName(pre).unionByName(post)
+"""
+
+[[tests]]
+tables.v1 = { columns = "id INT, plan STRING, seats INT", rows = "[[1, \"free\", 1], [2, \"pro\", 5], [3, \"team\", 20], [4, null, 2], [5, \"pro\", 3]]" }
+tables.v2 = { columns = "id INT, plan STRING, seats INT", rows = "[[1, \"free\", 1], [2, \"pro\", 8], [4, null, 2], [5, null, 3], [6, \"team\", 10]]" }
+
+[[tests]]
+tables.v1 = { columns = "id INT, plan STRING, seats INT", rows = [[1, "pro", 1]] }
+tables.v2 = { columns = "id INT, plan STRING, seats INT", rows = [[1, "pro", 1]] }

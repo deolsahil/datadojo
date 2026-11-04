@@ -1,0 +1,25 @@
+title = "Case: a GDPR erasure request"
+lang = "pyspark"
+kind = "choice"
+difficulty = "hard"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["databricks"]
+statement = """
+A user asks to be forgotten. You run `DELETE FROM events WHERE user_id = 42` on a Delta table with deletion
+vectors enabled. Legal asks whether the data is gone from storage.
+"""
+question = "Is it, and what else is needed?"
+options = [
+  "Yes, DELETE removes the bytes immediately",
+  "Not yet: the rows are only masked or the old files are still kept for time travel. Rewrite the files (`REORG TABLE ... APPLY (PURGE)` with deletion vectors), then `VACUUM` once the retention has passed",
+  "Only `OPTIMIZE` is needed",
+  "Drop and recreate the table",
+]
+answer = 1
+explain = """
+With **deletion vectors**, DELETE just marks rows as deleted, and the old Parquet files still contain them.
+Even without deletion vectors, the pre-delete files remain for time travel. To erase physically: rewrite the
+affected files (`REORG TABLE t APPLY (PURGE)`), then **VACUUM** after the retention window so the old files are
+removed. Document how long that takes for your compliance team.
+"""

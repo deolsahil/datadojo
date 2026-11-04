@@ -246,8 +246,9 @@ def track_of(p, catalog):
 
 def start(track, level, problems, catalog, solved):
     difficulty = LEVEL_DIFFICULTY.get(level, "medium")
-    pool = [p for p in problems.values() if track_of(p, catalog) == track and p["difficulty"] == difficulty]
-    pool = pool or [p for p in problems.values() if track_of(p, catalog) == track]
+    coding = [p for p in problems.values() if p.get("kind") != "choice"]  # a round is a coding problem, never a case study
+    pool = [p for p in coding if track_of(p, catalog) == track and p["difficulty"] == difficulty]
+    pool = pool or [p for p in coding if track_of(p, catalog) == track]
     fresh = [p for p in pool if p["id"] not in solved] or pool  # prefer something new
     p = random.choice(fresh)
     key = "ml-rag" if track == "ml" and p["pattern"] == "ai-retrieval" else track

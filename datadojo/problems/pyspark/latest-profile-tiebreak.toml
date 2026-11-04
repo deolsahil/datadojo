@@ -12,7 +12,7 @@ Keep exactly **one** row per user, chosen deterministically:
 2. If tied, the higher `batch_seq` wins.
 3. If still tied, the alphabetically smallest `email` wins.
 
-Write `solve(spark, profiles)` returning `user_id, email, updated_at`.
+Build `result` as `user_id, email, updated_at`.
 """
 hints = [
   "`F.row_number()` over `Window.partitionBy(\"user_id\")`, keeping row 1.",
@@ -21,17 +21,18 @@ hints = [
 starter = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, profiles):
-    return profiles.select("user_id", "email", "updated_at")
+# profiles is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, profiles): ... return it.
+result = profiles
 """
 solution = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, profiles):
-    w = Window.partitionBy("user_id").orderBy(
-        F.col("updated_at").desc_nulls_last(), F.col("batch_seq").desc(), F.col("email").asc())
-    return (profiles.withColumn("rn", F.row_number().over(w)).filter("rn = 1")
-            .select("user_id", "email", "updated_at"))
+w = Window.partitionBy("user_id").orderBy(
+    F.col("updated_at").desc_nulls_last(), F.col("batch_seq").desc(), F.col("email").asc())
+
+result = (profiles.withColumn("rn", F.row_number().over(w)).filter("rn = 1")
+         .select("user_id", "email", "updated_at"))
 """
 
 [[tests]]

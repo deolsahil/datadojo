@@ -2,14 +2,15 @@ title = "Apply a change feed to a snapshot"
 lang = "pyspark"
 difficulty = "medium"
 pattern = "spark-dedup-scd"
-lists = ["pyspark-de"]
+lists = ["pyspark-de", "lakehouse"]
+tags = ["databricks", "iceberg"]  # MERGE INTO on Delta / Iceberg
 function = "solve"
 statement = """
 You have yesterday's table `base(id, name, amount)` and the changes captured since:
 `changes(id, op, seq, name, amount)`. `op` is `I` (insert), `U` (update) or `D` (delete), each change
 carries the full row, and `seq` orders changes per id. Changes arrive out of order.
 
-Write `solve(spark, base, changes)` returning today's table `id, name, amount`:
+Build `result` as today's table `id, name, amount`:
 
 - Only the change with the highest `seq` per id matters.
 - If it is `D`, the id is gone (whether or not it was in `base`).
@@ -24,18 +25,19 @@ hints = [
 starter = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, base, changes):
-    return base
+# base and changes are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, base, changes): ... return it.
+result = base
 """
 solution = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, base, changes):
-    w = Window.partitionBy("id").orderBy(F.col("seq").desc())
-    last = changes.withColumn("rn", F.row_number().over(w)).filter("rn = 1")
-    untouched = base.join(last.select("id"), "id", "left_anti")
-    upserts = last.filter(F.col("op") != "D").select("id", "name", "amount")
-    return untouched.unionByName(upserts)
+w = Window.partitionBy("id").orderBy(F.col("seq").desc())
+last = changes.withColumn("rn", F.row_number().over(w)).filter("rn = 1")
+untouched = base.join(last.select("id"), "id", "left_anti")
+upserts = last.filter(F.col("op") != "D").select("id", "name", "amount")
+
+result = untouched.unionByName(upserts)
 """
 
 [[tests]]

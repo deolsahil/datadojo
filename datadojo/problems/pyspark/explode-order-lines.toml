@@ -7,7 +7,7 @@ statement = """
 `orders(order_id, skus)`: `skus` is an `ARRAY<STRING>` of the items on the order, in cart order.
 It can be empty or NULL, and it can contain NULL elements.
 
-Write `solve(spark, orders)` returning one row per line item: `order_id, line_no, sku`.
+Build `result` as one row per line item: `order_id, line_no, sku`.
 
 - `line_no` is the 1-based position of the item in the array.
 - Repeated SKUs are separate lines. A NULL element is still a line (with `sku` NULL).
@@ -20,15 +20,16 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, orders):
-    return orders
+# orders is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, orders): ... return it.
+result = orders
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, orders):
-    e = orders.select("order_id", F.posexplode_outer("skus").alias("pos", "sku"))
-    return e.select("order_id", (F.col("pos") + 1).alias("line_no"), "sku")
+e = orders.select("order_id", F.posexplode_outer("skus").alias("pos", "sku"))
+
+result = e.select("order_id", (F.col("pos") + 1).alias("line_no"), "sku")
 """
 
 [[tests]]

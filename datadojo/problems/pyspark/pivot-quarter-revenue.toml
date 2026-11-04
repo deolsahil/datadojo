@@ -6,7 +6,7 @@ function = "solve"
 statement = """
 Finance wants a Q1 2024 crosstab from `sales(region, sale_date, amount)`.
 
-Write `solve(spark, sales)` returning `region, jan, feb, mar`:
+Build `result` as `region, jan, feb, mar`:
 
 - Each month column is that region's total `amount` for that month of **2024**, rounded to 2 decimals,
   or `0.0` when there were no sales that month.
@@ -21,21 +21,22 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, sales):
-    return sales
+# sales is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, sales): ... return it.
+result = sales
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, sales):
-    s = sales.withColumn("region", F.coalesce("region", F.lit("unknown")))
-    regions = s.select("region").distinct()
-    q1 = s.filter((F.col("sale_date") >= "2024-01-01") & (F.col("sale_date") < "2024-04-01"))
-    p = (q1.withColumn("m", F.month("sale_date")).groupBy("region")
-         .pivot("m", [1, 2, 3]).agg(F.round(F.sum("amount"), 2)))
-    out = regions.join(p, "region", "left")
-    return out.select("region", *[F.coalesce(F.col(str(m)), F.lit(0.0)).alias(n)
-                                  for m, n in [(1, "jan"), (2, "feb"), (3, "mar")]])
+s = sales.withColumn("region", F.coalesce("region", F.lit("unknown")))
+regions = s.select("region").distinct()
+q1 = s.filter((F.col("sale_date") >= "2024-01-01") & (F.col("sale_date") < "2024-04-01"))
+p = (q1.withColumn("m", F.month("sale_date")).groupBy("region")
+     .pivot("m", [1, 2, 3]).agg(F.round(F.sum("amount"), 2)))
+out = regions.join(p, "region", "left")
+
+result = out.select("region", *[F.coalesce(F.col(str(m)), F.lit(0.0)).alias(n)
+         for m, n in [(1, "jan"), (2, "feb"), (3, "mar")]])
 """
 
 [[tests]]

@@ -10,7 +10,7 @@ Two vendors send the same kind of payment record with different schemas:
   dollars like `"12.50"`, and `event_day` is either `yyyy-MM-dd` or `MM/dd/yyyy`.
 - `feed_b(customer, amount_cents, event_date)`: typed, with the amount in **cents**.
 
-Write `solve(spark, feed_a, feed_b)` returning one unified table
+Build `result` as one unified table
 `customer_id, amount, event_date, source`:
 
 - `customer_id` INT, `amount` DOUBLE in dollars rounded to 2 decimals, `event_date` DATE,
@@ -26,25 +26,26 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, feed_a, feed_b):
-    return feed_b
+# feed_a and feed_b are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, feed_a, feed_b): ... return it.
+result = feed_a
 """
 solution = '''
 from pyspark.sql import functions as F
 
-def solve(spark, feed_a, feed_b):
-    d = F.trim("event_day")
-    a = feed_a.select(
-        F.trim("cust_id").cast("int").alias("customer_id"),
-        F.round(F.trim("amt").cast("double"), 2).alias("amount"),
-        F.when(d.rlike(r"^\d{2}/\d{2}/\d{4}$"), F.to_date(d, "MM/dd/yyyy"))
-         .when(d.rlike(r"^\d{4}-\d{2}-\d{2}$"), F.to_date(d, "yyyy-MM-dd")).alias("event_date"),
-        F.lit("a").alias("source"))
-    b = feed_b.select(
-        F.col("customer").alias("customer_id"),
-        F.round(F.col("amount_cents") / 100, 2).alias("amount"),
-        F.col("event_date"), F.lit("b").alias("source"))
-    return a.unionByName(b).dropna()
+d = F.trim("event_day")
+a = feed_a.select(
+    F.trim("cust_id").cast("int").alias("customer_id"),
+    F.round(F.trim("amt").cast("double"), 2).alias("amount"),
+    F.when(d.rlike(r"^\d{2}/\d{2}/\d{4}$"), F.to_date(d, "MM/dd/yyyy"))
+     .when(d.rlike(r"^\d{4}-\d{2}-\d{2}$"), F.to_date(d, "yyyy-MM-dd")).alias("event_date"),
+    F.lit("a").alias("source"))
+b = feed_b.select(
+    F.col("customer").alias("customer_id"),
+    F.round(F.col("amount_cents") / 100, 2).alias("amount"),
+    F.col("event_date"), F.lit("b").alias("source"))
+
+result = a.unionByName(b).dropna()
 '''
 
 [[tests]]

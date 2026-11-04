@@ -1,0 +1,24 @@
+title = "Case: a bad overwrite an hour ago"
+lang = "pyspark"
+kind = "choice"
+difficulty = "easy"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["databricks", "iceberg"]
+statement = """
+A buggy job overwrote a production table with half-empty data an hour ago. Downstream reports are wrong and you
+need yesterday's state back now.
+"""
+question = "What is the fastest fix?"
+options = [
+  "Re-run every upstream job from scratch",
+  "`VACUUM` the table",
+  "Restore the previous version: `RESTORE TABLE t TO VERSION AS OF n` on Delta, `rollback_to_snapshot` on Iceberg",
+  "Recreate the table from last week's backup",
+]
+answer = 2
+explain = """
+Table formats keep **old versions** (time travel) until they are vacuumed or expired. Restoring is a metadata
+operation that points the table back at the old files, so it takes seconds. Look up the version with
+`DESCRIBE HISTORY` (Delta) or the snapshots table (Iceberg). VACUUM would delete exactly the files you need.
+"""

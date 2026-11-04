@@ -1,0 +1,23 @@
+title = "Case: the same result computed five times"
+lang = "pyspark"
+kind = "choice"
+difficulty = "easy"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+A notebook reads a 300 GB table, filters and joins it into `active_users`, then runs five different
+aggregations and writes on `active_users`. The Spark UI shows the read, filter and join running five times.
+"""
+question = "What should you do?"
+options = [
+  "Call `collect()` on `active_users`",
+  "Increase driver memory",
+  "Use `repartition(1)`",
+  "`active_users.cache()` (or `persist()`) before the five actions, and `unpersist()` after",
+]
+answer = 3
+explain = """
+Spark is lazy: every action recomputes the whole lineage. **Cache** a DataFrame that several actions reuse, so it
+is computed once and kept in executor memory (or memory and disk with `persist(StorageLevel.MEMORY_AND_DISK)`).
+Unpersist it when done to free the memory. `collect()` pulls everything to the driver, which fails at this size.
+"""

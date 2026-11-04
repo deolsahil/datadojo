@@ -1,0 +1,43 @@
+title = "Salted join for a skewed key"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+function = "solve"
+statement = """
+`clicks(user_id, amount)` is skewed: one `user_id` has most of the rows, so a plain join on `user_id` sends
+them all to one task (one huge partition, spills, a straggler). `users(user_id, country)` is small.
+
+Build `result` as `country, total_amount, clicks`: the total `amount` and number
+of clicks per country. Clicks whose `user_id` is not in `users` are dropped.
+
+Do it with **salting**: give every click a random salt `0..7`, copy each user row once per salt, and join on
+`(user_id, salt)` so the hot key is spread over 8 tasks. The result must be the same as a plain join.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# clicks and users are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, clicks, users): ... return it.
+result = clicks
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+SALTS = 8
+
+salted_clicks = clicks.withColumn("salt", (F.rand(7) * SALTS).cast("int"))  # spread each key over 8 buckets
+salted_users = users.withColumn("salt", F.explode(F.array(*[F.lit(i) for i in range(SALTS)])))  # one copy per bucket
+
+result = (salted_clicks.join(salted_users, ["user_id", "salt"])
+         .groupBy("country")
+         .agg(F.sum("amount").alias("total_amount"), F.count("*").alias("clicks")))
+"""
+
+[[tests]]
+tables.clicks = { columns = "user_id INT, amount INT", rows = [[1, 5], [1, 5], [1, 5], [1, 5], [1, 5], [1, 5], [1, 5], [1, 5], [1, 5], [1, 5], [1, 5], [1, 5], [1, 3], [1, 3], [1, 3], [1, 3], [1, 3], [1, 3], [2, 10], [3, 4], [3, 6], [4, 1], [9, 50]] }
+tables.users = { columns = "user_id INT, country STRING", rows = [[1, "IN"], [2, "US"], [3, "US"], [4, "DE"]] }
+
+[[tests]]
+tables.clicks = { columns = "user_id INT, amount INT", rows = [[7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [7, 2], [8, 1]] }
+tables.users = { columns = "user_id INT, country STRING", rows = [[7, "FR"], [8, "FR"], [5, "JP"]] }

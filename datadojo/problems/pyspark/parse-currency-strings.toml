@@ -9,7 +9,7 @@ A payments CSV landed with the amount as text: `payments(payment_id, amount_raw)
 `"$1,234.50"`, `"  99 "`, `"-5"`, accounting-style negatives such as `"(12.00)"`, and junk such as
 `"N/A"`, `""` or NULL.
 
-Write `solve(spark, payments)` returning `payment_id, amount` (a double, rounded to 2 decimals):
+Build `result` as `payment_id, amount` (a double, rounded to 2 decimals):
 
 - trim surrounding spaces and drop `$` and `,`
 - a value wrapped in parentheses is negative: `"($7.10)"` is `-7.1`
@@ -25,18 +25,19 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, payments):
-    return payments
+# payments is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, payments): ... return it.
+result = payments
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, payments):
-    s = F.trim("amount_raw")
-    neg = s.startswith("(") & s.endswith(")")
-    num = F.regexp_replace(s, "[$,()]", "").cast("double")
-    amount = F.when(neg, -num).otherwise(num)
-    return payments.select("payment_id", F.round(amount, 2).alias("amount"))
+s = F.trim("amount_raw")
+neg = s.startswith("(") & s.endswith(")")
+num = F.regexp_replace(s, "[$,()]", "").cast("double")
+amount = F.when(neg, -num).otherwise(num)
+
+result = payments.select("payment_id", F.round(amount, 2).alias("amount"))
 """
 
 [[tests]]

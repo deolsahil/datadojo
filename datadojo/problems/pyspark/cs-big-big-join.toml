@@ -1,0 +1,24 @@
+title = "Case: two huge tables, joined every day"
+lang = "pyspark"
+kind = "choice"
+difficulty = "hard"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+`transactions` (5 TB) and `accounts` (800 GB) are joined on `account_id` by a dozen jobs every day. Both are
+too big to broadcast, and every job pays for a full shuffle of both sides.
+"""
+question = "What removes the repeated shuffle?"
+options = [
+  "Broadcast `accounts`",
+  "Run each job with more executors",
+  "Convert both tables to CSV",
+  "Write both tables **bucketed** by `account_id` into the same number of buckets, so the join needs no shuffle",
+]
+answer = 3
+explain = """
+**Bucketing** (`bucketBy(n, "account_id")` with `saveAsTable`) shuffles the data once at write time. Later joins
+on the bucket key with matching bucket counts read bucket i of each table together, with no exchange in the
+plan. On Delta tables, liquid clustering on the join key gives a similar benefit. 800 GB is far too big to
+broadcast, and more executors only make the shuffle faster, not unnecessary.
+"""

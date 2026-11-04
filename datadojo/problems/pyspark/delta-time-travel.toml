@@ -1,0 +1,51 @@
+title = "Time travel: rebuild a version"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-lakehouse"
+lists = ["pyspark-de", "lakehouse"]
+tags = ["databricks", "iceberg"]
+function = "solve"
+statement = """
+A Delta table is a set of data files plus a transaction log. Each commit (`version`) **adds** or **removes**
+whole files; a removed file is never re-added. Iceberg snapshots work the same way.
+
+- `log(version, action, file)`: `action` is `add` or `remove`.
+- `files(file, id, amount)`: the rows inside each data file.
+- `as_of(version)`: one row, the version to read (`SELECT * FROM t VERSION AS OF n`).
+
+Build `result` as `id, amount`: the table's rows at that version, meaning the
+rows of every file added at or before it and not removed at or before it.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# log, files and as_of are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, log, files, as_of): ... return it.
+result = log
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+v = as_of.first()["version"]
+upto = log.filter(F.col("version") <= v)
+added = upto.filter(F.col("action") == "add").select("file")
+removed = upto.filter(F.col("action") == "remove").select("file")
+live = added.join(removed, "file", "left_anti")  # added and still there
+
+result = files.join(live, "file").select("id", "amount")
+"""
+
+[[tests]]
+tables.log = { columns = "version INT, action STRING, file STRING", rows = [[0, "add", "a.parquet"], [0, "add", "b.parquet"], [1, "add", "c.parquet"], [2, "remove", "a.parquet"], [2, "add", "a2.parquet"], [3, "remove", "c.parquet"]] }
+tables.files = { columns = "file STRING, id INT, amount INT", rows = [["a.parquet", 1, 10], ["a.parquet", 2, 20], ["b.parquet", 3, 30], ["c.parquet", 4, 40], ["a2.parquet", 1, 11], ["a2.parquet", 2, 20]] }
+tables.as_of = { columns = "version INT", rows = [[2]] }
+
+[[tests]]
+tables.log = { columns = "version INT, action STRING, file STRING", rows = [[0, "add", "a.parquet"], [1, "remove", "a.parquet"], [1, "add", "b.parquet"]] }
+tables.files = { columns = "file STRING, id INT, amount INT", rows = [["a.parquet", 1, 5], ["b.parquet", 1, 6]] }
+tables.as_of = { columns = "version INT", rows = [[0]] }
+
+[[tests]]
+tables.log = { columns = "version INT, action STRING, file STRING", rows = [[0, "add", "a.parquet"], [1, "remove", "a.parquet"]] }
+tables.files = { columns = "file STRING, id INT, amount INT", rows = [["a.parquet", 1, 5]] }
+tables.as_of = { columns = "version INT", rows = [[1]] }

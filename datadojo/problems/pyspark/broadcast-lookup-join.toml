@@ -1,0 +1,39 @@
+title = "Broadcast a small lookup table"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+function = "solve"
+requires = { plan = "Broadcast join", say = "Spark ran a sort-merge join, which shuffles the big orders table. Wrap the small table in F.broadcast(...) so it is copied to every executor instead." }
+statement = """
+`orders(order_id, country_code, amount)` is large; `countries(code, region)` has a few hundred rows.
+
+Build `result` as `region, orders, revenue` (count and total `amount` per
+region). Orders with a code that is not in `countries` count under the region `Unknown`.
+
+Use a **broadcast join** (`F.broadcast(countries)`): the small table is copied to every executor, so the large
+one is never shuffled. Compare the two in the execution map after you solve it.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# orders and countries are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, orders, countries): ... return it.
+result = orders
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+result = (orders.join(F.broadcast(countries), orders.country_code == countries.code, "left")
+         .withColumn("region", F.coalesce("region", F.lit("Unknown")))
+         .groupBy("region")
+         .agg(F.count("*").alias("orders"), F.sum("amount").alias("revenue")))
+"""
+
+[[tests]]
+tables.orders = { columns = "order_id INT, country_code STRING, amount INT", rows = [[1, "IN", 100], [2, "US", 50], [3, "IN", 25], [4, "BR", 70], [5, "XX", 5], [6, "DE", 40]] }
+tables.countries = { columns = "code STRING, region STRING", rows = [["IN", "APAC"], ["US", "AMER"], ["BR", "AMER"], ["DE", "EMEA"]] }
+
+[[tests]]
+tables.orders = { columns = "order_id INT, country_code STRING, amount INT", rows = [[1, "ZZ", 9]] }
+tables.countries = { columns = "code STRING, region STRING", rows = [["IN", "APAC"]] }

@@ -1,0 +1,24 @@
+title = "Case: joining a tiny lookup table"
+lang = "pyspark"
+kind = "choice"
+difficulty = "easy"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+`events` is 2 TB. Every query joins it with `country_codes`, a 5 MB table, to add a region. The plan shows a
+sort-merge join with a shuffle of all 2 TB.
+"""
+question = "What should the join be?"
+options = [
+  "A broadcast join: send `country_codes` to every executor so `events` is never shuffled",
+  "A bucketed join on `country_code`",
+  "A cross join followed by a filter",
+  "Repartition `events` by `country_code` first",
+]
+answer = 0
+explain = """
+When one side is small (a few MB up to a few hundred MB), **broadcast** it: every executor gets a full copy and
+joins locally, so the 2 TB side never moves. Spark does this on its own below
+`spark.sql.autoBroadcastJoinThreshold` (10 MB by default), and `F.broadcast(df)` forces it. Bucketing helps big
+tables joined repeatedly; repartitioning still shuffles the 2 TB.
+"""

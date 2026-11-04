@@ -1,0 +1,23 @@
+title = "Case: 200 tiny tasks after every shuffle"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+After a `groupBy`, a job's output is about 400 MB, but it always runs 200 shuffle tasks of roughly 2 MB each, and
+then writes 200 small files. The data size changes a lot from day to day.
+"""
+question = "What is the best fix?"
+options = [
+  "Hard-code `spark.sql.shuffle.partitions = 4`",
+  "Add `cache()` after the groupBy",
+  "Switch to the RDD API",
+  "Use Adaptive Query Execution: it **coalesces** small shuffle partitions at runtime based on the real data size",
+]
+answer = 3
+explain = """
+200 is just the default for `spark.sql.shuffle.partitions`. With **AQE** (`spark.sql.adaptive.enabled`, on by
+default since Spark 3.2), Spark looks at the actual shuffle sizes and merges small partitions into fewer, sensibly
+sized ones. A fixed small number breaks on the days the data is large.
+"""

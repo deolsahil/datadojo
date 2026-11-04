@@ -11,7 +11,7 @@ Inventory and pricing are keyed by `(sku, region)`. Online-only stock has no reg
 - `inventory(sku, region, on_hand)`
 - `prices(sku, region, price)`: at most one row per `(sku, region)`, NULL region included.
 
-Write `solve(spark, inventory, prices)` returning `sku, region, on_hand, price` with one row per
+Build `result` as `sku, region, on_hand, price` with one row per
 inventory row. `price` is NULL when no price row matches. A NULL region matches only a NULL region.
 """
 hints = [
@@ -22,16 +22,17 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, inventory, prices):
-    return inventory.join(prices, ["sku", "region"], "left").select("sku", "region", "on_hand", "price")
+# inventory and prices are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, inventory, prices): ... return it.
+result = inventory
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, inventory, prices):
-    i, p = inventory.alias("i"), prices.alias("p")
-    on = (F.col("i.sku") == F.col("p.sku")) & F.col("i.region").eqNullSafe(F.col("p.region"))
-    return i.join(p, on, "left").select("i.sku", "i.region", "i.on_hand", "p.price")
+i, p = inventory.alias("i"), prices.alias("p")
+on = (F.col("i.sku") == F.col("p.sku")) & F.col("i.region").eqNullSafe(F.col("p.region"))
+
+result = i.join(p, on, "left").select("i.sku", "i.region", "i.on_hand", "p.price")
 """
 
 [[tests]]

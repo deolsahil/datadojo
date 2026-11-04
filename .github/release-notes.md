@@ -1,4 +1,25 @@
-## What's new in 0.3.5
+## What's new in 0.3.6
+
+**🏞️ Lakehouse: Delta, Databricks & Iceberg**
+- 12 new PySpark problems: time travel by version and timestamp, which files VACUUM deletes, Z-order keys, data skipping with file statistics, OPTIMIZE compaction, liquid clustering layout, Change Data Feed, Iceberg hidden partitioning and partition evolution, plus salted skew joins and broadcast joins.
+- Problems show **Databricks** and **Iceberg** tags, and a new *Lakehouse* list collects them.
+- Some problems check Spark's real plan: the broadcast-join problem only passes when your join is actually broadcast.
+
+**🧩 Spark case studies**
+- 22 real situations (a skewed join, a slow table, a bad overwrite, a GDPR delete…): pick what you'd use and see why. Covers skew, broadcast, bucketing, caching, AQE, spill, partitioning, compaction, restores and Iceberg features.
+
+**📓 Notebook-style PySpark**
+- Write PySpark the way you would in a notebook: your input tables are already DataFrames, put the answer in `result`. A `solve(spark, ...)` function still works.
+
+**🤖 Coach setup**
+- Coach setup shows your current coach with a live check, lets you change the model or switch provider, and keeps your other connections (ChatGPT, Claude, Gemini, API keys, local models) for one-click switching.
+- Sign out of ChatGPT, or disconnect any coach, from the same place.
+- The model label now shows only next to the coach on problem pages, and local models show there too.
+
+**✨ Also**
+- Popups open and change smoothly, without flicker. Fixed the button shine sliding out of buttons on some Macs.
+
+## New in 0.3.5
 
 - **Update from inside the app.** A notification tells you when a new version is out. Click Update and DataDojo downloads it in the background with a progress bar (the coaches race to the finish line while you wait), then restarts when you're ready. Choose Later and it installs the next time you quit.
 - **Switch your coach model in one click.** Click the model label on the home page or next to a coach to pick another model from your plan or key: OpenAI, Claude, Gemini or a local model.

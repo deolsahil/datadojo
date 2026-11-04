@@ -1,0 +1,47 @@
+title = "Iceberg partition evolution"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-lakehouse"
+lists = ["pyspark-de", "lakehouse"]
+tags = ["iceberg"]
+function = "solve"
+statement = """
+Iceberg can **change a table's partitioning** without rewriting old data: files written before the change keep
+the old spec, new files use the new one, and queries prune both correctly.
+
+The table was partitioned by `months(ts)` and later changed to `days(ts)`.
+`data_files(file, spec, partition)` lists the files: `spec` is `month` (partition like `2024-03`) or `day`
+(partition like `2024-04-02`). `query(day_from, day_to)` is one row: `WHERE ts` falls on a day in that range.
+
+Build `result` as the `file` names that must be read: files whose partition's
+days overlap the range (a month partition covers every day of that month).
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# data_files and query are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, data_files, query): ... return it.
+result = data_files
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+start = F.when(F.col("spec") == "month", F.to_date(F.concat("partition", F.lit("-01")))).otherwise(F.to_date("partition"))
+end = F.when(F.col("spec") == "month", F.last_day(start)).otherwise(start)
+
+result = (data_files.crossJoin(query)
+         .filter((start <= F.col("day_to")) & (end >= F.col("day_from")))
+         .select("file"))
+"""
+
+[[tests]]
+tables.data_files = { columns = "file STRING, spec STRING, partition STRING", rows = [["m1", "month", "2024-02"], ["m2", "month", "2024-03"], ["d1", "day", "2024-04-01"], ["d2", "day", "2024-04-02"], ["d3", "day", "2024-04-09"]] }
+tables.query = { columns = "day_from DATE, day_to DATE", rows = [["2024-03-31", "2024-04-02"]] }
+
+[[tests]]
+tables.data_files = { columns = "file STRING, spec STRING, partition STRING", rows = [["m1", "month", "2024-02"], ["d1", "day", "2024-02-29"]] }
+tables.query = { columns = "day_from DATE, day_to DATE", rows = [["2024-02-29", "2024-02-29"]] }
+
+[[tests]]
+tables.data_files = { columns = "file STRING, spec STRING, partition STRING", rows = [["m1", "month", "2024-01"]] }
+tables.query = { columns = "day_from DATE, day_to DATE", rows = [["2024-02-01", "2024-02-05"]] }

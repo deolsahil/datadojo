@@ -12,7 +12,7 @@ leave fields blank. Business rules:
 - a missing `discount_pct` means no discount (0)
 - a missing `unit_price` cannot be fixed: `line_total` stays NULL
 
-Write `solve(spark, order_lines)` returning `line_id, qty, line_total` where `qty` is the filled
+Build `result` as `line_id, qty, line_total` where `qty` is the filled
 quantity and `line_total = unit_price * qty * (1 - discount_pct / 100)` rounded to 2 decimals.
 """
 hints = [
@@ -22,17 +22,18 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, order_lines):
-    return order_lines.select("line_id", "qty", "unit_price")
+# order_lines is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, order_lines): ... return it.
+result = order_lines
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, order_lines):
-    qty = F.coalesce("qty", F.lit(1))
-    disc = F.coalesce("discount_pct", F.lit(0.0))
-    total = F.round(F.col("unit_price") * qty * (1 - disc / 100), 2)
-    return order_lines.select("line_id", qty.alias("qty"), total.alias("line_total"))
+qty = F.coalesce("qty", F.lit(1))
+disc = F.coalesce("discount_pct", F.lit(0.0))
+total = F.round(F.col("unit_price") * qty * (1 - disc / 100), 2)
+
+result = order_lines.select("line_id", qty.alias("qty"), total.alias("line_total"))
 """
 
 [[tests]]

@@ -7,7 +7,7 @@ statement = """
 `pages(page_id, path)` holds URL paths from a web crawl, e.g. `/docs/spark/sql/`. Paths are messy:
 leading, trailing and doubled slashes all occur, and `path` can be empty or NULL.
 
-Write `solve(spark, pages)` returning `page_id, depth, section`:
+Build `result` as `page_id, depth, section`:
 
 - A path's **segments** are the non-empty pieces between `/` characters.
 - `depth` is the number of segments (0 for `/`, `""` or NULL; never negative).
@@ -21,15 +21,16 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, pages):
-    return pages
+# pages is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, pages): ... return it.
+result = pages
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, pages):
-    segs = F.filter(F.split(F.coalesce("path", F.lit("")), "/"), lambda s: s != "")
-    return pages.select("page_id", F.size(segs).alias("depth"), F.lower(segs[0]).alias("section"))
+segs = F.filter(F.split(F.coalesce("path", F.lit("")), "/"), lambda s: s != "")
+
+result = pages.select("page_id", F.size(segs).alias("depth"), F.lower(segs[0]).alias("section"))
 """
 
 [[tests]]

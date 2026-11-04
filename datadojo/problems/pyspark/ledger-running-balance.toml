@@ -9,7 +9,7 @@ statement = """
 account starts at 0. Several transactions can share a timestamp (batch posting); they are applied
 in `txn_id` order.
 
-Write `solve(spark, ledger)` returning `account_id, txn_id, balance, overdrawn` where `balance` is the
+Build `result` as `account_id, txn_id, balance, overdrawn` where `balance` is the
 account balance right after that transaction (rounded to 2 decimals) and `overdrawn` is true when
 that balance is below 0.
 """
@@ -21,17 +21,18 @@ hints = [
 starter = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, ledger):
-    return ledger.select("account_id", "txn_id", "amount", F.col("amount") < 0)
+# ledger is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, ledger): ... return it.
+result = ledger
 """
 solution = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, ledger):
-    w = (Window.partitionBy("account_id").orderBy("ts", "txn_id")
-         .rowsBetween(Window.unboundedPreceding, Window.currentRow))
-    bal = F.round(F.sum("amount").over(w), 2)
-    return ledger.select("account_id", "txn_id", bal.alias("balance"), (bal < 0).alias("overdrawn"))
+w = (Window.partitionBy("account_id").orderBy("ts", "txn_id")
+     .rowsBetween(Window.unboundedPreceding, Window.currentRow))
+bal = F.round(F.sum("amount").over(w), 2)
+
+result = ledger.select("account_id", "txn_id", bal.alias("balance"), (bal < 0).alias("overdrawn"))
 """
 
 [[tests]]

@@ -1,0 +1,24 @@
+title = "Case: analysts forget the partition column"
+lang = "pyspark"
+kind = "choice"
+difficulty = "easy"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["iceberg"]
+statement = """
+A Hive-style table is partitioned by a derived `event_day` string column. Analysts often filter on the
+`event_ts` timestamp instead, which scans the whole table.
+"""
+question = "What does Iceberg offer for this?"
+options = [
+  "A view that adds `event_day`",
+  "Training analysts",
+  "**Hidden partitioning**: partition by `days(event_ts)` and filters on `event_ts` prune partitions automatically",
+  "Bucketing by `event_ts`",
+]
+answer = 2
+explain = """
+Iceberg tracks the relationship between `event_ts` and its partition transform `days(event_ts)`. A filter on
+`event_ts` is turned into partition pruning automatically, and there is no extra column to keep in sync or
+forget about. Delta's generated columns give a similar effect for partition pruning.
+"""

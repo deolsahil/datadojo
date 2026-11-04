@@ -7,23 +7,24 @@ function = "solve"
 statement = """
 `events(id, op, updated_at, amount)` is a change feed (`op` is `I`, `U` or `D`).
 
-Write `solve(spark, events)` returning a DataFrame `id, amount` with the **current** state:
+Build `result` as a DataFrame `id, amount` with the **current** state:
 for each `id` take the event with the latest `updated_at`. Drop ids whose latest event is a delete.
 """
 starter = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, events):
-    return events
+# events is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, events): ... return it.
+result = events
 """
 solution = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, events):
-    w = Window.partitionBy("id").orderBy(F.col("updated_at").desc())
-    return (events.withColumn("rn", F.row_number().over(w))
-            .filter((F.col("rn") == 1) & (F.col("op") != "D"))
-            .select("id", "amount"))
+w = Window.partitionBy("id").orderBy(F.col("updated_at").desc())
+
+result = (events.withColumn("rn", F.row_number().over(w))
+         .filter((F.col("rn") == 1) & (F.col("op") != "D"))
+         .select("id", "amount"))
 """
 
 [[tests]]

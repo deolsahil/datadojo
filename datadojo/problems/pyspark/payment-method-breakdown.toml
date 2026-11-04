@@ -8,7 +8,7 @@ statement = """
 `transactions(merchant_id, method, status, amount)`: `method` is `card`, `wallet` or `bank`;
 `status` is `success` or `failed`.
 
-Write `solve(spark, transactions)` returning one row per merchant:
+Build `result` as one row per merchant:
 `merchant_id, card_total, wallet_total, failed, failure_rate`
 
 - `card_total` / `wallet_total`: sum of `amount` over **successful** card / wallet transactions,
@@ -24,22 +24,23 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, transactions):
-    return transactions.groupBy("merchant_id").count()
+# transactions is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, transactions): ... return it.
+result = transactions
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, transactions):
-    ok = F.col("status") == "success"
-    def total(m):
-        return F.round(F.coalesce(F.sum(F.when(ok & (F.col("method") == m), F.col("amount"))), F.lit(0.0)), 2)
-    failed = F.count(F.when(F.col("status") == "failed", 1))
-    return transactions.groupBy("merchant_id").agg(
-        total("card").alias("card_total"),
-        total("wallet").alias("wallet_total"),
-        failed.alias("failed"),
-        F.round(failed / F.count("*"), 2).alias("failure_rate"))
+ok = F.col("status") == "success"
+def total(m):
+    return F.round(F.coalesce(F.sum(F.when(ok & (F.col("method") == m), F.col("amount"))), F.lit(0.0)), 2)
+failed = F.count(F.when(F.col("status") == "failed", 1))
+
+result = transactions.groupBy("merchant_id").agg(
+         total("card").alias("card_total"),
+         total("wallet").alias("wallet_total"),
+         failed.alias("failed"),
+         F.round(failed / F.count("*"), 2).alias("failure_rate"))
 """
 
 [[tests]]

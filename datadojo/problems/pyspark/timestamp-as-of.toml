@@ -1,0 +1,45 @@
+title = "Time travel by timestamp"
+lang = "pyspark"
+difficulty = "easy"
+pattern = "spark-lakehouse"
+lists = ["pyspark-de", "lakehouse"]
+tags = ["databricks", "iceberg"]
+function = "solve"
+statement = """
+`SELECT * FROM t TIMESTAMP AS OF '...'` reads the **latest version committed at or before** that time.
+Delta keeps the commits in `DESCRIBE HISTORY`; Iceberg keeps them as snapshots.
+
+- `history(version, ts, operation)`: one row per commit.
+- `query(as_of)`: one row, the timestamp asked for.
+
+Build `result` as `version, operation` of the version the query reads.
+If `as_of` is before the first commit, return no rows (the real query fails).
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# history and query are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, history, query): ... return it.
+result = history
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+result = (history.crossJoin(query)
+         .filter(F.col("ts") <= F.col("as_of"))
+         .orderBy(F.col("version").desc())
+         .limit(1)
+         .select("version", "operation"))
+"""
+
+[[tests]]
+tables.history = { columns = "version INT, ts TIMESTAMP, operation STRING", rows = [[0, "2024-05-01 09:00:00", "CREATE TABLE"], [1, "2024-05-01 12:30:00", "WRITE"], [2, "2024-05-02 08:00:00", "MERGE"], [3, "2024-05-03 23:59:00", "OPTIMIZE"]] }
+tables.query = { columns = "as_of TIMESTAMP", rows = [["2024-05-02 10:00:00"]] }
+
+[[tests]]
+tables.history = { columns = "version INT, ts TIMESTAMP, operation STRING", rows = [[0, "2024-05-01 09:00:00", "CREATE TABLE"], [1, "2024-05-01 12:30:00", "WRITE"]] }
+tables.query = { columns = "as_of TIMESTAMP", rows = [["2024-05-01 12:30:00"]] }
+
+[[tests]]
+tables.history = { columns = "version INT, ts TIMESTAMP, operation STRING", rows = [[0, "2024-05-01 09:00:00", "CREATE TABLE"]] }
+tables.query = { columns = "as_of TIMESTAMP", rows = [["2024-04-30 00:00:00"]] }

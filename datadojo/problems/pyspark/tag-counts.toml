@@ -13,16 +13,17 @@ and count a tag once per post even if repeated.
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, posts):
-    return posts
+# posts is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, posts): ... return it.
+result = posts
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, posts):
-    t = posts.select("id", F.explode(F.split("tags", ",")).alias("tag"))
-    t = t.select("id", F.lower(F.trim("tag")).alias("tag")).filter(F.col("tag") != "")
-    return t.distinct().groupBy("tag").agg(F.count("*").alias("posts"))
+t = posts.select("id", F.explode(F.split("tags", ",")).alias("tag"))
+t = t.select("id", F.lower(F.trim("tag")).alias("tag")).filter(F.col("tag") != "")
+
+result = t.distinct().groupBy("tag").agg(F.count("*").alias("posts"))
 """
 
 [[tests]]

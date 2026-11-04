@@ -7,7 +7,7 @@ statement = """
 `order_items(order_id, product_id)` has one row per line item; the same product can appear on
 several lines of one order.
 
-Write `solve(spark, order_items)` returning `product_a, product_b, orders` for every pair of
+Build `result` as `product_a, product_b, orders` for every pair of
 **different** products that appear together in at least 2 distinct orders. `orders` is the number
 of distinct orders containing both. Report each pair once with `product_a < product_b`.
 """
@@ -19,20 +19,21 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, order_items):
-    return order_items
+# order_items is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, order_items): ... return it.
+result = order_items
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, order_items):
-    d = order_items.select("order_id", "product_id").distinct()
-    a, b = d.alias("a"), d.alias("b")
-    pairs = a.join(b, (F.col("a.order_id") == F.col("b.order_id"))
-                      & (F.col("a.product_id") < F.col("b.product_id")))
-    return (pairs.groupBy(F.col("a.product_id").alias("product_a"), F.col("b.product_id").alias("product_b"))
-            .agg(F.count("*").alias("orders"))
-            .filter(F.col("orders") >= 2))
+d = order_items.select("order_id", "product_id").distinct()
+a, b = d.alias("a"), d.alias("b")
+pairs = a.join(b, (F.col("a.order_id") == F.col("b.order_id"))
+                  & (F.col("a.product_id") < F.col("b.product_id")))
+
+result = (pairs.groupBy(F.col("a.product_id").alias("product_a"), F.col("b.product_id").alias("product_b"))
+         .agg(F.count("*").alias("orders"))
+         .filter(F.col("orders") >= 2))
 """
 
 [[tests]]

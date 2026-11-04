@@ -11,7 +11,7 @@ repeat, and a few rows have a NULL `ts` (ignore those).
 A user's session ends when they go **more than 30 minutes** without a click; a gap of exactly 30
 minutes stays in the same session.
 
-Write `solve(spark, clicks)` returning one row per session:
+Build `result` as one row per session:
 `user_id, session_no, session_start, session_end, clicks, pages`
 
 - `session_no` counts the user's sessions from 1 in time order.
@@ -26,21 +26,22 @@ hints = [
 starter = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, clicks):
-    return clicks
+# clicks is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, clicks): ... return it.
+result = clicks
 """
 solution = """
 from pyspark.sql import functions as F, Window
 
-def solve(spark, clicks):
-    c = clicks.filter(F.col("ts").isNotNull())
-    w = Window.partitionBy("user_id").orderBy("ts")
-    gap = F.unix_timestamp("ts") - F.unix_timestamp(F.lag("ts").over(w))
-    c = c.withColumn("new", F.when(gap.isNull() | (gap > 1800), 1).otherwise(0))
-    c = c.withColumn("session_no", F.sum("new").over(w.rowsBetween(Window.unboundedPreceding, 0)))
-    return c.groupBy("user_id", "session_no").agg(
-        F.min("ts").alias("session_start"), F.max("ts").alias("session_end"),
-        F.count("*").alias("clicks"), F.countDistinct("page").alias("pages"))
+c = clicks.filter(F.col("ts").isNotNull())
+w = Window.partitionBy("user_id").orderBy("ts")
+gap = F.unix_timestamp("ts") - F.unix_timestamp(F.lag("ts").over(w))
+c = c.withColumn("new", F.when(gap.isNull() | (gap > 1800), 1).otherwise(0))
+c = c.withColumn("session_no", F.sum("new").over(w.rowsBetween(Window.unboundedPreceding, 0)))
+
+result = c.groupBy("user_id", "session_no").agg(
+         F.min("ts").alias("session_start"), F.max("ts").alias("session_end"),
+         F.count("*").alias("clicks"), F.countDistinct("page").alias("pages"))
 """
 
 [[tests]]

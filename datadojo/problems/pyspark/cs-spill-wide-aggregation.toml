@@ -1,0 +1,23 @@
+title = "Case: tasks spill to disk"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+A `groupBy` on 1.5 TB uses the default 200 shuffle partitions. Each task handles about 7.5 GB, spills heavily to
+disk, and the stage takes an hour. The keys are evenly distributed.
+"""
+question = "What helps most?"
+options = [
+  "Raise the number of shuffle partitions (for example to 3000) so each task's share fits in memory",
+  "Salt the keys",
+  "Broadcast the table",
+  "Use `coalesce(50)` before the groupBy",
+]
+answer = 0
+explain = """
+**Spill** happens when a task's share of the shuffle doesn't fit in its execution memory. With even keys the fix is
+**smaller partitions**: aim for roughly 100-200 MB per task, here about 3000 partitions. AQE's advisory partition
+size helps too. Salting is for skewed keys, and `coalesce` makes partitions bigger, which makes spill worse.
+"""

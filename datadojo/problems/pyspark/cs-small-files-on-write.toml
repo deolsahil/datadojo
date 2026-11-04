@@ -1,0 +1,24 @@
+title = "Case: thousands of tiny files per day"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-perf"
+lists = ["pyspark-de"]
+statement = """
+A job writes with `.partitionBy("event_date")`. The DataFrame has 400 partitions spread across all dates, so
+every date folder gets up to 400 small files and reads become slow.
+"""
+question = "What fixes the write?"
+options = [
+  "`coalesce(1)` the whole DataFrame",
+  "Partition by `event_id` instead",
+  "Write as JSON",
+  "`repartition(\"event_date\")` before the write, so each date's rows are in one task and come out as a few files",
+]
+answer = 3
+explain = """
+Each task writes its own file into every partition folder it has rows for. **Repartitioning by the partition
+column** puts each date's rows in one task, so you get one or a few files per date. Add a salt or
+`maxRecordsPerFile` if a date is huge. `coalesce(1)` makes one task write everything, and partitioning by a
+unique id creates millions of folders. On Delta, optimized writes and OPTIMIZE also fix this.
+"""

@@ -563,13 +563,27 @@ def spark_for_map():
     return s
 
 
+def spark_answer(p, code, sp, dfs):
+    """Run PySpark code in either style: a `solve(spark, ...)` function that returns the answer, or notebook-style
+    code that leaves it in `result`. Both see `spark` and the input tables as ready-made DataFrame variables."""
+    ns = {"spark": sp, **dfs}
+    exec(code, ns)
+    fn = ns.get(p["function"])
+    if callable(fn):
+        return fn(sp, **dfs)
+    if "result" not in ns:
+        raise NameError("put your answer in a variable called `result` (or define "
+                        f"{p['function']}(spark, {', '.join(dfs)}) and return it)")
+    if not hasattr(ns["result"], "collect"):
+        raise TypeError(f"`result` must be a DataFrame, not {type(ns['result']).__name__}")
+    return ns["result"]
+
+
 def make_map(p, code, engine):
     test = p["tests"][0]
     if p["lang"] == "pyspark":
-        ns = {}
-        exec(code, ns)
         s = spark_for_map()
-        return spark_map(ns[p["function"]](s, **{name: spark_df(t) for name, t in test["tables"].items()}))
+        return spark_map(spark_answer(p, code, s, {name: spark_df(t) for name, t in test["tables"].items()}))
     if p["lang"] == "sql" and engine == "spark-sql":
         spark_for_map()
         for name, t in test["tables"].items():
@@ -760,11 +774,6 @@ def scale_run(p, code, engine):
             return lambda: con.execute(f"CREATE OR REPLACE TEMP TABLE _out AS {q}")
     if lang == "pyspark":
         from pyspark.sql import functions as F
-        fns = {}
-        for side, c in src.items():
-            ns = {}
-            exec(c, ns)
-            fns[side] = ns[p["function"]]
         sp = spark()
         cancel = sp.sparkContext.cancelAllJobs
         bases, cached = {n: spark_df(t) for n, t in test["tables"].items()}, []
@@ -787,7 +796,7 @@ def scale_run(p, code, engine):
                 cached.append(dfs[name])
             return base * copies, dfs
         def job(side, dfs):
-            return lambda: fns[side](sp, **dfs).write.format("noop").mode("overwrite").save()
+            return lambda: spark_answer(p, src[side], sp, dfs).write.format("noop").mode("overwrite").save()
 
     # shifted copies when the reference copes with them, plain repeats otherwise (values that carry structure)
     first = max(1, round(sizes[0] / base))
@@ -835,13 +844,13 @@ def run_one(p, code, test, engine):
     if lang == "sql":
         fn = SQL.get(engine) or sql_emulated(engine)
         return fn(code, test["tables"])  # (rows, columns)
+    if lang == "pyspark":
+        out = spark_answer(p, code, spark(), {name: spark_df(t) for name, t in test["tables"].items()})
+        return [norm(list(r)) for r in out.collect()], out.columns
     ns = {}
     exec(code, ns)
     if lang == "python":
         return norm(ns[p["function"]](*copy.deepcopy(test["args"]))), None
-    if lang == "pyspark":
-        out = ns[p["function"]](spark(), **{name: spark_df(t) for name, t in test["tables"].items()})
-        return [norm(list(r)) for r in out.collect()], out.columns
     raise ValueError(f"unknown lang {lang}")
 
 

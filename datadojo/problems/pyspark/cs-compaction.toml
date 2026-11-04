@@ -1,0 +1,24 @@
+title = "Case: streaming leaves small files"
+lang = "pyspark"
+kind = "choice"
+difficulty = "easy"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["databricks", "iceberg"]
+statement = """
+A streaming job appends to a lakehouse table every minute. After a month, each partition holds thousands of
+files of about 1 MB, and queries spend most of their time opening files.
+"""
+question = "What should run regularly?"
+options = [
+  "Compaction: `OPTIMIZE` on Delta, `rewrite_data_files` on Iceberg, which bin-packs small files into large ones",
+  "`VACUUM` with 0 hours retention",
+  "A full `DROP` and reload",
+  "More shuffle partitions in the stream",
+]
+answer = 0
+explain = """
+**Compaction** rewrites many small files into fewer large ones (around 128 MB to 1 GB) without changing the data.
+On Databricks, auto compaction and optimized writes can do it as you write. VACUUM only deletes files that are no
+longer part of the table, so it doesn't merge anything.
+"""

@@ -22,6 +22,11 @@ title = "PySpark for Data Engineers"
 desc = "DataFrame transformations you will actually write at work: dedup, SCD, windows, nested data."
 
 [[lists]]
+id = "lakehouse"
+title = "Lakehouse: Delta, Databricks & Iceberg"
+desc = "How table formats really work: time travel, VACUUM, OPTIMIZE, Z-order, liquid clustering, data skipping and Iceberg partitions."
+
+[[lists]]
 id = "python-de"
 title = "Python for Data Work"
 desc = "Plain-Python data wrangling and the classic coding-round patterns, minus the trivia."
@@ -252,6 +257,20 @@ lang = "pyspark"
 group = "Pipelines"
 title = "Data Quality & Reshape"
 desc = "Null checks, pivots, schema normalization"
+
+[[patterns]]
+id = "spark-perf"
+lang = "pyspark"
+group = "Performance"
+title = "Skew, Joins & Shuffles"
+desc = "Salting, broadcast joins, caching, AQE and choosing the right fix"
+
+[[patterns]]
+id = "spark-lakehouse"
+lang = "pyspark"
+group = "Lakehouse"
+title = "Delta & Iceberg"
+desc = "Time travel, VACUUM, OPTIMIZE, Z-order, liquid clustering, data skipping, Iceberg partitions"
 
 [[patterns]]
 id = "ml-metrics"

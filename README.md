@@ -2,7 +2,7 @@
 
 **Practice for Data and AI interviews like it's the real thing: SQL, Python, PySpark, AI and ML, with friendly AI coaches.**
 
-DataDojo runs entirely on your own computer: 252 coding problems (SQL, Python, PySpark, and ML & AI from scratch) graded by real engines, mock interviews
+DataDojo runs entirely on your own computer: 264 coding problems (SQL, Python, PySpark, and ML & AI from scratch) graded by real engines, 22 Spark and lakehouse case studies (Databricks, Delta, Iceberg), mock interviews
 for Data Engineer, AI Engineer, ML Engineer and Data Analyst roles that you can answer out loud, a System Design
 course (data systems and production AI, 40 lessons and case studies), brain games, streaks and a heatmap.
 Coaches (Sensei, Duck, Pip and Sparky) give hints instead of answers, powered by your own API key or account sign-in
@@ -64,7 +64,10 @@ SQL on DuckDB, SQLite and emulated dialects, and all Python problems, need nothi
 ## What's inside
 
 - **SQL, Python, PySpark and ML & AI** problems grouped by pattern, plus curated lists, including *SQL End-to-End 43*
-  (from [sql-end-to-end-questions](https://github.com/deolsahil/sql-end-to-end-questions)).
+  (from [sql-end-to-end-questions](https://github.com/deolsahil/sql-end-to-end-questions)) and *Lakehouse: Delta,
+  Databricks & Iceberg* (time travel, VACUUM, OPTIMIZE, Z-order, liquid clustering, Iceberg partitions).
+- **Spark case studies:** a real situation (a skewed join, a slow table, a bad overwrite), pick the right fix, and
+  see why. Some problems check Spark's actual plan, so they only pass with the technique they teach.
 - **Any engine:** DuckDB, SQLite, PostgreSQL, Spark SQL, and MySQL / Snowflake / BigQuery / SQL Server /
   Oracle / Redshift syntax (translated with sqlglot); Python 3.10 to 3.15; PySpark 3.4 to 4.x.
 - **Coaching workspace:** six-stage coach chat, timer, hints, submissions, and "Report a mistake" on every problem.

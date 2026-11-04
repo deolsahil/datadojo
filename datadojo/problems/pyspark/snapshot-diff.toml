@@ -8,7 +8,7 @@ statement = """
 To publish only what changed, compare `yesterday(id, name, price)` with `today(id, name, price)`.
 `id` is unique in each table; `name` and `price` can be NULL.
 
-Write `solve(spark, yesterday, today)` returning `id, change` for changed ids only:
+Build `result` as `id, change` for changed ids only:
 
 - `added`: id only in `today`.
 - `removed`: id only in `yesterday`.
@@ -23,20 +23,21 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, yesterday, today):
-    return today.select("id", "name")
+# yesterday and today are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, yesterday, today): ... return it.
+result = yesterday
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, yesterday, today):
-    y, t = yesterday.alias("y"), today.alias("t")
-    j = y.join(t, F.col("y.id") == F.col("t.id"), "full")
-    same = F.col("y.name").eqNullSafe(F.col("t.name")) & F.col("y.price").eqNullSafe(F.col("t.price"))
-    change = (F.when(F.col("y.id").isNull(), "added").when(F.col("t.id").isNull(), "removed")
-              .when(~same, "updated"))
-    return (j.select(F.coalesce("t.id", "y.id").alias("id"), change.alias("change"))
-            .filter(F.col("change").isNotNull()))
+y, t = yesterday.alias("y"), today.alias("t")
+j = y.join(t, F.col("y.id") == F.col("t.id"), "full")
+same = F.col("y.name").eqNullSafe(F.col("t.name")) & F.col("y.price").eqNullSafe(F.col("t.price"))
+change = (F.when(F.col("y.id").isNull(), "added").when(F.col("t.id").isNull(), "removed")
+          .when(~same, "updated"))
+
+result = (j.select(F.coalesce("t.id", "y.id").alias("id"), change.alias("change"))
+         .filter(F.col("change").isNotNull()))
 """
 
 [[tests]]

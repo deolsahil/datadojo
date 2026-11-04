@@ -7,7 +7,7 @@ statement = """
 A CRM export has `contacts(contact_id, phone)` where `phone` was typed by hand:
 `"(415) 555-0100"`, `"+1 415.555.0101"`, `"555-0102"`, or NULL.
 
-Write `solve(spark, contacts)` returning `contact_id, phone_clean`:
+Build `result` as `contact_id, phone_clean`:
 
 - remove every character that is not a digit
 - if what is left is 11 digits starting with `1` (US country code), drop that leading `1`
@@ -23,16 +23,17 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, contacts):
-    return contacts
+# contacts is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, contacts): ... return it.
+result = contacts
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, contacts):
-    d = F.regexp_replace("phone", "[^0-9]", "")
-    d = F.when((F.length(d) == 11) & d.startswith("1"), F.substring(d, 2, 10)).otherwise(d)
-    return contacts.select("contact_id", F.when(F.length(d) == 10, d).alias("phone_clean"))
+d = F.regexp_replace("phone", "[^0-9]", "")
+d = F.when((F.length(d) == 11) & d.startswith("1"), F.substring(d, 2, 10)).otherwise(d)
+
+result = contacts.select("contact_id", F.when(F.length(d) == 10, d).alias("phone_clean"))
 """
 
 [[tests]]

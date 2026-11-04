@@ -1,0 +1,24 @@
+title = "Case: only process what changed"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["databricks", "iceberg"]
+statement = """
+A silver table receives updates and deletes all day. A gold aggregate is rebuilt from the whole silver table every
+hour, which now takes 40 minutes.
+"""
+question = "How should gold be built?"
+options = [
+  "Rebuild gold every 10 minutes instead",
+  "Cache the silver table",
+  "Compare full snapshots of silver every hour",
+  "Read only the row-level changes since the last run: **Change Data Feed** on Delta (`table_changes`), the changelog view on Iceberg",
+]
+answer = 3
+explain = """
+**Change Data Feed** returns inserts, deletes, and update pre- and post-images between versions, so gold can be
+updated incrementally from just the changes. Iceberg's `create_changelog_view` gives the same thing. Rebuilding
+more often makes the cost worse, and diffing full snapshots still reads everything.
+"""

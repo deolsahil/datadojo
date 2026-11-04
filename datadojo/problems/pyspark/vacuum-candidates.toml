@@ -1,0 +1,47 @@
+title = "Which files can VACUUM delete?"
+lang = "pyspark"
+difficulty = "medium"
+pattern = "spark-lakehouse"
+lists = ["pyspark-de", "lakehouse"]
+tags = ["databricks", "iceberg"]
+function = "solve"
+statement = """
+Removing a file from a Delta table only marks it removed in the log; the file stays in storage so older
+versions can still be read. `VACUUM` deletes files that were removed **longer ago than the retention period**
+(7 days by default). Iceberg's `expire_snapshots` does the same job.
+
+- `log(version, ts, action, file)`: `action` is `add` or `remove`.
+- `vacuum(now, retain_hours)`: one row.
+
+Build `result` as the `file` names VACUUM would delete: files removed strictly
+before `now - retain_hours`. Files still in the table, or removed inside the retention window, stay.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# log and vacuum are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, log, vacuum): ... return it.
+result = log
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+v = vacuum.select(F.expr("now - make_interval(0, 0, 0, 0, retain_hours, 0, 0)").alias("cutoff"))
+
+result = (log.filter(F.col("action") == "remove")
+         .crossJoin(v)
+         .filter(F.col("ts") < F.col("cutoff"))
+         .select("file").distinct())
+"""
+
+[[tests]]
+tables.log = { columns = "version INT, ts TIMESTAMP, action STRING, file STRING", rows = [[0, "2024-06-01 10:00:00", "add", "a.parquet"], [0, "2024-06-01 10:00:00", "add", "b.parquet"], [1, "2024-06-02 10:00:00", "remove", "a.parquet"], [1, "2024-06-02 10:00:00", "add", "c.parquet"], [2, "2024-06-08 09:00:00", "remove", "b.parquet"], [2, "2024-06-08 09:00:00", "add", "d.parquet"]] }
+tables.vacuum = { columns = "now TIMESTAMP, retain_hours INT", rows = [["2024-06-10 10:00:00", 168]] }
+
+[[tests]]
+tables.log = { columns = "version INT, ts TIMESTAMP, action STRING, file STRING", rows = [[0, "2024-06-01 10:00:00", "add", "a.parquet"], [1, "2024-06-01 11:00:00", "remove", "a.parquet"], [1, "2024-06-01 11:00:00", "add", "b.parquet"]] }
+tables.vacuum = { columns = "now TIMESTAMP, retain_hours INT", rows = [["2024-06-01 12:00:00", 0]] }
+
+[[tests]]
+tables.log = { columns = "version INT, ts TIMESTAMP, action STRING, file STRING", rows = [[0, "2024-06-01 10:00:00", "add", "a.parquet"]] }
+tables.vacuum = { columns = "now TIMESTAMP, retain_hours INT", rows = [["2024-07-01 10:00:00", 168]] }

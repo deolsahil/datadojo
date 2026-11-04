@@ -8,7 +8,7 @@ statement = """
 `sales(store, day, amount)` has one row per sale, so a store can have several rows on one day and
 no rows at all on quiet days. `amount` can be NULL (treat it as 0).
 
-Dashboards need a dense series. Write `solve(spark, sales)` returning `store, day, amount` with
+Dashboards need a dense series. Build `result` as `store, day, amount` with
 **one row per store per calendar day** from that store's first sale day through its last sale day
 (inclusive). `amount` is the day's total, or `0` on days without sales.
 """
@@ -20,18 +20,19 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, sales):
-    return sales
+# sales is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, sales): ... return it.
+result = sales
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, sales):
-    daily = sales.groupBy("store", "day").agg(F.sum("amount").alias("amount"))
-    spine = (sales.groupBy("store").agg(F.min("day").alias("a"), F.max("day").alias("b"))
-             .select("store", F.explode(F.sequence("a", "b")).alias("day")))
-    return (spine.join(daily, ["store", "day"], "left")
-            .select("store", "day", F.coalesce("amount", F.lit(0)).alias("amount")))
+daily = sales.groupBy("store", "day").agg(F.sum("amount").alias("amount"))
+spine = (sales.groupBy("store").agg(F.min("day").alias("a"), F.max("day").alias("b"))
+         .select("store", F.explode(F.sequence("a", "b")).alias("day")))
+
+result = (spine.join(daily, ["store", "day"], "left")
+         .select("store", "day", F.coalesce("amount", F.lit(0)).alias("amount")))
 """
 
 [[tests]]

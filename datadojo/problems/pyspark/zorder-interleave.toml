@@ -1,0 +1,41 @@
+title = "Z-order keys"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-lakehouse"
+lists = ["pyspark-de", "lakehouse"]
+tags = ["databricks"]
+function = "solve"
+ordered = true  # the Z-order sequence is the answer
+statement = """
+`OPTIMIZE t ZORDER BY (x, y)` sorts rows by a **Z-order value** that interleaves the bits of both columns, so
+rows close in `x` *and* `y` land in the same files and both filters can skip files.
+
+`points(id, x, y)` has `0 <= x, y < 256`. Build `z_value` by interleaving the 8 bits: bit `i` of `x` becomes
+bit `2i` of `z_value`, and bit `i` of `y` becomes bit `2i + 1`. Example: `x = 3 (011)`, `y = 1 (001)` gives
+`z_value = 0b00111 = 7`.
+
+Build `result` as `id, x, y, z_value` ordered by `z_value`, then `id`.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# points is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, points): ... return it.
+result = points
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+from functools import reduce
+
+bits = [F.shiftright("x", i).bitwiseAND(1) * (1 << (2 * i)) +
+        F.shiftright("y", i).bitwiseAND(1) * (1 << (2 * i + 1)) for i in range(8)]
+z = reduce(lambda a, b: a + b, bits)
+
+result = points.withColumn("z_value", z.cast("long")).orderBy("z_value", "id")
+"""
+
+[[tests]]
+tables.points = { columns = "id INT, x INT, y INT", rows = [[1, 3, 1], [2, 0, 0], [3, 255, 255], [4, 1, 3], [5, 2, 2], [6, 128, 0], [7, 0, 128]] }
+
+[[tests]]
+tables.points = { columns = "id INT, x INT, y INT", rows = [[1, 10, 20], [2, 20, 10], [3, 11, 21], [4, 10, 20]] }

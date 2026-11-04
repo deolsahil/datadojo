@@ -1,0 +1,61 @@
+title = "OPTIMIZE: compact small files"
+lang = "pyspark"
+difficulty = "hard"
+pattern = "spark-lakehouse"
+lists = ["pyspark-de", "lakehouse"]
+tags = ["databricks", "iceberg"]
+function = "solve"
+statement = """
+Many small files make every query slow. `OPTIMIZE` (Delta) and `rewrite_data_files` (Iceberg) **bin-pack**
+small files into bigger ones, partition by partition.
+
+- `files(part, file, size_mb)`
+- `target(max_mb)`: one row, the target file size.
+
+Rules, per `part`:
+1. Only files smaller than `max_mb` are compacted; bigger ones are left alone.
+2. Go through the small files in `file` name order, adding each to the current bin. When adding the next file
+   would make the bin larger than `max_mb`, start a new bin.
+3. A bin with a single file is not rewritten (nothing to compact), so leave it out.
+
+Build `result` as `part, bin, files, total_mb` for each rewritten bin: `bin` counts
+from 1 within each `part` (over the bins kept), and `files` is the comma-separated file names in order.
+"""
+starter = """
+from pyspark.sql import functions as F, Window
+
+# files and target are DataFrames, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, files, target): ... return it.
+result = files
+"""
+solution = """
+from pyspark.sql import functions as F, Window
+
+cap = target.first()["max_mb"]
+
+def pack(part, items):  # greedy, in name order, per partition
+    bins, cur, size = [], [], 0
+    for name, mb in sorted(items):
+        if cur and size + mb > cap:
+            bins.append((cur, size))
+            cur, size = [], 0
+        cur.append(name)
+        size += mb
+    if cur:
+        bins.append((cur, size))
+    kept = [b for b in bins if len(b[0]) > 1]
+    return [(part, i + 1, ",".join(names), total) for i, (names, total) in enumerate(kept)]
+
+small = files.filter(F.col("size_mb") < cap)
+rows = small.rdd.map(lambda r: (r.part, (r.file, r.size_mb))).groupByKey().flatMap(lambda kv: pack(kv[0], list(kv[1])))
+
+result = spark.createDataFrame(rows, "part STRING, bin INT, files STRING, total_mb INT")
+"""
+
+[[tests]]
+tables.files = { columns = "part STRING, file STRING, size_mb INT", rows = [["2024-01", "f01", 40], ["2024-01", "f02", 50], ["2024-01", "f03", 30], ["2024-01", "f04", 20], ["2024-01", "f05", 200], ["2024-01", "f06", 60], ["2024-02", "g01", 10], ["2024-02", "g02", 300], ["2024-03", "h01", 100], ["2024-03", "h02", 100]] }
+tables.target = { columns = "max_mb INT", rows = [[128]] }
+
+[[tests]]
+tables.files = { columns = "part STRING, file STRING, size_mb INT", rows = [["p", "a", 500], ["p", "b", 600]] }
+tables.target = { columns = "max_mb INT", rows = [[128]] }

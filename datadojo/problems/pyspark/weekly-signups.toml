@@ -6,7 +6,7 @@ function = "solve"
 statement = """
 `signups(user_id, signed_up_at)` logs every signup attempt; retries mean a user can appear more than once.
 
-Write `solve(spark, signups)` returning `week_start, users`:
+Build `result` as `week_start, users`:
 
 - `week_start` is a **DATE**: the Monday of the week (weeks run Monday to Sunday).
 - `users` is the number of distinct users who signed up that week.
@@ -20,15 +20,15 @@ hints = [
 starter = """
 from pyspark.sql import functions as F
 
-def solve(spark, signups):
-    return signups
+# signups is a DataFrame, and spark is your SparkSession.
+# Put your answer in `result`. Prefer a function? def solve(spark, signups): ... return it.
+result = signups
 """
 solution = """
 from pyspark.sql import functions as F
 
-def solve(spark, signups):
-    return (signups.groupBy(F.to_date(F.date_trunc("week", "signed_up_at")).alias("week_start"))
-            .agg(F.countDistinct("user_id").alias("users")))
+result = (signups.groupBy(F.to_date(F.date_trunc("week", "signed_up_at")).alias("week_start"))
+         .agg(F.countDistinct("user_id").alias("users")))
 """
 
 [[tests]]

@@ -1,0 +1,24 @@
+title = "Case: storage keeps growing"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+tags = ["databricks", "iceberg"]
+statement = """
+A Delta table with daily MERGEs has held about 2 TB of current data for months, yet its storage bill shows 30 TB
+and keeps rising.
+"""
+question = "What is happening, and what fixes it?"
+options = [
+  "The data is compressed badly; switch to CSV",
+  "Run OPTIMIZE more often",
+  "Old file versions are kept for time travel; run `VACUUM` (Delta) or `expire_snapshots` / `remove_orphan_files` (Iceberg) with a sensible retention",
+  "Partition by more columns",
+]
+answer = 2
+explain = """
+Every MERGE writes new files and only marks the old ones removed, so time travel can still read them. They stay
+in storage until **VACUUM** (Delta) or snapshot expiry (Iceberg) deletes those older than the retention period,
+7 days by default on Delta. OPTIMIZE alone adds files: the compacted copies replace the originals only logically.
+"""

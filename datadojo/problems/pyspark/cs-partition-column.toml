@@ -1,0 +1,24 @@
+title = "Case: choosing the partition column"
+lang = "pyspark"
+kind = "choice"
+difficulty = "medium"
+pattern = "spark-lakehouse"
+lists = ["lakehouse"]
+statement = """
+A 5 TB `events` table gets about 20 GB a day. Almost every query filters on `event_date`; some also filter on
+`user_id` (50 million users).
+"""
+question = "How should the table be partitioned?"
+options = [
+  "By `event_date`: low cardinality, always filtered, files stay a healthy size",
+  "By `user_id`",
+  "By `event_id`",
+  "By `event_date` and `user_id` together",
+]
+answer = 0
+explain = """
+A good partition column has **low cardinality** and appears in most filters. `event_date` gives one folder of about
+20 GB a day, and date filters prune whole folders. `user_id` would create 50 million folders of tiny files, which
+is the classic small-files problem. For the `user_id` filters, cluster within the partitions instead (Z-order or
+liquid clustering).
+"""
