@@ -101,7 +101,7 @@
   .foot-name { font-size: 26px; font-weight: 800; color: var(--text) } .foot-name span { color: var(--acc2) }
   .foot-top p { margin: 8px 0 0; line-height: 1.6 } .foot-top small { display: block; margin-bottom: 10px; color: var(--faint) }
   .foot-links { display: flex; flex-wrap: wrap; gap: 8px 18px } .foot-top .copy { display: block; margin-top: 14px; color: var(--faint); font-size: 12px }
-  .foot-bye { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 26px }
+  .foot-bye.wrap { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 26px }   /* .wrap resets padding on phones */
   .foot-bye b { font-size: clamp(28px, 4vw, 44px); color: var(--text); line-height: 1.1 }
   .crowd { position: relative; height: clamp(240px, 34vw, 480px); overflow: hidden; background: #fff }
   .crowd-word { position: absolute; inset: 4% 0 auto; text-align: center; font-size: 19vw; font-weight: 800; line-height: .9; letter-spacing: -.04em; color: #ececec; user-select: none }
@@ -139,7 +139,7 @@
     .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -18px 12px; padding: 0 18px } .tabs::-webkit-scrollbar { display: none }
     .tabs button { white-space: nowrap } .win { border-radius: 12px } .win .bar span { font-size: 10.5px; margin-right: 0 }
     .grid, .steps { grid-template-columns: 1fr } .coaches { grid-template-columns: 1fr 1fr } .coach svg { width: 70px; height: 70px }
-    .foot-top { grid-template-columns: 1fr; gap: 22px; padding-block: 40px 24px } .foot-bye { flex-direction: column; align-items: flex-start }
+    .foot-top { grid-template-columns: 1fr; gap: 22px; padding-block: 40px 24px } .foot-bye b { font-size: min(25px, 6.3vw); white-space: nowrap } .foot-bye a { white-space: nowrap; font-size: 12.5px }
   }
 
   /* ---------- "desktop only" popup for phones and tablets ---------- */
