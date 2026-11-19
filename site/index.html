@@ -94,22 +94,25 @@
   .steps .card::before { counter-increment: s; content: "0" counter(s); font-size: 28px; font-weight: 800; color: var(--faint) }
   pre { background: #0e1116; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow: auto; font-size: 13px; color: var(--text2) }
   .help { display: grid; grid-template-columns: 1fr 1fr; gap: 16px } .help ol { margin: 8px 0 0; padding-left: 20px; color: var(--text2); font-size: 13.5px }
-  footer { border-top: 1px solid var(--line); padding: 34px 0 50px; color: var(--faint); font-size: 13px }
-  footer .wrap { display: flex; gap: 18px; align-items: center; flex-wrap: wrap } footer a { color: var(--dim) } footer a:hover { color: var(--acc) }
+  /* footer: dark band + white crowd band (Sahil in the middle, DATADOJO behind) */
+  footer { margin-top: 80px; border-top: 1px solid var(--line); background: #07080b; color: var(--dim); font-size: 13px }
+  footer a { color: var(--text2) } footer a:hover { color: var(--acc) }
+  .foot-top { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 30px; padding-block: 54px 34px }
+  .foot-name { font-size: 26px; font-weight: 800; color: var(--text) } .foot-name span { color: var(--acc2) }
+  .foot-top p { margin: 8px 0 0; line-height: 1.6 } .foot-top small { display: block; margin-bottom: 10px; color: var(--faint) }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 8px 18px } .foot-top .copy { display: block; margin-top: 14px; color: var(--faint); font-size: 12px }
+  .foot-bye { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 26px }
+  .foot-bye b { font-size: clamp(28px, 4vw, 44px); color: var(--text); line-height: 1.1 }
+  .crowd { position: relative; height: clamp(240px, 34vw, 480px); overflow: hidden; background: #fff }
+  .crowd-word { position: absolute; inset: 4% 0 auto; text-align: center; font-size: 19vw; font-weight: 800; line-height: .9; letter-spacing: -.04em; color: #ececec; user-select: none }
+  /* measured from the reference: back rows drift right ~11% of the width per second, the front row slides left ~16%/s, the person in the middle stays still */
+  .crowd-strip { position: absolute; right: 0; bottom: 0; height: 72%; aspect-ratio: 9216 / 726;   /* 3 copies of the 3072x726 strip; sliding by one copy loops seamlessly */
+                 background: url(assets/footer/crowd.webp) 0 100% / auto 100% repeat-x; animation: march 9s linear infinite }
+  .crowd-strip.front { z-index: 2; right: auto; left: 0; top: 63%; bottom: auto; height: 97%; scale: -1 1; animation: march-back 8.5s linear infinite }   /* flipped + bigger: only its top row shows */
+  .crowd .me { position: absolute; z-index: 1; left: 50%; bottom: 0; height: 100%; width: auto; translate: -50% 0 }
+  .foot-credit { padding: 12px 0 16px; text-align: center; color: var(--faint); font-size: 11.5px; background: #fff } .foot-credit a { color: #6b7280 }
+  @keyframes march { to { translate: calc(100% / 3) 0 } } @keyframes march-back { to { translate: calc(-100% / 3) 0 } }
   .grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)) }
-  .tag-new { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .08em;
-             color: var(--on-acc); background: var(--acc2); vertical-align: 2px }
-  /* NEW: execution map launch (v0.3.0, remove after 2026-11-17): announcement pill + spotlight */
-  .new-pill { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 6px 14px 6px 6px; border-radius: 999px;
-              border: 1px solid rgba(251,191,36,.45); background: rgba(251,191,36,.08); color: var(--text2); font-size: 13px; transition: border-color .2s, transform .2s }
-  .new-pill:hover { border-color: var(--acc2); transform: translateY(-1px) } .new-pill b { padding: 2px 9px; border-radius: 999px; background: var(--acc2); color: var(--on-acc); font-size: 11px; letter-spacing: .08em }
-  .spot { display: grid; grid-template-columns: .9fr 1.1fr; gap: 34px; align-items: center; padding: 30px; border-radius: 20px;
-          border: 1px solid rgba(251,191,36,.35); background: linear-gradient(135deg, rgba(251,191,36,.07), rgba(125,211,252,.05) 60%, transparent) }
-  .spot h2 { margin: 8px 0 10px; font-size: clamp(24px, 3vw, 32px); line-height: 1.25 } .spot ul { margin: 14px 0 22px; padding: 0; list-style: none; display: grid; gap: 9px }
-  .spot li { display: flex; gap: 10px; color: var(--text2); font-size: 14px } .spot li i { font-style: normal; flex: none }
-  .spot .tracks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px } .spot .tracks span { padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line2); font-size: 12.5px; color: var(--text) }
-  .spot .win img { animation: none }
-  /* end NEW */
   .js .reveal:not(.in) { opacity: 0; transform: translateY(12px) } .reveal { transition: opacity .35s, transform .35s cubic-bezier(.2,.8,.2,1) }
   @keyframes shimmer { to { background-position: 300% 0 } } @keyframes caret { 50% { opacity: 0 } }
   @keyframes spin { to { transform: rotate(360deg) } } @keyframes bob { 50% { translate: 0 -8px } }
@@ -119,7 +122,7 @@
   body { overflow-x: hidden }
   @media (max-width: 960px) {
     .hero { grid-template-columns: 1fr; padding-block: 48px 20px; gap: 10px } .stage { height: 300px; order: -1 }
-    .help { grid-template-columns: 1fr } .grid, .grid.four, .steps { grid-template-columns: 1fr 1fr } .spot { grid-template-columns: 1fr; padding: 22px } .coaches { grid-template-columns: repeat(4, minmax(0, 1fr)) }
+    .help { grid-template-columns: 1fr } .grid, .grid.four, .steps { grid-template-columns: 1fr 1fr } .coaches { grid-template-columns: repeat(4, minmax(0, 1fr)) }
     nav a.l { display: none }
   }
   @media (max-width: 640px) {
@@ -136,7 +139,7 @@
     .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -18px 12px; padding: 0 18px } .tabs::-webkit-scrollbar { display: none }
     .tabs button { white-space: nowrap } .win { border-radius: 12px } .win .bar span { font-size: 10.5px; margin-right: 0 }
     .grid, .steps { grid-template-columns: 1fr } .coaches { grid-template-columns: 1fr 1fr } .coach svg { width: 70px; height: 70px }
-    footer .wrap { flex-direction: column; align-items: flex-start; gap: 10px } footer .sp { display: none }
+    .foot-top { grid-template-columns: 1fr; gap: 22px; padding-block: 40px 24px } .foot-bye { flex-direction: column; align-items: flex-start }
   }
 
   /* ---------- "desktop only" popup for phones and tablets ---------- */
@@ -165,7 +168,6 @@
 </head>
 <body>
 <nav><div class="wrap"><a class="logo" href="#">DATA<span>DOJO</span></a>
-  <a class="l" href="#map">Execution map <span class="tag-new">NEW</span></a><!-- NEW: remove badge after 2026-11-17 -->
   <a class="l" href="#tour">Interview</a>
   <a class="l" href="#tour">Tour</a><a class="l" href="#features">Features</a><a class="l" href="#start">Get started</a>
   <span class="sp"></span><a class="btn small" href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub ★</a>
@@ -173,8 +175,6 @@
 
 <header class="wrap hero" id="download">
   <div>
-    <!-- NEW: execution map launch (remove after 2026-11-17) -->
-    <a class="new-pill" href="#map"><b>NEW</b> Execution map: see how your code really runs →</a>
     <div class="kicker">Free desktop app · Mac, Windows &amp; Linux</div>
     <h1>DATADOJO<i>_</i></h1>
     <p class="lead">Practice for Data and AI interviews like it's the real thing: SQL, Python, PySpark, AI and ML. 264 problems graded by real engines, plus Databricks and Iceberg case studies, mock interviews you can answer out loud, data and AI system design courses, brain games, and friendly AI coaches that give hints, not answers. Everything runs on your own computer.</p>
@@ -196,30 +196,10 @@
     <div id="sensei"></div><div class="bubble">Hi! I'm Sensei. Stuck on a window function? I'll nudge, you'll solve. 🐾</div></div>
 </header>
 
-<!-- NEW: execution map spotlight (v0.3.0, remove after 2026-11-17; the tour tab and feature card stay) -->
-<section id="map" class="wrap reveal">
-  <div class="spot">
-    <div>
-      <div class="kicker" style="color:var(--acc2)">New · Execution map</div>
-      <h2>See what the engine actually did with your code.</h2>
-      <p class="sub" style="margin:0">After every solve, a live map of how your code ran, right next to the best solution, with a one-line verdict.</p>
-      <ul>
-        <li><i>⚡</i><span><b>PySpark:</b> stages, shuffles and narrow vs wide steps, planned the way it would run on big data.</span></li>
-        <li><i>🧮</i><span><b>SQL:</b> every step with real row counts and timing, so a join that blows up jumps out.</span></li>
-        <li><i>🐍</i><span><b>Python:</b> how often each line ran, and whether your code grows like O(n) or O(n²).</span></li>
-        <li><i>🔎</i><span>Click any step to trace its lineage, or a row count to see the actual rows that passed through.</span></li>
-      </ul>
-      <div class="tracks"><span>PySpark</span><span>SQL</span><span>Python</span></div>
-    </div>
-    <div class="win"><div class="bar"><i></i><i></i><i></i><span>execution map · Sparky</span></div>
-      <img decoding="async" loading="lazy" src="assets/execution-map-card.webp" alt="DataDojo's execution map: a PySpark plan with stages, shuffles and a warning on a slow Python UDF" width="1280" height="846"></div>
-  </div>
-</section>
-<!-- end NEW -->
 
 <section id="tour" class="wrap reveal">
   <div class="kicker">Tour</div><h2>See it in action</h2>
-  <div class="tabs" id="tabs"><button class="on" data-i="workspace">Coaching workspace</button><button data-i="execution-map">Execution map <span class="tag-new">NEW</span></button><button data-i="interview">Interview practice</button><button data-i="home">Your dashboard</button>
+  <div class="tabs" id="tabs"><button class="on" data-i="workspace">Coaching workspace</button><button data-i="execution-map">Execution map</button><button data-i="interview">Interview practice</button><button data-i="home">Your dashboard</button>
     <button data-i="design">System design</button><button data-i="games">Brain games</button></div>
   <div class="win"><div class="bar"><i></i><i></i><i></i><span id="win-title">sql/joins/customers-without-orders · Duck</span></div>
     <img id="shot" decoding="async" src="assets/workspace.webp" alt="DataDojo coaching workspace" width="1440" height="900"></div>
@@ -229,14 +209,14 @@
   <div class="kicker">What's inside</div><h2>Everything you practice for data and AI roles</h2>
   <p class="sub">Problems are graded by actually running your code, the same way an interviewer would check it.</p>
   <div class="grid four">
-    <div class="card"><div class="ico">🏞️</div><h3>Lakehouse &amp; Spark case studies <span class="tag-new">NEW</span></h3><p>Delta, Databricks and Iceberg: time travel, VACUUM, Z-order, liquid clustering. Plus real Spark situations: pick the right fix and see why.</p></div>
-    <div class="card"><div class="ico">⏱️</div><h3>Coding rounds <span class="tag-new">NEW</span></h3><p>A timed problem with a coach as your interviewer: optimise slow code, answer a follow-up, get a score out of 100.</p></div>
-    <div class="card"><div class="ico">🧠</div><h3>ML &amp; AI from scratch <span class="tag-new">NEW</span></h3><p>18 problems in plain Python: metrics, feature prep, k-means, gradient descent, BM25, chunking and context packing.</p></div>
-    <div class="card"><div class="ico">🔁</div><h3>Your practice <span class="tag-new">NEW</span></h3><p>Problems you struggled with come back for review, and your weakest patterns come with what to try next.</p></div>
-    <div class="card"><div class="ico">🗺️</div><h3>Execution map <span class="tag-new">NEW</span></h3><p>After a solve, see what the engine did next to the best solution: Spark stages and shuffles, SQL steps with row counts, Python line counts and Big-O.</p></div>
-    <div class="card"><div class="ico">🔑</div><h3>Sign in, no key <span class="tag-new">NEW</span></h3><p>Connect your coach by signing in with your Anthropic account, ChatGPT plan or Google Cloud, or paste an API key as before.</p></div>
-    <div class="card"><div class="ico">✨</div><h3>Format code <span class="tag-new">NEW</span></h3><p>One click (Shift + Alt + F) tidies Python and PySpark the standard way, and SQL in your engine's own dialect.</p></div>
-    <div class="card"><div class="ico">🔄</div><h3>Always-current models <span class="tag-new">NEW</span></h3><p>Every model your provider offers, updated daily: new ones appear and retired ones disappear on their own.</p></div>
+    <div class="card"><div class="ico">🏞️</div><h3>Lakehouse &amp; Spark case studies</h3><p>Delta, Databricks and Iceberg: time travel, VACUUM, Z-order, liquid clustering. Plus real Spark situations: pick the right fix and see why.</p></div>
+    <div class="card"><div class="ico">⏱️</div><h3>Coding rounds</h3><p>A timed problem with a coach as your interviewer: optimise slow code, answer a follow-up, get a score out of 100.</p></div>
+    <div class="card"><div class="ico">🧠</div><h3>ML &amp; AI from scratch</h3><p>18 problems in plain Python: metrics, feature prep, k-means, gradient descent, BM25, chunking and context packing.</p></div>
+    <div class="card"><div class="ico">🔁</div><h3>Your practice</h3><p>Problems you struggled with come back for review, and your weakest patterns come with what to try next.</p></div>
+    <div class="card"><div class="ico">🗺️</div><h3>Execution map</h3><p>After a solve, see what the engine did next to the best solution: Spark stages and shuffles, SQL steps with row counts, Python line counts and Big-O.</p></div>
+    <div class="card"><div class="ico">🔑</div><h3>Sign in, no key</h3><p>Connect your coach by signing in with your Anthropic account, ChatGPT plan or Google Cloud, or paste an API key as before.</p></div>
+    <div class="card"><div class="ico">✨</div><h3>Format code</h3><p>One click (Shift + Alt + F) tidies Python and PySpark the standard way, and SQL in your engine's own dialect.</p></div>
+    <div class="card"><div class="ico">🔄</div><h3>Always-current models</h3><p>Every model your provider offers, updated daily: new ones appear and retired ones disappear on their own.</p></div>
     <div class="card"><div class="ico">🎙️</div><h3>Mock interviews</h3><p>Data Engineer, AI Engineer, ML Engineer and Data Analyst. Speak or type; every answer graded with a report at the end.</p></div>
     <div class="card"><div class="ico">🤖</div><h3>AI system design</h3><p>Production GenAI: RAG, fine-tuning, evals, observability, caching, feedback loops and guardrails.</p></div>
     <div class="card"><div class="ico">🧮</div><h3>264 real problems</h3><p>SQL, Python, PySpark and ML &amp; AI from scratch by pattern: windows, gaps &amp; islands, CDC, SCD2, metrics, RAG, joins, parsing and more, plus curated lists.</p></div>
@@ -276,10 +256,19 @@
     Linux: extract the download and run <code>DataDojo/DataDojo</code>; it opens in your browser.</p>
 </section>
 
-<footer><div class="wrap"><span>Built by Sahil Deol</span><a href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub</a>
-  <a href="https://www.linkedin.com/in/sahildeol1998/" target="_blank" rel="noreferrer">LinkedIn</a>
-  <a href="https://github.com/deolsahil/datadojo/issues" target="_blank" rel="noreferrer">Report an issue</a><span class="sp"></span>
-  <span>Mascots by <a href="https://blobatar.dev" target="_blank" rel="noreferrer">blobatar</a> · MIT licensed</span></div></footer>
+<footer>
+  <div class="wrap foot-top">
+    <div><div class="foot-name">Sahil<span>.</span></div><p>Built DataDojo for data &amp; AI folks.<br>Practice like it's the real thing.</p></div>
+    <div><small>Explore</small><div class="foot-links"><a href="#download">Download</a><a href="#tour">Tour</a><a href="#features">Features</a><a href="#start">Get started</a><a href="#first-open">First-open help</a></div></div>
+    <div><small>Get in touch</small><div class="foot-links"><a href="https://www.linkedin.com/in/sahildeol1998/" target="_blank" rel="noreferrer">LinkedIn ↗</a>
+      <a href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://github.com/deolsahil/datadojo/issues" target="_blank" rel="noreferrer">Report an issue ↗</a></div>
+      <span class="copy">© 2026 Sahil Deol · MIT licensed</span></div>
+  </div>
+  <div class="wrap foot-bye"><b>See you around.</b><a href="#">Back to top ↑</a></div>
+  <div class="crowd" aria-hidden="true"><div class="crowd-word">DATADOJO</div>
+    <div class="crowd-strip"></div><img class="me" src="assets/footer/sahil.webp" alt="" loading="lazy" decoding="async" width="560" height="1528"><div class="crowd-strip front"></div></div>
+  <div class="foot-credit">Mascots by <a href="https://blobatar.dev" target="_blank" rel="noreferrer">blobatar</a></div>
+</footer>
 
 <div class="pop" id="pop" role="dialog" aria-modal="true" aria-labelledby="pop-title"><div class="pop-card">
   <div class="pop-stage"><div class="ring"></div><span class="dev d1">💻</span><span class="dev d2">🖥️</span><div id="pop-blob"></div></div>

@@ -6,3 +6,4 @@ dist/
 .gstack/
 build/
 brag-output/
+site/assets/footer/*.png
