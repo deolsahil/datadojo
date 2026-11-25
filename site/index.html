@@ -53,7 +53,6 @@
   .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 34px }
   .others { font-size: 14px; color: var(--dim) } .others a { color: var(--text2); border-bottom: 1px solid var(--line2) } .others a:hover { color: var(--text) }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 26px; font: 12px var(--mono); color: var(--faint) } .meta b { color: var(--text2); font-weight: 500 }
-  .count { display: inline-flex; align-items: center; gap: 8px } .count i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(74,222,128,.16); animation: blink 2s ease-in-out infinite }
   .linkish { padding: 0; border: 0; background: none; font: inherit; color: var(--text2); border-bottom: 1px solid var(--line2); cursor: pointer } .linkish:hover { color: var(--text) }
   .mobile-note { display: none; margin-top: 14px; color: var(--dim); font-size: 14px } body.is-mobile .mobile-note { display: block }
   .stage { position: relative; display: grid; place-items: center; aspect-ratio: 1; width: 100%; max-width: 420px; margin-left: auto; --mo-track-travel: 4px }
@@ -127,7 +126,7 @@
   .foot-credit { padding: 12px 0 16px; text-align: center; background: #fff; font-size: 11.5px; color: #8a8f98 } .foot-credit a { color: #6b7280 }
 
   @keyframes shimmer { to { background-position: 300% 0 } } @keyframes caret { 50% { opacity: 0 } } @keyframes spin { to { rotate: 360deg } }
-  @keyframes blink { 50% { opacity: .35 } } @keyframes rise { from { opacity: 0; translate: 0 10px } }
+  @keyframes rise { from { opacity: 0; translate: 0 10px } }
   @media (max-width: 900px) {
     .navlinks { display: none } .wrap { padding: 0 18px } main { padding-top: 14px }
     .hero { grid-template-columns: 1fr; padding: 40px 24px } .stage { order: -1; max-width: 280px; margin: 0 auto } .frame { padding: 32px 22px; border-radius: 24px }
@@ -156,8 +155,7 @@
       <div class="cta"><a class="pill primary big" id="dl-main" data-dl href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg></span><span id="dl-label">Download for Mac</span></a>
         <span class="others" id="dl-others">or <a data-dl href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-Windows-Setup.exe">Windows</a> · <a data-dl href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-Linux-x64.tar.gz">Linux</a> · <a data-dl href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-x64.dmg">Intel Mac</a></span></div>
       <div class="mobile-note">On a phone? Tap Download and we'll help you send DataDojo to your computer.</div>
-      <div class="meta"><span><b id="dl-version">Free</b> · open source (MIT)</span><span class="count" id="st-pill" hidden><i></i><span><b id="st-dls">0</b> <span id="st-word">downloads</span></span></span>
-        <span><b>Runs locally</b>, nothing leaves your laptop</span><button class="linkish" data-help>First-open help</button></div>
+      <div class="meta"><span><b id="dl-version">Free</b> · open source (MIT)</span><span><b>Runs locally</b>, nothing leaves your laptop</span><button class="linkish" data-help>First-open help</button></div>
     </div>
     <div class="stage" id="stage"><div class="ring"></div><div class="ring r2"></div><div class="glow"></div>
       <span class="orbit o1" data-seed="duck"><small>Duck · SQL</small></span><span class="orbit o2" data-seed="pandas"><small>Pip · Python</small></span>
@@ -349,20 +347,13 @@ $('#pop-share').onclick = async () => {
   else $('#pop-copy').click();
 };
 
-// Real download count: counted by our own counter (Vercel function + Upstash) when a download link is clicked,
-// at most once per visitor per day. Hidden until there is a download.
+// Download count: still counted (Vercel function + Upstash, at most once per visitor per day) but not shown on the page.
+// See the number at https://datadojo-site.vercel.app/api/downloads
 const COUNTER_API = 'https://datadojo-site.vercel.app/api/downloads';
-function countTo(el, to) {
-  const from = +el.textContent.replace(/,/g, '') || 0, t0 = performance.now();
-  const step = t => { const k = Math.min(1, (t - t0) / 700); el.textContent = Math.round(from + (to - from) * (1 - (1 - k) ** 3)).toLocaleString(); if (k < 1) requestAnimationFrame(step); };
-  requestAnimationFrame(step);
-}
-function showCount(n) { if (!(n > 0)) return; $('#st-pill').hidden = false; $('#st-word').textContent = n === 1 ? 'download' : 'downloads'; countTo($('#st-dls'), n); }
-fetch(COUNTER_API, { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : null).then(d => d && showCount(d.count)).catch(() => {});
 function countDownload() {
   if (localStorage.getItem('dd-downloaded')) return;
   localStorage.setItem('dd-downloaded', '1');
-  fetch(COUNTER_API, { method: 'POST', keepalive: true }).then(r => r.ok ? r.json() : Promise.reject()).then(d => showCount(d.count)).catch(() => localStorage.removeItem('dd-downloaded'));
+  fetch(COUNTER_API, { method: 'POST', keepalive: true }).then(r => { if (!r.ok) throw 0; }).catch(() => localStorage.removeItem('dd-downloaded'));
 }
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-dl]'); if (!a) return;
