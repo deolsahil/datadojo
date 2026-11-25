@@ -7,3 +7,4 @@ dist/
 build/
 brag-output/
 site/assets/footer/*.png
+site/_mock/

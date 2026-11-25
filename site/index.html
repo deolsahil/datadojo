@@ -7,278 +7,291 @@
 <meta name="description" content="Free desktop app for Data and AI interviews: 264 SQL, Python, PySpark and ML &amp; AI problems graded by real engines, Spark and lakehouse case studies, mock interviews for Data, AI and ML roles, data and AI system design, brain games and AI coaches. Runs on your own computer.">
 <meta property="og:title" content="DataDojo">
 <meta property="og:description" content="Practice for Data and AI interviews like the real thing: SQL, Python, PySpark, AI and ML, with friendly AI coaches. Free, runs locally.">
-<meta property="og:image" content="assets/workspace.webp">
+<meta property="og:image" content="https://datadojo-site.vercel.app/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://api.github.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="vendor/blobatar/motion.css">
-<link rel="stylesheet" href="vendor/blobatar/gaze.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&family=JetBrains+Mono:wght@800&display=swap">
+<link rel="stylesheet" href="vendor/blobatar/motion.css"><link rel="stylesheet" href="vendor/blobatar/gaze.css">
 <style>
-  :root { --bg: #0b0d11; --bg2: #11141a; --card: #151920; --line: #232933; --line2: #2f3744; --text: #e2e6ed; --text2: #c3c9d3;
-          --dim: #8a92a0; --faint: #5a6270; --acc: #7dd3fc; --acc2: #fbbf24; --on-acc: #04121a; --easy: #4ade80; --hard: #f87171;
-          --mono: "JetBrains Mono", ui-monospace, Menlo, monospace }
-  * { box-sizing: border-box }
-  html { scroll-behavior: smooth }
-  body { margin: 0; font: 15px/1.65 var(--mono); color: var(--text); background:
-         radial-gradient(1200px 600px at 80% -10%, rgba(125,211,252,.09), transparent 60%),
-         radial-gradient(900px 500px at 0% 10%, rgba(251,191,36,.06), transparent 60%), var(--bg) }
-  a { color: inherit; text-decoration: none }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px }
-  nav { position: sticky; top: 0; z-index: 5; backdrop-filter: blur(12px); background: rgba(11,13,17,.8); border-bottom: 1px solid var(--line) }
-  nav .wrap { display: flex; align-items: center; gap: 26px; height: 62px }
-  .logo { font-weight: 800; font-size: 19px; color: var(--acc) } .logo span { color: var(--acc2) }
-  nav a.l { color: var(--dim); font-size: 13.5px } nav a.l:hover { color: var(--text) } .sp { flex: 1 }
-  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 12px 22px; border-radius: 12px; font: 700 15px var(--mono);
-         border: 1px solid var(--line2); background: var(--card); color: var(--text); cursor: pointer; transition: transform .15s, box-shadow .2s, border-color .2s }
-  .btn:hover { transform: translateY(-2px); border-color: var(--acc) }
-  .btn.primary { background: var(--acc); color: var(--on-acc); border-color: var(--acc); box-shadow: 0 12px 34px -12px var(--acc) }
-  .btn.small { padding: 7px 14px; font-size: 13px; border-radius: 9px }
-  .hero { display: grid; grid-template-columns: 1.25fr .75fr; gap: 30px; align-items: center; padding-block: 70px 40px }
-  .kicker { color: var(--acc); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; font-weight: 700 }
-  h1 { font-size: clamp(42px, 6.4vw, 72px); line-height: 1.02; margin: 14px 0 16px; font-weight: 800;
-       background: linear-gradient(90deg, var(--acc), #bfe6f9, var(--acc2), var(--acc)); background-size: 300% 100%;
-       -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 9s linear infinite }
-  h1 i { font-style: normal; -webkit-text-fill-color: var(--acc); animation: caret 1.1s steps(1) infinite }
-  .lead { font-size: 17px; color: var(--text2); max-width: 600px; margin: 0 0 26px }
-  .dlg { display: grid; grid-template-columns: repeat(2, minmax(0, 300px)); gap: 14px; margin-top: 4px }
-  .dbtn { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 66px; padding: 0 22px;
-          border-radius: 14px; border: 1px solid var(--line2); background: transparent; color: var(--text); font: 700 16px var(--mono); white-space: nowrap;
-          cursor: pointer; transition: transform .15s, border-color .2s, box-shadow .2s, background-color .2s }
-  .dbtn:hover { transform: translateY(-2px); border-color: var(--acc) }
-  .dbtn.primary { background: var(--acc); color: var(--on-acc); border-color: var(--acc); box-shadow: 0 14px 34px -14px var(--acc) }
-  .dbtn .caret { padding: 6px 4px; margin: -6px -6px -6px 0; font-size: 13px; border-radius: 6px } .dbtn .caret:hover { background: rgba(0,0,0,.12) }
-  .mac { position: relative } .mac .dbtn { width: 100% }
-  .menu { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 4; display: grid; gap: 4px; padding: 6px; border-radius: 14px;
-          background: var(--bg2); border: 1px solid var(--line2); box-shadow: 0 20px 40px rgba(0,0,0,.5);
-          opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .15s, transform .15s }
-  .menu.open { opacity: 1; transform: none; pointer-events: auto }
-  .menu a { display: grid; padding: 9px 12px; border-radius: 10px; cursor: pointer } .menu a:hover { background: var(--card) }
-  .menu small { color: var(--dim); font-size: 11.5px }
-  .dl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 18px }
-  .count { display: inline-flex; align-items: center; gap: 4px; padding: 8px 16px; border-radius: 999px; font-weight: 700; font-size: 13.5px; color: var(--text2);
-           border: 1px solid rgba(125,211,252,.35); background: rgba(125,211,252,.07) }
-  .count b { color: var(--acc); font-variant-numeric: tabular-nums }
-  .count .dot { width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--easy); box-shadow: 0 0 0 4px rgba(74,222,128,.18); animation: blink 2s ease-in-out infinite }
-  @keyframes blink { 50% { opacity: .35 } }
-  .dl { display: flex; flex-wrap: wrap; gap: 12px; align-items: center }
-  .dl-note { color: var(--faint); font-size: 12.5px } .dl-note a { color: var(--dim); text-decoration: underline }
-  .others { margin-top: 10px; font-size: 13px; color: var(--dim) } .others a { color: var(--acc); margin-right: 14px }
-  .stage { position: relative; height: 340px; display: grid; place-items: center; --mo-track-travel: 4px }
-  .stage .ring { position: absolute; width: 300px; height: 300px; border-radius: 50%; border: 1px dashed rgba(125,211,252,.35); animation: spin 26s linear infinite }
-  .stage .glow { position: absolute; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, rgba(125,211,252,.18), transparent 70%) }
-  .orbit { position: absolute; display: grid; justify-items: center; font-size: 11px; color: var(--dim); animation: bob 5s ease-in-out infinite }
-  .orbit:nth-of-type(1) { top: 12px; left: 22px } .orbit:nth-of-type(2) { top: 30px; right: 6px; animation-delay: -1.5s }
-  .orbit:nth-of-type(3) { bottom: 0; left: 30px; animation-delay: -3s }
-  .bubble { position: absolute; bottom: 54px; right: 0; max-width: 220px; padding: 10px 14px; border-radius: 14px; border-bottom-right-radius: 4px;
-            background: var(--card); border: 1px solid var(--line2); font-size: 12.5px; color: var(--text2); animation: pop .5s both 1s }
-  section.wrap { padding-top: 70px; padding-bottom: 20px }
-  h2 { font-size: 30px; margin: 8px 0 10px } .sub { color: var(--dim); max-width: 680px; margin: 0 0 28px }
-  .tabs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px }
-  .tabs button { padding: 8px 15px; border-radius: 10px; border: 1px solid var(--line2); background: var(--card); color: var(--text2); font: 700 13px var(--mono); cursor: pointer }
-  .tabs button.on { color: var(--acc); border-color: rgba(125,211,252,.55); background: rgba(125,211,252,.08) }
-  .win { border: 1px solid var(--line2); border-radius: 16px; overflow: hidden; background: var(--card); box-shadow: 0 40px 80px -40px rgba(0,0,0,.8), 0 0 0 1px rgba(125,211,252,.04) }
-  .win .bar { display: flex; gap: 8px; align-items: center; padding: 12px 16px; background: var(--bg2); border-bottom: 1px solid var(--line) }
-  .win .bar i { width: 12px; height: 12px; border-radius: 50% } .win .bar i:nth-child(1) { background: #ff5f57 } .win .bar i:nth-child(2) { background: #febc2e }
-  .win .bar i:nth-child(3) { background: #28c840 } .win .bar span { flex: 1; text-align: center; color: var(--faint); font-size: 12px; margin-right: 50px }
-  .win img { display: block; width: 100%; height: auto; animation: fade .4s both }
-  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; transition: transform .2s, border-color .2s }
-  .card:hover { transform: translateY(-3px); border-color: rgba(125,211,252,.45) }
-  .card h3 { margin: 10px 0 6px; font-size: 16px } .card p { margin: 0; color: var(--dim); font-size: 13.5px }
-  .card .ico { font-size: 22px }
-  .coaches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; --mo-track-travel: 3px }
-  .coach { text-align: center } .coach b { display: block; margin-top: 8px } .coach small { color: var(--dim) }
-  .steps { counter-reset: s; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px }
-  .steps .card::before { counter-increment: s; content: "0" counter(s); font-size: 28px; font-weight: 800; color: var(--faint) }
-  pre { background: #0e1116; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow: auto; font-size: 13px; color: var(--text2) }
-  .help { display: grid; grid-template-columns: 1fr 1fr; gap: 16px } .help ol { margin: 8px 0 0; padding-left: 20px; color: var(--text2); font-size: 13.5px }
-  /* footer: dark band + white crowd band (Sahil in the middle, DATADOJO behind) */
-  footer { margin-top: 80px; border-top: 1px solid var(--line); background: #07080b; color: var(--dim); font-size: 13px }
-  footer a { color: var(--text2) } footer a:hover { color: var(--acc) }
-  .foot-top { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 30px; padding-block: 54px 34px }
-  .foot-name { font-size: 26px; font-weight: 800; color: var(--text) } .foot-name span { color: var(--acc2) }
-  .foot-top p { margin: 8px 0 0; line-height: 1.6 } .foot-top small { display: block; margin-bottom: 10px; color: var(--faint) }
-  .foot-links { display: flex; flex-wrap: wrap; gap: 8px 18px } .foot-top .copy { display: block; margin-top: 14px; color: var(--faint); font-size: 12px }
-  .foot-bye.wrap { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 26px }   /* .wrap resets padding on phones */
-  .foot-bye b { font-size: clamp(28px, 4vw, 44px); color: var(--text); line-height: 1.1 }
-  .crowd { position: relative; height: clamp(240px, 34vw, 480px); overflow: hidden; background: #fff }
-  .crowd-word { position: absolute; inset: 4% 0 auto; text-align: center; font-size: 19vw; font-weight: 800; line-height: .9; letter-spacing: -.04em; color: #ececec; user-select: none }
-  /* measured from the reference: back rows drift right ~11% of the width per second, the front row slides left ~16%/s, the person in the middle stays still */
-  .crowd-strip { position: absolute; right: 0; bottom: 0; height: 72%; aspect-ratio: 9216 / 726;   /* 3 copies of the 3072x726 strip; sliding by one copy loops seamlessly */
-                 background: url(assets/footer/crowd.webp) 0 100% / auto 100% repeat-x; animation: march 9s linear infinite }
-  .crowd-strip.front { z-index: 2; right: auto; left: 0; top: 63%; bottom: auto; height: 97%; scale: -1 1; animation: march-back 8.5s linear infinite }   /* flipped + bigger: only its top row shows */
-  .crowd .me { position: absolute; z-index: 1; left: 50%; bottom: 0; height: 100%; width: auto; translate: -50% 0 }
-  .foot-credit { padding: 12px 0 16px; text-align: center; color: var(--faint); font-size: 11.5px; background: #fff } .foot-credit a { color: #6b7280 }
-  @keyframes march { to { translate: calc(100% / 3) 0 } } @keyframes march-back { to { translate: calc(-100% / 3) 0 } }
-  .grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)) }
-  .js .reveal:not(.in) { opacity: 0; transform: translateY(12px) } .reveal { transition: opacity .35s, transform .35s cubic-bezier(.2,.8,.2,1) }
-  @keyframes shimmer { to { background-position: 300% 0 } } @keyframes caret { 50% { opacity: 0 } }
-  @keyframes spin { to { transform: rotate(360deg) } } @keyframes bob { 50% { translate: 0 -8px } }
-  @keyframes pop { from { opacity: 0; transform: scale(.85) } } @keyframes fade { from { opacity: 0 } }
-  /* ---------- any screen ---------- */
-  img, svg { max-width: 100% }
-  body { overflow-x: hidden }
-  @media (max-width: 960px) {
-    .hero { grid-template-columns: 1fr; padding-block: 48px 20px; gap: 10px } .stage { height: 300px; order: -1 }
-    .help { grid-template-columns: 1fr } .grid, .grid.four, .steps { grid-template-columns: 1fr 1fr } .coaches { grid-template-columns: repeat(4, minmax(0, 1fr)) }
-    nav a.l { display: none }
-  }
-  @media (max-width: 640px) {
-    .wrap { padding: 0 18px } nav .wrap { gap: 12px; height: 56px } .logo { font-size: 17px }
-    nav .btn.small { padding: 6px 11px; font-size: 12px }
-    .hero { padding-block: 26px 10px } h1 { font-size: 44px; margin: 8px 0 12px } .lead { font-size: 15px; margin-bottom: 20px }
-    .stage { height: 250px } .stage .ring { width: 220px; height: 220px } .stage .glow { width: 200px; height: 200px }
-    .stage #sensei svg { width: 124px; height: 124px } .orbit svg { width: 42px; height: 42px }
-    .orbit:nth-of-type(1) { top: 4px; left: 4px } .orbit:nth-of-type(2) { top: 14px; right: 0 } .orbit:nth-of-type(3) { bottom: 0; left: 8px }
-    .bubble { right: 0; bottom: 18px; max-width: 190px; font-size: 11.5px }
-    .dlg { grid-template-columns: 1fr } .dbtn { min-height: 56px; font-size: 15px; width: 100% }
-    .dl-meta { gap: 10px }
-    section.wrap { padding-top: 46px } h2 { font-size: 24px } .sub { font-size: 14px }
-    .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -18px 12px; padding: 0 18px } .tabs::-webkit-scrollbar { display: none }
-    .tabs button { white-space: nowrap } .win { border-radius: 12px } .win .bar span { font-size: 10.5px; margin-right: 0 }
-    .grid, .steps { grid-template-columns: 1fr } .coaches { grid-template-columns: 1fr 1fr } .coach svg { width: 70px; height: 70px }
-    .foot-top { grid-template-columns: 1fr; gap: 22px; padding-block: 40px 24px } .foot-bye b { font-size: min(25px, 6.3vw); white-space: nowrap } .foot-bye a { white-space: nowrap; font-size: 12.5px }
-  }
+  :root { --bg: #0a0b0d; --panel: #101215; --panel2: #15181c; --line: rgba(255,255,255,.07); --line2: rgba(255,255,255,.12);
+          --text: #ededef; --text2: #b9bdc4; --dim: #8b9099; --faint: #5d626b; --acc: #7dd3fc; --acc2: #fbbf24; --on-acc: #04121a; --ok: #4ade80;
+          --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, Menlo, monospace }
+  * { box-sizing: border-box } html { scroll-behavior: smooth }
+  body { margin: 0; color: var(--text); font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden;
+         background: radial-gradient(800px 500px at 100% 0%, rgba(125,211,252,.06), transparent 60%), var(--bg) }
+  a { color: inherit; text-decoration: none } img { display: block; max-width: 100%; height: auto }
+  button { font: inherit; color: inherit }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px }
+  .lbl { font: 500 11.5px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--dim) }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); margin-right: 10px; vertical-align: 2px }
 
-  /* ---------- "desktop only" popup for phones and tablets ---------- */
-  .pop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 18px; background: rgba(3,5,8,.62);
-         backdrop-filter: blur(6px); opacity: 0; pointer-events: none; transition: opacity .2s }
-  .pop.open { opacity: 1; pointer-events: auto }
-  .pop-card { width: min(440px, 100%); max-height: calc(100vh - 36px); overflow: auto; border-radius: 22px; background: var(--bg2);
-              border: 1px solid var(--line2); box-shadow: 0 30px 80px rgba(0,0,0,.6); text-align: center; transform: translateY(14px) scale(.96);
-              transition: transform .35s cubic-bezier(.2,.8,.2,1) }
-  .pop.open .pop-card { transform: none }
-  .pop-stage { position: relative; height: 170px; display: grid; place-items: center; overflow: hidden; border-bottom: 1px solid var(--line);
-    background: radial-gradient(240px 150px at 50% 72%, rgba(125,211,252,.22), transparent 70%), linear-gradient(180deg, rgba(251,191,36,.08), var(--bg2));
-    --mo-track-travel: 4px }
-  .pop-stage .ring { position: absolute; width: 150px; height: 150px; border-radius: 50%; border: 1px dashed rgba(125,211,252,.45); animation: spin 18s linear infinite }
-  .pop-stage .dev { position: absolute; font-size: 24px; animation: bob 4s ease-in-out infinite } .pop-stage .d1 { left: 16%; top: 30% } .pop-stage .d2 { right: 16%; top: 22%; animation-delay: -2s }
-  .pop-body { padding: 20px 24px 22px } .pop-body h3 { margin: 6px 0 8px; font-size: 21px } .pop-body p { margin: 0 0 16px; color: var(--dim); font-size: 13.5px }
-  .link-chip { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: var(--card);
-               border: 1px solid var(--line2); font-size: 12.5px; color: var(--text2); text-align: left; overflow: hidden }
+  /* nav */
+  nav { position: sticky; top: 0; z-index: 10; padding: 14px 0; backdrop-filter: blur(14px); background: rgba(10,11,13,.72); border-bottom: 1px solid var(--line) }
+  nav .wrap { display: flex; align-items: center; gap: 8px }
+  .logo { display: flex; align-items: center; gap: 9px; margin-right: 18px; font: 700 20px/1 var(--sans); letter-spacing: -.045em; color: #fff } .logo i { font-style: normal; color: var(--acc2) }
+  .navlinks { display: flex; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.02) }
+  .navlinks a { padding: 7px 14px; border-radius: 999px; font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim) }
+  .navlinks a:hover { color: var(--text); background: rgba(255,255,255,.05) }
+  .sp { flex: 1 }
+  .pill { display: inline-flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line2); font: 500 14px var(--sans); color: var(--text); background: none; cursor: pointer; transition: border-color .2s, background .2s }
+  .pill:hover { border-color: rgba(255,255,255,.25) }
+  .pill.primary { background: var(--text); color: #0a0b0d; border-color: var(--text) } .pill.primary:hover { background: #fff }
+  .pill .ic { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--acc); color: var(--on-acc) }
+  .pill.big { height: 52px; padding: 0 22px 0 9px; font-size: 15.5px }
+
+  /* hero */
+  .frame { padding: 54px 56px; border: 1px solid var(--line); border-radius: 32px; background: linear-gradient(180deg, var(--panel), rgba(16,18,21,.6)); margin-bottom: 22px }
+  main { padding-top: 22px }
+  .hero { display: grid; grid-template-columns: 1.2fr .8fr; gap: 30px; align-items: center; padding: 70px 64px }
+  .hero h1 { margin: 22px 0 18px; font: 800 clamp(52px, 8.4vw, 108px)/.95 "JetBrains Mono", monospace; letter-spacing: -.02em;
+             background: linear-gradient(90deg, var(--acc), #bfe6f9, var(--acc2), var(--acc)); background-size: 300% 100%;
+             -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 9s linear infinite }
+  .hero h1 i { font-style: normal; -webkit-text-fill-color: var(--acc); animation: caret 1.1s steps(1) infinite }
+  .lead { margin: 0; max-width: 560px; font-size: clamp(20px, 2vw, 24px); line-height: 1.4; font-weight: 500; letter-spacing: -.01em } .lead span { color: var(--dim) }
+  .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 34px }
+  .others { font-size: 14px; color: var(--dim) } .others a { color: var(--text2); border-bottom: 1px solid var(--line2) } .others a:hover { color: var(--text) }
+  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 26px; font: 12px var(--mono); color: var(--faint) } .meta b { color: var(--text2); font-weight: 500 }
+  .count { display: inline-flex; align-items: center; gap: 8px } .count i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(74,222,128,.16); animation: blink 2s ease-in-out infinite }
+  .linkish { padding: 0; border: 0; background: none; font: inherit; color: var(--text2); border-bottom: 1px solid var(--line2); cursor: pointer } .linkish:hover { color: var(--text) }
+  .mobile-note { display: none; margin-top: 14px; color: var(--dim); font-size: 14px } body.is-mobile .mobile-note { display: block }
+  .stage { position: relative; display: grid; place-items: center; aspect-ratio: 1; width: 100%; max-width: 420px; margin-left: auto; --mo-track-travel: 4px }
+  .stage .ring { position: absolute; inset: 6%; border-radius: 50%; border: 1px solid var(--line2) }
+  .stage .ring.r2 { inset: 20%; border-style: dashed; border-color: rgba(125,211,252,.25); animation: spin 60s linear infinite }
+  .stage .glow { position: absolute; inset: 28%; border-radius: 50%; background: radial-gradient(circle, rgba(125,211,252,.16), transparent 70%) }
+  .orbit { position: absolute; display: grid; justify-items: center; gap: 4px; font: 11px var(--mono); color: var(--dim) }
+  .orbit.o1 { top: 6%; left: 14% } .orbit.o2 { top: 16%; right: 4% } .orbit.o3 { bottom: 8%; left: 8% }
+
+  /* sections */
+  .sh { display: grid; grid-template-columns: auto 1fr auto; gap: 22px; align-items: start; margin-bottom: 34px }
+  .no { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line2); font: 500 14px var(--mono); color: var(--dim) }
+  .sh h2 { margin: 10px 0 8px; font-size: clamp(30px, 3.6vw, 44px); line-height: 1.05; font-weight: 700; letter-spacing: -.035em }
+  .sh p { margin: 0; max-width: 560px; color: var(--dim); font-size: 16.5px }
+  .shot { margin: 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--line2); background: var(--panel2); box-shadow: 0 30px 80px -40px rgba(0,0,0,.9) } .shot img { width: 100% }
+  .feat { display: grid; grid-template-columns: 1.35fr 1fr; gap: 44px; align-items: center }
+  .feat + .feat { margin-top: 56px } .feat:nth-child(even) { grid-template-columns: 1fr 1.35fr } .feat:nth-child(even) .shot { order: 2 }
+  .feat h3 { margin: 12px 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -.025em; line-height: 1.15 }
+  .feat p { margin: 0 0 18px; color: var(--text2) }
+  .feat ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px } .feat li { display: flex; gap: 12px; color: var(--dim); font-size: 15px }
+  .feat li::before { content: ""; flex: none; width: 5px; height: 5px; margin-top: 10px; border-radius: 50%; background: var(--acc) }
+  .also { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line) }
+  .also div { padding: 22px 24px 24px 0; border-bottom: 1px solid var(--line) } .also b { display: block; margin-bottom: 4px; font-weight: 600; letter-spacing: -.01em } .also span { color: var(--dim); font-size: 14.5px }
+  .coaches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; --mo-track-travel: 3px }
+  .coach { padding: 22px; border-radius: 18px; border: 1px solid var(--line); background: var(--panel); text-align: center } .coach svg { margin: 0 auto } .coach b { display: block; margin-top: 10px; font-weight: 600 }
+  .coach small { font: 11.5px var(--mono); color: var(--dim); letter-spacing: .06em; text-transform: uppercase }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px } .step { padding: 24px; border-radius: 18px; border: 1px solid var(--line); background: var(--panel) }
+  .step .no { margin-bottom: 18px } .step b { display: block; font-size: 17px; font-weight: 600 } .step > span { display: block; color: var(--dim); font-size: 14.5px }
+  .step-help { display: inline-flex; gap: 6px; margin-top: 14px; padding: 0; border: 0; background: none; font: 500 14px var(--sans); color: var(--acc); cursor: pointer } .step-help span { transition: translate .2s } .step-help:hover span { translate: 3px 0 }
+
+  /* popups: native <dialog> (Esc built in, click outside closes) */
+  dialog.sheet { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--line2); border-radius: 26px; background: var(--panel); color: var(--text); box-shadow: 0 40px 120px -30px #000 }
+  dialog.sheet::backdrop { background: rgba(5,6,8,.66); backdrop-filter: blur(6px) }
+  dialog.sheet[open] { animation: rise .28s cubic-bezier(.2,.8,.2,1) }
+  .sheet-head { display: flex; align-items: start; gap: 16px; padding: 26px 28px 0 } .sheet-head h3 { margin: 8px 0 4px; font-size: 24px; letter-spacing: -.03em; line-height: 1.2 } .sheet-head p { margin: 0; color: var(--dim); font-size: 14.5px }
+  .sheet-x { margin-left: auto; width: 36px; height: 36px; flex: none; border-radius: 50%; border: 1px solid var(--line2); background: none; color: var(--dim); font-size: 18px; cursor: pointer } .sheet-x:hover { color: var(--text) }
+  .sheet-x:focus:not(:focus-visible) { outline: none }
+  .os-tabs { display: flex; gap: 4px; margin: 20px 28px 0; padding: 4px; border: 1px solid var(--line); border-radius: 999px; width: fit-content }
+  .os-tabs button { padding: 7px 16px; border: 0; border-radius: 999px; background: none; font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); cursor: pointer }
+  .os-tabs button[aria-selected="true"] { background: var(--text); color: #0a0b0d }
+  .os-pane { padding: 20px 28px 26px } .os-pane[hidden] { display: none } .os-pane > p { margin: 0 0 16px; color: var(--text2); font-size: 15px }
+  .os-pane ol { margin: 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 12px }
+  .os-pane li { counter-increment: s; display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; color: var(--text2); font-size: 15px }
+  .os-pane li::before { content: counter(s); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--line2); font: 500 12.5px var(--mono); color: var(--dim) }
+  .os-pane li b { color: var(--text); font-weight: 600 } .os-pane kbd { padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line2); font: 12.5px var(--mono) }
+  .sheet-foot { padding: 16px 28px 22px; border-top: 1px solid var(--line); color: var(--dim); font-size: 13.5px } .sheet-foot a { color: var(--text2); border-bottom: 1px solid var(--line2) }
+  /* phones: "desktop only" sheet */
+  .pop-stage { position: relative; height: 150px; display: grid; place-items: center; --mo-track-travel: 4px }
+  .pop-stage .ring { position: absolute; width: 130px; height: 130px; border-radius: 50%; border: 1px dashed rgba(125,211,252,.4); animation: spin 18s linear infinite }
+  .pop-body { padding: 4px 28px 24px; text-align: center } .pop-body h3 { margin: 8px 0 8px; font-size: 22px; letter-spacing: -.03em } .pop-body p { margin: 0 0 16px; color: var(--dim); font-size: 14.5px }
+  .link-chip { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line2); background: var(--panel2); font: 12.5px var(--mono); color: var(--text2); text-align: left }
   .link-chip span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-  .pop-actions { display: grid; gap: 10px } .pop-actions .btn { justify-content: center; width: 100% }
-  .pop-later { margin-top: 12px; background: none; border: 0; color: var(--faint); font: 13px var(--mono); cursor: pointer; text-decoration: underline }
-  .toast { margin-top: 10px; min-height: 18px; font-size: 12.5px; color: var(--easy) }
-  .mobile-note { display: none; margin-top: 12px; color: var(--dim); font-size: 13px } body.is-mobile .mobile-note { display: block }
-  @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important } .reveal { opacity: 1; transform: none } }
+  .pop-actions { display: grid; gap: 10px } .pop-actions .pill { justify-content: center; width: 100%; height: 46px }
+  .pop-later { margin-top: 12px; padding: 0; border: 0; background: none; color: var(--faint); font-size: 13.5px; text-decoration: underline; cursor: pointer }
+  .toast { min-height: 20px; margin-top: 10px; font-size: 13px; color: var(--ok) }
+
+  /* footer: links band + white crowd band (Sahil in the middle, DATADOJO behind) */
+  footer { margin-top: 60px; border-top: 1px solid var(--line); color: var(--dim); font-size: 14px }
+  footer a { color: var(--text2) } footer a:hover { color: var(--text) }
+  .foot-top { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 30px; padding-block: 56px 30px }
+  .foot-name { font-size: 26px; font-weight: 700; letter-spacing: -.03em; color: var(--text) } .foot-name span { color: var(--acc) }
+  .foot-top p { margin: 8px 0 0 } .foot-top small { display: block; margin-bottom: 12px } .foot-links { display: flex; flex-wrap: wrap; gap: 8px 18px } .copy { display: block; margin-top: 14px; font: 12px var(--mono); color: var(--faint) }
+  .foot-bye.wrap { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 28px }   /* .wrap resets padding on phones */
+  .foot-bye b { font-size: clamp(30px, 4.4vw, 56px); font-weight: 700; letter-spacing: -.04em; color: var(--text); white-space: nowrap }
+  .crowd { position: relative; height: clamp(240px, 34vw, 480px); overflow: hidden; background: #fff }
+  .crowd-word { position: absolute; inset: 4% 0 auto; text-align: center; font: 800 19vw/.9 var(--sans); letter-spacing: -.06em; color: #ececec; user-select: none }
+  /* measured from the reference video: back rows drift right ~11% of the width per second, the front row slides left ~16%/s,
+     every person hops a few px about every 0.6 s on their own timing, and the person in the middle stays still. Drawn on canvas (script below). */
+  .crowd canvas { position: absolute; inset: 0; width: 100%; height: 100% } .crowd canvas.front { z-index: 2 }
+  .crowd .me { position: absolute; z-index: 1; left: 50%; bottom: 0; height: 100%; width: auto; translate: -50% 0 }
+  .foot-credit { padding: 12px 0 16px; text-align: center; background: #fff; font-size: 11.5px; color: #8a8f98 } .foot-credit a { color: #6b7280 }
+
+  @keyframes shimmer { to { background-position: 300% 0 } } @keyframes caret { 50% { opacity: 0 } } @keyframes spin { to { rotate: 360deg } }
+  @keyframes blink { 50% { opacity: .35 } } @keyframes rise { from { opacity: 0; translate: 0 10px } }
+  @media (max-width: 900px) {
+    .navlinks { display: none } .wrap { padding: 0 18px } main { padding-top: 14px }
+    .hero { grid-template-columns: 1fr; padding: 40px 24px } .stage { order: -1; max-width: 280px; margin: 0 auto } .frame { padding: 32px 22px; border-radius: 24px }
+    .feat, .feat:nth-child(even) { grid-template-columns: 1fr; gap: 22px } .feat:nth-child(even) .shot { order: 0 }
+    .also { grid-template-columns: 1fr } .coaches { grid-template-columns: 1fr 1fr } .steps, .foot-top { grid-template-columns: 1fr }
+    .sh { grid-template-columns: auto 1fr; gap: 16px }
+    nav .pill { height: 36px; padding: 0 13px; font-size: 13px } .logo { margin-right: 6px; font-size: 18px }
+    .foot-bye b { font-size: min(30px, 7.4vw) } .foot-top { padding-block: 40px 24px }
+  }
+  @media (max-width: 420px) { nav .pill:not(.primary) { display: none } .cta .pill.big { width: 100%; justify-content: center } }
+  @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important } }
 </style>
 </head>
 <body>
-<nav><div class="wrap"><a class="logo" href="#">DATA<span>DOJO</span></a>
-  <a class="l" href="#tour">Interview</a>
-  <a class="l" href="#tour">Tour</a><a class="l" href="#features">Features</a><a class="l" href="#start">Get started</a>
-  <span class="sp"></span><a class="btn small" href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub ★</a>
-  <a class="btn small primary" id="nav-dl" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg">Download</a></div></nav>
+<nav><div class="wrap"><a class="logo" href="#" aria-label="datadojo home"><img src="favicon.svg" alt="" width="26" height="26"><span>datadojo<i>.</i></span></a>
+  <div class="navlinks"><a href="#practice">Practice</a><a href="#interview">Interview</a><a href="#design">System design</a><a href="#coaches">Coaches</a><a href="#start">Get started</a></div>
+  <span class="sp"></span><a class="pill" href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub</a>
+  <a class="pill primary" id="nav-dl" data-dl href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg">Download</a></div></nav>
 
-<header class="wrap hero" id="download">
-  <div>
-    <div class="kicker">Free desktop app · Mac, Windows &amp; Linux</div>
-    <h1>DATADOJO<i>_</i></h1>
-    <p class="lead">Practice for Data and AI interviews like it's the real thing: SQL, Python, PySpark, AI and ML. 264 problems graded by real engines, plus Databricks and Iceberg case studies, mock interviews you can answer out loud, data and AI system design courses, brain games, and friendly AI coaches that give hints, not answers. Everything runs on your own computer.</p>
-    <div class="dlg">
-      <div class="mac"><a class="dbtn" data-os="mac" id="dl-mac" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg" data-file="DataDojo-macOS-arm64.dmg">⌘ Download for Mac <span class="caret" id="mac-caret" role="button" aria-label="Choose Mac chip">▾</span></a>
-        <div class="menu" id="mac-menu"><a href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg" data-file="DataDojo-macOS-arm64.dmg"><b>Apple Silicon</b><small>M1, M2, M3, M4 and later</small></a>
-          <a href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-x64.dmg" data-file="DataDojo-macOS-x64.dmg"><b>Intel</b><small>Macs from 2020 and earlier</small></a></div></div>
-      <a class="dbtn" data-os="win" data-file="DataDojo-Windows-Setup.exe" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-Windows-Setup.exe">⊞ Download for Windows</a>
-      <a class="dbtn" data-os="linux" data-file="DataDojo-Linux-x64.tar.gz" href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-Linux-x64.tar.gz">🐧 Download for Linux</a>
+<main><div class="wrap">
+  <header class="frame hero" id="download">
+    <div>
+      <div class="lbl"><span class="dot"></span>Free desktop app · Mac · Windows · Linux</div>
+      <h1>DATADOJO<i>_</i></h1>
+      <p class="lead">Practice for data and AI interviews like it's the real thing. <span>Real engines grade your code, and friendly coaches give hints, not answers.</span></p>
+      <div class="cta"><a class="pill primary big" id="dl-main" data-dl href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-arm64.dmg"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></svg></span><span id="dl-label">Download for Mac</span></a>
+        <span class="others" id="dl-others">or <a data-dl href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-Windows-Setup.exe">Windows</a> · <a data-dl href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-Linux-x64.tar.gz">Linux</a> · <a data-dl href="https://github.com/deolsahil/datadojo/releases/latest/download/DataDojo-macOS-x64.dmg">Intel Mac</a></span></div>
+      <div class="mobile-note">On a phone? Tap Download and we'll help you send DataDojo to your computer.</div>
+      <div class="meta"><span><b id="dl-version">Free</b> · open source (MIT)</span><span class="count" id="st-pill" hidden><i></i><span><b id="st-dls">0</b> <span id="st-word">downloads</span></span></span>
+        <span><b>Runs locally</b>, nothing leaves your laptop</span><button class="linkish" data-help>First-open help</button></div>
     </div>
-    <div class="mobile-note">📱 On a phone? Tap a button and we'll help you send DataDojo to your computer.</div>
-    <div class="dl-meta"><span class="count" id="st-pill" hidden><span class="dot"></span><b id="st-dls">0</b>&nbsp;<span id="st-word">downloads</span></span>
-      <span class="dl-note"><span id="dl-version">Free</span> · open source (MIT) · <a href="#first-open">first-open help</a></span></div>
-  </div>
-  <div class="stage" id="stage"><div class="glow"></div><div class="ring"></div>
-    <span class="orbit" data-seed="duck"><small>Duck · SQL</small></span>
-    <span class="orbit" data-seed="pandas"><small>Pip · Python</small></span>
-    <span class="orbit" data-seed="spark"><small>Sparky · PySpark</small></span>
-    <div id="sensei"></div><div class="bubble">Hi! I'm Sensei. Stuck on a window function? I'll nudge, you'll solve. 🐾</div></div>
-</header>
+    <div class="stage" id="stage"><div class="ring"></div><div class="ring r2"></div><div class="glow"></div>
+      <span class="orbit o1" data-seed="duck"><small>Duck · SQL</small></span><span class="orbit o2" data-seed="pandas"><small>Pip · Python</small></span>
+      <span class="orbit o3" data-seed="spark"><small>Sparky · PySpark</small></span><div id="sensei"></div></div>
+  </header>
 
+  <section class="frame" id="practice">
+    <div class="sh"><span class="no">01</span><div><div class="lbl">// Practice</div><h2>Everything you practise for data and AI roles</h2><p>264 problems graded by actually running your code, the same way an interviewer would check it.</p></div></div>
+    <div class="feats">
+    <div class="feat"><figure class="shot"><img src="assets/shot-workspace.webp" alt="The DataDojo editor: a SQL solution with all tests passed and a See execution map button" loading="lazy" decoding="async" width="576" height="620"></figure>
+      <div><div class="lbl">SQL · Python · PySpark · ML &amp; AI</div><h3>Real problems, real engines</h3><p>Grouped by pattern: windows, gaps and islands, CDC, SCD2, metrics, RAG. Run them on DuckDB, SQLite, PostgreSQL or Spark, in MySQL, Snowflake, BigQuery and SQL Server syntax.</p>
+        <ul><li>Six-stage coaching chat that reacts to your test runs</li><li>Format code in your engine's own dialect</li><li>Curated lists, including Lakehouse: Delta, Databricks &amp; Iceberg</li></ul></div></div>
+    <div class="feat"><figure class="shot"><img src="assets/shot-map.webp" alt="The execution map: the verdict, step counts and a graph of reads and a hash join" loading="lazy" decoding="async" width="735" height="790"></figure>
+      <div><div class="lbl">After every solve</div><h3>See what the engine actually did</h3><p>Spark stages and shuffles, SQL steps with row counts, Python line counts and Big-O, next to the best solution.</p>
+        <ul><li>Click a step to trace its lineage</li><li>Open the actual rows that passed through</li><li>Time your code on millions of rows</li></ul></div></div>
+    <div class="feat" id="interview"><figure class="shot"><img src="assets/shot-interview.webp" alt="A mock interview answer about Spark data skew, graded 10 out of 10 against a rubric" loading="lazy" decoding="async" width="608" height="825"></figure>
+      <div><div class="lbl">Data · AI · ML · Analyst</div><h3>Mock interviews you answer out loud</h3><p>Speak or type. Every answer is graded against a rubric, with a report at the end. Speech is transcribed on your computer.</p>
+        <ul><li>243 questions across four roles</li><li>Cheatsheets for each track</li><li>Timed coding rounds with a score out of 100</li></ul></div></div>
+    <div class="feat" id="design"><figure class="shot"><img src="assets/shot-design.webp" alt="A system design case study: CDC from an OLTP database into a lakehouse, with its architecture diagram" loading="lazy" decoding="async" width="616" height="804"></figure>
+      <div><div class="lbl">40 lessons &amp; case studies</div><h3>Data and AI system design</h3><p>From OLTP vs OLAP to RAG in production: diagrams, quizzes and case studies like CDC into a lakehouse and real-time fraud.</p>
+        <ul><li>Ask Sensei about any diagram</li><li>Interview follow-ups on every lesson</li></ul></div></div>
+    </div>
+  </section>
 
-<section id="tour" class="wrap reveal">
-  <div class="kicker">Tour</div><h2>See it in action</h2>
-  <div class="tabs" id="tabs"><button class="on" data-i="workspace">Coaching workspace</button><button data-i="execution-map">Execution map</button><button data-i="interview">Interview practice</button><button data-i="home">Your dashboard</button>
-    <button data-i="design">System design</button><button data-i="games">Brain games</button></div>
-  <div class="win"><div class="bar"><i></i><i></i><i></i><span id="win-title">sql/joins/customers-without-orders · Duck</span></div>
-    <img id="shot" decoding="async" src="assets/workspace.webp" alt="DataDojo coaching workspace" width="1440" height="900"></div>
-</section>
+  <section class="frame">
+    <div class="sh"><span class="no">02</span><div><div class="lbl">// Also inside</div><h2>The small things that add up</h2><p>Built for daily practice, not a one-off cram.</p></div></div>
+    <div class="also">
+      <div><b>Spark case studies</b><span>A skewed join, a slow table, a bad overwrite: pick the fix, see why.</span></div>
+      <div><b>Your practice queue</b><span>Problems you struggled with come back, with your weak spots.</span></div>
+      <div><b>Brain games</b><span>60-second sprints: guess the output, join size, spot the bug, Big-O.</span></div>
+      <div><b>Sign in, no key</b><span>Use your ChatGPT, Claude or Google account, or a free local model.</span></div>
+      <div><b>Always-current models</b><span>New models appear on their own, retired ones disappear.</span></div>
+      <div><b>Private by design</b><span>Everything runs on 127.0.0.1. Your key only goes to its provider.</span></div>
+    </div>
+  </section>
 
-<section id="features" class="wrap reveal">
-  <div class="kicker">What's inside</div><h2>Everything you practice for data and AI roles</h2>
-  <p class="sub">Problems are graded by actually running your code, the same way an interviewer would check it.</p>
-  <div class="grid four">
-    <div class="card"><div class="ico">🏞️</div><h3>Lakehouse &amp; Spark case studies</h3><p>Delta, Databricks and Iceberg: time travel, VACUUM, Z-order, liquid clustering. Plus real Spark situations: pick the right fix and see why.</p></div>
-    <div class="card"><div class="ico">⏱️</div><h3>Coding rounds</h3><p>A timed problem with a coach as your interviewer: optimise slow code, answer a follow-up, get a score out of 100.</p></div>
-    <div class="card"><div class="ico">🧠</div><h3>ML &amp; AI from scratch</h3><p>18 problems in plain Python: metrics, feature prep, k-means, gradient descent, BM25, chunking and context packing.</p></div>
-    <div class="card"><div class="ico">🔁</div><h3>Your practice</h3><p>Problems you struggled with come back for review, and your weakest patterns come with what to try next.</p></div>
-    <div class="card"><div class="ico">🗺️</div><h3>Execution map</h3><p>After a solve, see what the engine did next to the best solution: Spark stages and shuffles, SQL steps with row counts, Python line counts and Big-O.</p></div>
-    <div class="card"><div class="ico">🔑</div><h3>Sign in, no key</h3><p>Connect your coach by signing in with your Anthropic account, ChatGPT plan or Google Cloud, or paste an API key as before.</p></div>
-    <div class="card"><div class="ico">✨</div><h3>Format code</h3><p>One click (Shift + Alt + F) tidies Python and PySpark the standard way, and SQL in your engine's own dialect.</p></div>
-    <div class="card"><div class="ico">🔄</div><h3>Always-current models</h3><p>Every model your provider offers, updated daily: new ones appear and retired ones disappear on their own.</p></div>
-    <div class="card"><div class="ico">🎙️</div><h3>Mock interviews</h3><p>Data Engineer, AI Engineer, ML Engineer and Data Analyst. Speak or type; every answer graded with a report at the end.</p></div>
-    <div class="card"><div class="ico">🤖</div><h3>AI system design</h3><p>Production GenAI: RAG, fine-tuning, evals, observability, caching, feedback loops and guardrails.</p></div>
-    <div class="card"><div class="ico">🧮</div><h3>264 real problems</h3><p>SQL, Python, PySpark and ML &amp; AI from scratch by pattern: windows, gaps &amp; islands, CDC, SCD2, metrics, RAG, joins, parsing and more, plus curated lists.</p></div>
-    <div class="card"><div class="ico">⚙️</div><h3>Any engine</h3><p>DuckDB, SQLite, PostgreSQL, Spark SQL, plus MySQL, Snowflake, BigQuery and SQL Server syntax. Python 3.10 to 3.15, PySpark 3.4 to 4.x.</p></div>
-    <div class="card"><div class="ico">🐾</div><h3>Coaches, not answer keys</h3><p>A six-stage coaching chat (understand → approach → build → edge cases → optimize → review) that reacts to your test runs.</p></div>
-    <div class="card"><div class="ico">🏗️</div><h3>Data system design</h3><p>20 lessons and 12 full case studies (clickstream, CDC to lakehouse, fraud, feature store) with diagrams and quizzes.</p></div>
-    <div class="card"><div class="ico">🎮</div><h3>Brain games</h3><p>60-second sprints: Guess the Output, Join Size, Spot the Bug and Big-O. Scores and streaks tracked.</p></div>
-    <div class="card"><div class="ico">🔒</div><h3>Private by design</h3><p>Runs locally. Bring your own Claude, OpenAI or Gemini key, or run Gemma for free with Ollama, and nothing leaves your laptop.</p></div>
-  </div>
-</section>
+  <section class="frame" id="coaches">
+    <div class="sh"><span class="no">03</span><div><div class="lbl">// Coaches</div><h2>Hints, not answers</h2><p>Four coaches who nudge you through understand → approach → build → edge cases → optimise → review.</p></div></div>
+    <div class="coaches"><div class="coach" data-seed="sensei-sql" data-mood="love"><b>Sensei</b><small>Head coach</small></div><div class="coach" data-seed="duck" data-mood="happy"><b>Duck</b><small>SQL</small></div>
+      <div class="coach" data-seed="pandas" data-mood="wink"><b>Pip</b><small>Python</small></div><div class="coach" data-seed="spark" data-mood="surprised"><b>Sparky</b><small>PySpark</small></div></div>
+  </section>
 
-<section class="wrap reveal">
-  <div class="kicker">Meet the team</div><h2>Your coaches</h2>
-  <div class="coaches" id="coaches">
-    <div class="card coach" data-seed="sensei-sql" data-mood="love"><b>Sensei</b><small>head coach</small></div>
-    <div class="card coach" data-seed="duck" data-mood="happy"><b>Duck</b><small>SQL coach</small></div>
-    <div class="card coach" data-seed="pandas" data-mood="wink"><b>Pip</b><small>Python coach</small></div>
-    <div class="card coach" data-seed="spark" data-mood="surprised"><b>Sparky</b><small>PySpark coach</small></div>
-  </div>
-</section>
-
-<section id="start" class="wrap reveal">
-  <div class="kicker">Get started</div><h2>Up and running in two minutes</h2>
-  <div class="steps">
-    <div class="card"><h3>Download &amp; open</h3><p>Grab the installer for your computer above. On Mac, drag DataDojo into Applications.</p></div>
-    <div class="card"><h3>Connect a coach</h3><p>Paste an API key, or pick a local Gemma model and DataDojo walks you through Ollama.</p></div>
-    <div class="card"><h3>Practice daily</h3><p>Pick a pattern, start a session, keep the streak. PySpark downloads itself the first time you need it.</p></div>
-  </div>
-  <div class="help" id="first-open" style="margin-top:26px">
-    <div class="card"><h3> macOS: first open</h3><p>DataDojo isn't signed by Apple yet, so macOS asks once:</p>
-      <ol><li>Open DataDojo from Applications and click <b>Done</b> on the warning.</li><li>Open <b>System Settings → Privacy &amp; Security</b>.</li>
-        <li>Scroll down and click <b>Open Anyway</b> next to DataDojo, then confirm.</li></ol></div>
-    <div class="card"><h3>⊞ Windows: first open</h3><p>Windows SmartScreen may warn about an unrecognized app:</p>
-      <ol><li>Click <b>More info</b>.</li><li>Click <b>Run anyway</b>.</li><li>Follow the installer; DataDojo appears in the Start menu.</li></ol></div>
-  </div>
-  <p class="sub" style="margin-top:26px">PySpark problems need Java 17 (free from <a href="https://adoptium.net" target="_blank" rel="noreferrer" style="color:var(--acc)">adoptium.net</a>). Everything else works out of the box.
-    Linux: extract the download and run <code>DataDojo/DataDojo</code>; it opens in your browser.</p>
-</section>
+  <section class="frame" id="start">
+    <div class="sh"><span class="no">04</span><div><div class="lbl">// Get started</div><h2>Up and running in two minutes</h2><p>PySpark downloads itself the first time you need it.</p></div></div>
+    <div class="steps"><div class="step"><span class="no">1</span><b>Download &amp; open</b><span>On Mac, drag DataDojo into Applications.</span><button class="step-help" data-help>First time opening it? <span>→</span></button></div>
+      <div class="step"><span class="no">2</span><b>Connect a coach</b><span>Sign in, paste a key, or run Gemma locally.</span></div>
+      <div class="step"><span class="no">3</span><b>Practise daily</b><span>Pick a pattern, keep the streak.</span></div></div>
+  </section>
+</div></main>
 
 <footer>
   <div class="wrap foot-top">
     <div><div class="foot-name">Sahil<span>.</span></div><p>Built DataDojo for data &amp; AI folks.<br>Practice like it's the real thing.</p></div>
-    <div><small>Explore</small><div class="foot-links"><a href="#download">Download</a><a href="#tour">Tour</a><a href="#features">Features</a><a href="#start">Get started</a><a href="#first-open">First-open help</a></div></div>
+    <div><small>Explore</small><div class="foot-links"><a href="#download">Download</a><a href="#practice">Practice</a><a href="#interview">Interview</a><a href="#design">System design</a><a href="#start">Get started</a></div></div>
     <div><small>Get in touch</small><div class="foot-links"><a href="https://www.linkedin.com/in/sahildeol1998/" target="_blank" rel="noreferrer">LinkedIn ↗</a>
       <a href="https://github.com/deolsahil/datadojo" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://github.com/deolsahil/datadojo/issues" target="_blank" rel="noreferrer">Report an issue ↗</a></div>
       <span class="copy">© 2026 Sahil Deol · MIT licensed</span></div>
   </div>
   <div class="wrap foot-bye"><b>See you around.</b><a href="#">Back to top ↑</a></div>
-  <div class="crowd" aria-hidden="true"><div class="crowd-word">DATADOJO</div>
-    <div class="crowd-strip"></div><img class="me" src="assets/footer/sahil.webp" alt="" loading="lazy" decoding="async" width="560" height="1528"><div class="crowd-strip front"></div></div>
+  <div class="crowd" aria-hidden="true"><div class="crowd-word">DATADOJO</div><canvas class="back"></canvas>
+    <img class="me" src="assets/footer/sahil.webp" alt="" loading="lazy" decoding="async" width="560" height="1528"><canvas class="front"></canvas></div>
   <div class="foot-credit">Mascots by <a href="https://blobatar.dev" target="_blank" rel="noreferrer">blobatar</a></div>
 </footer>
 
-<div class="pop" id="pop" role="dialog" aria-modal="true" aria-labelledby="pop-title"><div class="pop-card">
-  <div class="pop-stage"><div class="ring"></div><span class="dev d1">💻</span><span class="dev d2">🖥️</span><div id="pop-blob"></div></div>
-  <div class="pop-body"><div class="kicker">Desktop app</div><h3 id="pop-title">DataDojo lives on your computer</h3>
+<dialog class="sheet" id="help" aria-labelledby="help-title">
+  <div class="sheet-head"><div><div class="lbl"><span class="dot"></span>First open</div><h3 id="help-title">Opening DataDojo the first time</h3>
+    <p>DataDojo isn't signed by Apple or Microsoft yet, so your computer asks once. After that it opens like any app.</p></div>
+    <button class="sheet-x" aria-label="Close" data-close>×</button></div>
+  <div class="os-tabs" role="tablist"><button role="tab" data-os="mac">macOS</button><button role="tab" data-os="win">Windows</button><button role="tab" data-os="linux">Linux</button></div>
+  <div class="os-pane" data-pane="mac"><p>macOS shows a warning the first time:</p><ol>
+    <li><span>Open DataDojo from <b>Applications</b> and click <b>Done</b> on the warning.</span></li>
+    <li><span>Open <b>System Settings → Privacy &amp; Security</b>.</span></li>
+    <li><span>Scroll down and click <b>Open Anyway</b> next to DataDojo, then confirm.</span></li></ol></div>
+  <div class="os-pane" data-pane="win" hidden><p>Windows SmartScreen may warn about an unrecognised app:</p><ol>
+    <li><span>Click <b>More info</b>.</span></li><li><span>Click <b>Run anyway</b>.</span></li>
+    <li><span>Follow the installer. DataDojo appears in the <b>Start menu</b>.</span></li></ol></div>
+  <div class="os-pane" data-pane="linux" hidden><p>No warning on Linux:</p><ol>
+    <li><span>Extract the download.</span></li><li><span>Run <kbd>DataDojo/DataDojo</kbd>. It opens in your browser.</span></li></ol></div>
+  <div class="sheet-foot">PySpark problems need Java 17 (free from <a href="https://adoptium.net" target="_blank" rel="noreferrer">adoptium.net</a>). Everything else works out of the box.</div>
+</dialog>
+
+<dialog class="sheet" id="pop" aria-labelledby="pop-title">
+  <div class="pop-stage"><div class="ring"></div><div id="pop-blob"></div></div>
+  <div class="pop-body"><div class="lbl">Desktop app</div><h3 id="pop-title">DataDojo lives on your computer</h3>
     <p>It runs real SQL, Python and Spark engines on your machine, so phones and tablets can't install it. Send yourself the link and grab it on a Mac, Windows or Linux computer.</p>
     <div class="link-chip">🔗 <span id="pop-link"></span></div>
-    <div class="pop-actions"><button class="btn primary" id="pop-share">📤 Send to my computer</button><button class="btn" id="pop-copy">📋 Copy link</button>
-      <a class="btn" id="pop-mail">✉️ Email me the link</a></div>
+    <div class="pop-actions"><button class="pill primary" id="pop-share">Send to my computer</button><button class="pill" id="pop-copy">Copy link</button><a class="pill" id="pop-mail">Email me the link</a></div>
     <div class="toast" id="pop-toast" role="status"></div>
-    <button class="pop-later" id="pop-later">Maybe later</button></div></div></div>
+    <button class="pop-later" data-close>Maybe later</button></div>
+</dialog>
+
+<script>
+// Footer crowd: two layers of the same 3072x726 strip walk past in opposite directions (the front one flipped and bigger,
+// so only its top row shows) and every person hops on their own timing. Each layer is drawn in thin columns, each lifted
+// by a smooth wave that travels with the people, so neighbours hop one after another without tearing the drawing.
+(() => {
+  const band = document.querySelector('.crowd'), still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const img = new Image(); img.src = 'assets/footer/crowd.webp';
+  const L = [   // h, top: fraction of the band; speed: band widths per second (+ = right); hop: fraction of the layer height
+    { cv: band.querySelector('canvas.back'), h: .72, top: .28, speed: .11, hop: .022, flip: false },
+    { cv: band.querySelector('canvas.front'), h: .97, top: .63, speed: -.16, hop: .028, flip: true },
+  ];
+  const TAU = Math.PI * 2, PERIOD = .62;   // seconds per hop
+  // hop timing along the strip: changes slowly enough that neighbouring columns differ by < 0.5 px (no tearing),
+  // fast enough that people a body-width apart hop at clearly different moments; repeats every strip
+  const phase = u => TAU * (4 * u / 3072 + .2 * Math.sin(TAU * 2 * u / 3072));
+  let W = 0, H = 0, COL = 3, src = null, flipped = null, on = false, t0 = performance.now();
+  function size() {
+    const r = band.getBoundingClientRect(), d = devicePixelRatio || 1;
+    W = Math.round(r.width * d); H = Math.round(r.height * d); COL = 3 * d;   // 3 CSS px columns: neighbours differ by < 1 px
+    L.forEach(l => { l.cv.width = W; l.cv.height = H; });
+  }
+  function draw(now) {
+    const t = still ? 0 : (now - t0) / 1000;
+    for (const l of L) {
+      const c = l.cv.getContext('2d'), lh = l.h * H, s = lh / 726, tile = 3072 * s, y0 = l.top * H, im = l.flip ? flipped : src;
+      c.clearRect(0, 0, W, H);
+      const off = ((t * l.speed * W) % tile + tile) % tile;
+      for (let x = 0; x < W; x += COL) {
+        const u = (((x - off) % tile) + tile) % tile / s;          // where this column sits in the strip
+        const lift = still ? 0 : Math.abs(Math.sin(TAU * t / (2 * PERIOD) + phase(u))) * l.hop * lh;
+        c.drawImage(im, u, 0, Math.min(COL / s + .5, 3072 - u), 726, x, y0 - lift, COL + .5, lh);
+      }
+    }
+    if (on && !still) requestAnimationFrame(draw);
+  }
+  img.decode().then(() => {
+    src = img; const f = document.createElement('canvas'); f.width = 3072; f.height = 726;
+    const g = f.getContext('2d'); g.translate(3072, 0); g.scale(-1, 1); g.drawImage(img, 0, 0); flipped = f;
+    size(); new ResizeObserver(() => { size(); if (!on || still) draw(performance.now()); }).observe(band);
+    new IntersectionObserver(([e]) => { const was = on; on = e.isIntersecting; if (on && !was) requestAnimationFrame(draw); }).observe(band);
+  }).catch(() => {});
+})();
+</script>
 
 <script type="module">
 const $ = s => document.querySelector(s);
@@ -292,11 +305,11 @@ function platform() {
   if (/linux/i.test(p) || /Linux/.test(ua)) return 'linux';
   return 'mac';
 }
-function macChip() {
+function intelMac() {
   try {
     const gl = document.createElement('canvas').getContext('webgl'), ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
-    return /Intel|AMD|Radeon/i.test(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '') ? 'DataDojo-macOS-x64.dmg' : 'DataDojo-macOS-arm64.dmg';
-  } catch { return 'DataDojo-macOS-arm64.dmg'; }
+    return /Intel|AMD|Radeon/i.test(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '');
+  } catch { return false; }
 }
 // Phones and tablets can't run DataDojo. iPadOS reports itself as a Mac, so check touch points too.
 const isMobile = /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle|Opera Mini/i.test(navigator.userAgent)
@@ -304,81 +317,60 @@ const isMobile = /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle|Opera Mini/i.test(
   || (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches);
 document.body.classList.toggle('is-mobile', isMobile);
 const os = isMobile ? 'mac' : platform();
-$('#dl-mac').dataset.file = macChip();
-document.querySelectorAll('.dbtn').forEach(b => {
-  b.classList.toggle('primary', b.dataset.os === os);
-  if (b.dataset.file) b.href = REL + b.dataset.file;           // direct download, no extra page
-});
-const navDl = $('#nav-dl'), mineFile = os === 'win' ? 'DataDojo-Windows-Setup.exe' : os === 'linux' ? 'DataDojo-Linux-x64.tar.gz' : $('#dl-mac').dataset.file;
-navDl.href = REL + mineFile;
-if (isMobile) navDl.addEventListener('click', e => { e.preventDefault(); openPop(); });
-const dlg = $('.dlg');                                         // the visitor's OS goes first
-const mine = os === 'mac' ? $('.mac') : document.querySelector(`.dbtn[data-os="${os}"]`);
-if (mine) dlg.prepend(mine);
-$('#mac-caret').onclick = e => { e.preventDefault(); e.stopPropagation(); if (isMobile) return openPop(); $('#mac-menu').classList.toggle('open'); };
-if (isMobile) document.querySelectorAll('.dbtn').forEach(b => b.addEventListener('click', e => { e.preventDefault(); openPop(); }));
+const DL = { arm: ['DataDojo-macOS-arm64.dmg', 'Mac', 'Apple Silicon Mac'], intel: ['DataDojo-macOS-x64.dmg', 'Mac', 'Intel Mac'],
+             win: ['DataDojo-Windows-Setup.exe', 'Windows', 'Windows'], linux: ['DataDojo-Linux-x64.tar.gz', 'Linux', 'Linux'] };
+const mine = os === 'mac' ? (intelMac() ? 'intel' : 'arm') : os;
+// the visitor's installer is the big button; every other one is a plain link next to it
+$('#dl-main').href = $('#nav-dl').href = REL + DL[mine][0];
+$('#dl-label').textContent = `Download for ${DL[mine][1]}`;
+$('#dl-others').innerHTML = 'or ' + Object.keys(DL).filter(k => k !== mine).map(k => `<a data-dl href="${REL + DL[k][0]}">${DL[k][2]}</a>`).join(' · ');
 
-// "Desktop only" popup with ways to get the link onto a computer.
-const PAGE = location.origin + location.pathname;
+// First-open help: tab for the visitor's OS
+const help = $('#help');
+const pick = o => { help.querySelectorAll('[role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.os === o)); help.querySelectorAll('.os-pane').forEach(p => p.hidden = p.dataset.pane !== o); };
+document.querySelectorAll('[data-help]').forEach(b => b.onclick = () => { pick(os); help.showModal(); });
+help.querySelector('.os-tabs').onclick = e => { const b = e.target.closest('[data-os]'); if (b) pick(b.dataset.os); };
+for (const d of document.querySelectorAll('dialog')) d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-close]')) d.close(); });
+
+// "Desktop only" sheet on phones, with ways to get the link onto a computer
+const pop = $('#pop'), PAGE = location.origin + location.pathname;
 $('#pop-link').textContent = PAGE.replace(/^https?:\/\//, '');
 $('#pop-mail').href = `mailto:?subject=${encodeURIComponent('DataDojo download link')}&body=${encodeURIComponent('Download DataDojo on my computer: ' + PAGE)}`;
 let popFace = null;
 function openPop() {
-  $('#pop').classList.add('open'); $('#pop-toast').textContent = '';
-  if (window.dojoBlob && !popFace) { $('#pop-blob').innerHTML = window.dojoBlob('sensei-sql', 112, 'surprised'); popFace = $('#pop-blob svg'); }
+  pop.showModal(); $('#pop-toast').textContent = '';
+  if (window.dojoBlob && !popFace) { $('#pop-blob').innerHTML = window.dojoBlob('sensei-sql', 100, 'surprised'); popFace = $('#pop-blob svg'); }
   setTimeout(() => window.dojoMood?.(popFace, 'happy'), 700);
 }
-const closePop = () => $('#pop').classList.remove('open');
 const done = msg => { $('#pop-toast').textContent = msg; window.dojoMood?.(popFace, 'love'); };
-$('#pop-later').onclick = closePop;
-$('#pop').onclick = e => { if (e.target.id === 'pop') closePop(); };
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
 $('#pop-copy').onclick = async () => { try { await navigator.clipboard.writeText(PAGE); done('Copied! Paste it on your computer ✓'); } catch { done('Long-press the link above to copy it.'); } };
 $('#pop-share').onclick = async () => {
   if (navigator.share) { try { await navigator.share({ title: 'DataDojo', text: 'Download DataDojo on my computer', url: PAGE }); done('Sent! Open it on your computer ✓'); } catch {} }
   else $('#pop-copy').click();
 };
-$('#mac-menu').onclick = e => { if (isMobile && e.target.closest('[data-file]')) { e.preventDefault(); openPop(); } };
-document.addEventListener('click', e => { if (!e.target.closest('.mac')) $('#mac-menu').classList.remove('open'); });
 
-// Real download count: counted by our own counter (Vercel function + Upstash) when a Download button
-// is clicked, at most once per visitor per day. Starts at 0 and hides itself until there is a download.
+// Real download count: counted by our own counter (Vercel function + Upstash) when a download link is clicked,
+// at most once per visitor per day. Hidden until there is a download.
 const COUNTER_API = 'https://datadojo-site.vercel.app/api/downloads';
 function countTo(el, to) {
   const from = +el.textContent.replace(/,/g, '') || 0, t0 = performance.now();
-  const step = t => { const k = Math.min(1, (t - t0) / 700); el.textContent = Math.round(from + (to - from) * (1 - (1 - k) ** 3)).toLocaleString();
-    if (k < 1) requestAnimationFrame(step); };
+  const step = t => { const k = Math.min(1, (t - t0) / 700); el.textContent = Math.round(from + (to - from) * (1 - (1 - k) ** 3)).toLocaleString(); if (k < 1) requestAnimationFrame(step); };
   requestAnimationFrame(step);
 }
-function showCount(n) {
-  if (!(n > 0)) return;
-  $('#st-pill').hidden = false; $('#st-word').textContent = n === 1 ? 'download' : 'downloads'; countTo($('#st-dls'), n);
-}
+function showCount(n) { if (!(n > 0)) return; $('#st-pill').hidden = false; $('#st-word').textContent = n === 1 ? 'download' : 'downloads'; countTo($('#st-dls'), n); }
 fetch(COUNTER_API, { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : null).then(d => d && showCount(d.count)).catch(() => {});
 function countDownload() {
-  if (isMobile || localStorage.getItem('dd-downloaded')) return;
+  if (localStorage.getItem('dd-downloaded')) return;
   localStorage.setItem('dd-downloaded', '1');
-  fetch(COUNTER_API, { method: 'POST', keepalive: true }).then(r => r.ok ? r.json() : Promise.reject())
-    .then(d => showCount(d.count)).catch(() => localStorage.removeItem('dd-downloaded'));
+  fetch(COUNTER_API, { method: 'POST', keepalive: true }).then(r => r.ok ? r.json() : Promise.reject()).then(d => showCount(d.count)).catch(() => localStorage.removeItem('dd-downloaded'));
 }
-document.querySelectorAll('.dbtn[data-file], #nav-dl').forEach(b => b.addEventListener('click', e => { if (!e.target.closest('.caret')) countDownload(); }));
-$('#mac-menu').addEventListener('click', e => { if (e.target.closest('[data-file]')) countDownload(); });
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-dl]'); if (!a) return;
+  if (isMobile) { e.preventDefault(); return openPop(); }
+  countDownload();
+});
 fetch('https://api.github.com/repos/deolsahil/datadojo/releases/latest').then(r => r.ok ? r.json() : null)
-  .then(r => { if (r) $('#dl-version').textContent = `Version ${r.tag_name.replace(/^v/, '')} · free`; }).catch(() => {});
-
-// Tour tabs
-const TITLES = { workspace: 'sql/joins/customers-without-orders · Duck', 'execution-map': 'pyspark/aggregation/category-revenue-share · Sparky', interview: 'interview/data-engineer · Sensei', home: 'Home · Sensei', design: 'system-design/cdc-into-a-lakehouse · Sensei', games: 'games/join-size · Sensei' };
-$('#tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return;
-  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
-  $('#shot').src = `assets/${b.dataset.i}.webp`; $('#win-title').textContent = TITLES[b.dataset.i]; };
-
-// Scroll reveal: sections already on screen stay put (hiding them now would flash); only ones below the fold fade in
-// (on refresh / back the browser restores the scroll position later, so show everything instead of guessing)
-const restored = ['reload', 'back_forward'].includes(performance.getEntriesByType('navigation')[0]?.type);
-document.querySelectorAll('.reveal').forEach(el => (restored || el.getBoundingClientRect().top < innerHeight) && el.classList.add('in'));
-document.documentElement.classList.add('js');
-const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')), { rootMargin: '0px 0px 25% 0px' });
-document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  .then(r => { if (r) $('#dl-version').textContent = `v${r.tag_name.replace(/^v/, '')} · free`; }).catch(() => {});
 
 // Live blobatar coaches (same renderer the app uses)
 try {
@@ -391,10 +383,9 @@ try {
     for (const k of [...svg.style]) if (k.startsWith('--mo-') && !(k in p.vars)) svg.style.removeProperty(k);
     for (const [k, v] of Object.entries(p.vars)) svg.style.setProperty(k, v);
     svg.querySelector('g').setAttribute('class', p.cls); };
-  $('#sensei').innerHTML = blob('sensei-sql', 170, 'happy');
-  G.gaze($('#sensei svg'), { target: 'pointer' });
-  document.querySelectorAll('.orbit').forEach(o => o.insertAdjacentHTML('afterbegin', blob(o.dataset.seed, 54, 'idle')));
-  document.querySelectorAll('.coach').forEach(c => { c.insertAdjacentHTML('afterbegin', blob(c.dataset.seed, 84, c.dataset.mood)); G.gaze(c.querySelector('svg'), { target: 'pointer' }); });
+  $('#sensei').innerHTML = blob('sensei-sql', 150, 'happy'); G.gaze($('#sensei svg'), { target: 'pointer' });
+  document.querySelectorAll('.orbit').forEach(o => o.insertAdjacentHTML('afterbegin', blob(o.dataset.seed, 48)));
+  document.querySelectorAll('.coach').forEach(c => { c.insertAdjacentHTML('afterbegin', blob(c.dataset.seed, 72, c.dataset.mood)); G.gaze(c.querySelector('svg'), { target: 'pointer' }); });
 } catch {}
 </script>
 </body>
