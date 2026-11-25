@@ -125,13 +125,17 @@ async function brainPicker(b, back = null) {  // back: reopen the popup it was o
     if (back) back();
   };
 }
-function ring(done, total, size = 44, color = 'var(--acc)') {
+// label: false where the same number is already printed next to the ring (no duplicate, nothing to cram in)
+function ring(done, total, size = 44, color = 'var(--acc)', label = true) {
   const h = size / 2, r = h - 4, c = 2 * Math.PI * r, f = total ? done / total : 0;
+  const txt = total === 100 ? String(done) : `${done}/${total}`;
+  // fit the label inside the ring's inner circle (Geist Mono is ~0.6em per character), never above ~24% of the ring
+  const fs = Math.min(size * .24, (2 * (r - 1.5) - 6) / (txt.length * .62)).toFixed(1);
   return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
     <circle cx="${h}" cy="${h}" r="${r}" fill="none" stroke="var(--track)" stroke-width="3"/>
     <circle class="fill" cx="${h}" cy="${h}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round"
       stroke-dasharray="${c * f} ${c}" transform="rotate(-90 ${h} ${h})"/>
-    <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${total === 100 ? done : `${done}/${total}`}</text></svg>`;
+    ${label ? `<text x="50%" y="50%" text-anchor="middle" dominant-baseline="central" style="font-size:${fs}px">${txt}</text>` : ''}</svg>`;
 }
 const cell = v => v === null ? '<i>NULL</i>' : esc(typeof v === 'string' ? v : JSON.stringify(v));
 const table = (cols, rows) => `<table class="data">${cols ? `<tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr>` : ''}${
@@ -191,12 +195,6 @@ addEventListener('scroll', () => {
   document.documentElement.classList.add('scrolling');
   clearTimeout(scrollIdle); scrollIdle = setTimeout(() => document.documentElement.classList.remove('scrolling'), 150);
 }, { passive: true });
-document.addEventListener('pointermove', e => {
-  const c = e.target.closest?.('.tile, .list-tile, .pcard');
-  if (!c) return;
-  const r = c.getBoundingClientRect();
-  c.style.setProperty('--mx', `${e.clientX - r.left}px`); c.style.setProperty('--my', `${e.clientY - r.top}px`);
-});
 
 // ---------- theme ----------
 function monacoTheme() {
@@ -210,10 +208,15 @@ function monacoTheme() {
 // Midnight in dark mode, Sakura in light mode. Follows the OS until you pick one with the toggle.
 const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 const MOON = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>';
+// Instant switch: no cross-fade (it screenshots the page, and froze for ~0.8 s over the code editor) and no per-element colour
+// transitions for that one frame. The editor and diagrams are re-themed right after the new colours have painted.
 function setTheme(id, remember = true) {
-  const apply = () => { document.documentElement.dataset.theme = id; if (remember) localStorage.setItem('theme', id); renderThemeToggle(); monacoTheme();
-    if (location.hash.startsWith('#/design/')) route(); };  // diagrams are drawn with theme colours
-  document.startViewTransition ? document.startViewTransition(apply) : apply();
+  const root = document.documentElement;
+  root.classList.add('theme-swap'); root.dataset.theme = id; if (remember) localStorage.setItem('theme', id); renderThemeToggle();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    root.classList.remove('theme-swap'); monacoTheme();
+    if (location.hash.startsWith('#/design/')) route();  // diagrams are drawn with theme colours
+  }));
 }
 function renderThemeToggle() {
   const dark = document.documentElement.dataset.theme !== 'sakura';
@@ -275,7 +278,7 @@ $('#me').onclick = askName;
 // ---------- data ----------
 async function load() {
   const [cat, stats] = await Promise.all([api('/api/catalog'), api('/api/stats')]);
-  renderStreak(stats); renderMe(stats);
+  renderMe(stats);
   return { cat, stats };
 }
 const FLAME = `<svg class="flame" viewBox="0 0 24 24" aria-hidden="true"><defs>
@@ -285,22 +288,6 @@ const FLAME = `<svg class="flame" viewBox="0 0 24 24" aria-hidden="true"><defs>
 const dayKey = d => d.toLocaleDateString('en-CA');
 function streakState(stats) { return stats.days[dayKey(new Date())] ? 'lit' : stats.streak ? 'risk' : 'off'; }
 
-function renderStreak(stats) {
-  const today = new Date(), state = streakState(stats);
-  const week = [...Array(7)].map((_, i) => { const d = new Date(today); d.setDate(d.getDate() - 6 + i); return d; });
-  let best = 0, run = 0, prev = null;
-  for (const k of Object.keys(stats.days).sort()) {
-    const d = new Date(k + 'T00:00');
-    run = prev && (d - prev) / 864e5 === 1 ? run + 1 : 1; best = Math.max(best, run); prev = d;
-  }
-  const label = { lit: 'Practiced today. Keep it going!', risk: 'Practice today to keep your streak alive.', off: 'Solve or run anything to start a streak.' }[state];
-  $('#nav-streak').className = `streak ${state}`;
-  $('#nav-streak').setAttribute('aria-label', `${stats.streak} day streak. ${label}`);
-  $('#nav-streak').innerHTML = `${FLAME}<b>${stats.streak}</b><span class="streak-txt">${stats.streak ? `day${stats.streak === 1 ? '' : 's'}` : 'Start a streak'}</span>
-    <div class="streak-pop" role="tooltip"><div class="streak-head">${FLAME}<div><b>${stats.streak} day streak</b><div class="dim">${label}</div></div></div>
-      <div class="week">${week.map(d => `<div class="${stats.days[dayKey(d)] ? 'on' : ''} ${dayKey(d) === dayKey(today) ? 'today' : ''}"><i></i><span>${d.toLocaleString('en', { weekday: 'narrow' })}</span></div>`).join('')}</div>
-      <div class="streak-foot"><span>Best: <b>${best}</b> day${best === 1 ? '' : 's'}</span><span>${stats.runs} total runs</span></div></div>`;
-}
 
 // ---------- pages ----------
 function senseiSays(stats) {
@@ -318,10 +305,6 @@ function senseiSays(stats) {
   if (state === 'risk') return ['surprised', `${hello}${name}! Your ${stats.streak}-day streak is waiting. One quick problem keeps it alive.`];
   return ['sad', `${hello}${name}. I missed you! How about an easy warm-up to get back in rhythm?`];
 }
-const dailyQuote = quotes => {
-  const day = Math.floor((new Date() - new Date(new Date().getFullYear(), 0, 0)) / 864e5) + new Date().getFullYear() * 366;
-  return quotes[day % quotes.length];
-};
 
 function heatmap(days) {
   const today = new Date(), cols = [];
@@ -358,7 +341,7 @@ function listTiles(cat, only) {
   return `<div class="grid">${cat.lists.filter(l => !only || only(l)).map(l => {
     const [d, t] = count(cat.problems.filter(p => (p.lists || []).includes(l.id)));
     return `<a class="card list-tile" href="#/list/${l.id}"><h4>${esc(l.title)}</h4><p>${esc(l.desc)}</p>
-      <div style="display:flex;align-items:center;gap:10px">${ring(d, t, 40)}<span class="dim">${d} / ${t} solved</span></div></a>`;
+      <div style="display:flex;align-items:center;gap:10px">${ring(d, t, 40, 'var(--acc)', false)}<span class="dim">${d} / ${t} solved</span></div></a>`;
   }).join('')}</div>`;
 }
 
@@ -392,33 +375,27 @@ function practiceCard(pq, cat) {
 }
 
 async function home() {
-  const [{ cat, stats }, profile, pq] = await Promise.all([load(), api('/api/profile'), api('/api/practice')]);
+  const [{ cat, stats }, pq] = await Promise.all([load(), api('/api/practice')]);
   const [mood, line] = senseiSays(stats);
-  const q = dailyQuote(profile.quotes || [{ text: '', by: '' }]);
   const untouched = cat.patterns.find(p => {
     const ps = cat.problems.filter(x => x.pattern === p.id);
     return ps.length && !ps.some(x => x.solved);
   });
   const bd = stats.by_difficulty;
-  const links = (profile.links || []).filter(l => l.url);
   $('#app').innerHTML = `<div class="page enter">
-    <div class="hero"><h1>DATA<span>DOJO</span><i class="caret">_</i></h1><p>${esc(profile.tagline || '')}</p>
-      <blockquote class="quote">“${esc(q.text)}”<cite>${esc(q.by)}</cite></blockquote>
-      <div class="author">Built by ${esc(profile.name || '')}</div>
-      ${links.length ? `<div class="socials">${links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer" title="${esc(l.icon)}">${icon(l.icon)}</a>`).join('')}</div>` : ''}</div>
     <div class="welcome card"><div class="sensei-big" id="sensei">${blob(CAST.sensei.seed, { size: 104, mood, live: true, cls: 'live' })}</div>
       <div class="bubble"><div class="kicker dot">${stats.runs ? 'Welcome back' : 'Welcome'}</div><p>${esc(line)}</p>
         ${me() ? '' : '<button id="set-name" class="primary">Tell Sensei your name</button>'}</div>
       <span class="sp"></span><div class="streak-big ${streakState(stats)}">${FLAME}<b data-count="${stats.streak}">0</b><small>day streak</small></div></div>
     <div class="card progress">
-      <div class="top">${ring(stats.solved, stats.total, 56)}<div><b>Overall progress</b><div class="dim">${stats.solved} of ${stats.total} problems solved</div></div>
-        <div class="diffs">${['easy', 'medium', 'hard'].map(k => `<div class="diff ${k}">${ring(bd[k].solved, bd[k].total, 36, `var(--${k})`)}<div><b>${k}</b>${bd[k].solved}/${bd[k].total}</div></div>`).join('')}</div></div>
+      <div class="top">${ring(stats.solved, stats.total, 56, 'var(--acc)', false)}<div><b>Overall progress</b><div class="dim">${stats.solved} of ${stats.total} problems solved</div></div>
+        <div class="diffs">${['easy', 'medium', 'hard'].map(k => `<div class="diff ${k}">${ring(bd[k].solved, bd[k].total, 36, `var(--${k})`, false)}<div><b>${k}</b>${bd[k].solved}/${bd[k].total}</div></div>`).join('')}</div></div>
       <div class="heat-wrap"><div style="flex:1;min-width:0">${heatmap(stats.days)}</div>
         <div class="cast">${['sql', 'python', 'pyspark'].map(l => `<a href="#/lang/${l}" title="${CAST[l].name}, ${CAST[l].role}">${blob(CAST[l].seed, { size: 40 })}<small>${CAST[l].name}</small></a>`).join('')}</div></div>
     </div>
     ${untouched ? `<a class="card nudge" href="#/pattern/${untouched.id}">${blob(CAST[untouched.lang].seed, { size: 40, mood: 'wink' })}<div><div class="kicker">${CAST[untouched.lang].name} suggests</div>
       <b>${esc(untouched.title)}</b> (${LANGS[untouched.lang]}) is still untouched. Want to try one together today?</div><span class="sp"></span><span class="go">→</span></a>` : ''}
-    <div class="card stats"><div><b data-count="${stats.solved}" data-suffix="/${stats.total}">0</b><small>problems solved</small></div><div><b data-count="${stats.streak}">0</b><small>day streak</small></div>
+    <div class="card stats"><div><b data-count="${stats.solved}" data-suffix="/${stats.total}">0</b><small>problems solved</small></div>
       <div><b data-count="${stats.runs}">0</b><small>total runs</small></div><div><b>${stats.main_language ? LANGS[stats.main_language] : '-'}</b><small>main language</small></div></div>
     ${practiceCard(pq, cat)}
     <div class="section-title">See it in action</div>${demoShell()}
@@ -658,7 +635,7 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
       $('#editor').style.display = 'none'; $('#fallback').style.display = 'block'; return;
     }
     inst = m.editor.create($('#editor'), { value: $('#fallback').value, language: p.lang === 'sql' ? 'sql' : 'python', theme: 'dojo',
-      fontSize, fontFamily: getComputedStyle(document.body).getPropertyValue('--body'), minimap: { enabled: false }, automaticLayout: true,
+      fontSize, fontFamily: getComputedStyle(document.body).getPropertyValue('--font-code'), minimap: { enabled: false }, automaticLayout: true,
       scrollBeyondLastLine: false, tabSize: 4, padding: { top: 10 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on',
       // slim scrollbars without the track box or the right-hand overview strip, matching the rest of the app
       scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false }, overviewRulerLanes: 0,
@@ -1187,7 +1164,26 @@ async function workspace(id, mode) {  // mode "review" (practice queue) or "roun
 // Feedback is stored locally; with a repo in profile.toml it can also be sent as a pre-filled GitHub issue
 // (opens in the browser, the learner submits it; no tokens or servers involved).
 let REPO = '';
-api('/api/profile').then(p => { REPO = (p.repo || '').replace(/\/$/, ''); });
+api('/api/profile').then(p => { REPO = (p.repo || '').replace(/\/$/, ''); renderBy(p); });
+// "Built by" credit in the nav: a badge; on hover (or tap / keyboard focus) two round links drop out: LinkedIn, then GitHub
+const SITE_NAME = { github: 'GitHub', linkedin: 'LinkedIn', leetcode: 'LeetCode', medium: 'Medium', x: 'X', instagram: 'Instagram', website: 'Website', email: 'Email' };
+function renderBy(p) {
+  const el = $('#by'), by = k => (p.links || []).find(l => l.icon === k && l.url);
+  const balls = [by('linkedin'), by('github')].filter(Boolean);
+  if (!el || !p.name) return;
+  el.innerHTML = `<span class="by-badge" tabindex="0" role="button" aria-label="Built by ${esc(p.name)}. Show links" aria-expanded="false"><img src="sahil.webp" alt="" width="32" height="32">
+      <span class="by-t"><small>built by</small><b>${esc(p.name)}</b></span></span>
+    <span class="by-balls">${balls.map((l, i) => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer" style="--i:${i}" title="${esc(p.name)} on ${SITE_NAME[l.icon]}" aria-label="${esc(p.name)} on ${SITE_NAME[l.icon]}">${icon(l.icon)}</a>`).join('')}</span>`;
+  const badge = el.querySelector('.by-badge'), set = open => { el.classList.toggle('open', open); badge.setAttribute('aria-expanded', open); };
+  badge.onclick = () => set(!el.classList.contains('open'));   // touch screens have no hover
+  badge.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); set(!el.classList.contains('open')); } if (e.key === 'Escape') set(false); };
+  document.addEventListener('click', e => { if (!el.contains(e.target)) set(false); });
+  // after a ball opens its link, let go of it: otherwise it stays focused and the balls are still down when you come back
+  el.querySelectorAll('.by-balls a').forEach(a => a.addEventListener('click', () => setTimeout(() => { a.blur(); set(false); })));
+  const away = () => { set(false); if (el.contains(document.activeElement)) document.activeElement.blur(); };
+  addEventListener('blur', away); document.addEventListener('visibilitychange', () => { if (document.hidden) away(); });
+  el.hidden = false;
+}
 const ghLink = (title, body, label, tag) => REPO ? `<a class="gh-link" target="_blank" rel="noreferrer"
   href="${REPO}/issues/new?title=${encodeURIComponent(title)}&labels=${tag}&body=${encodeURIComponent(body + '\n\n— sent from DataDojo')}">${label}</a>` : '';
 const RATE_MOOD = { 1: 'sad', 2: 'unsure', 3: 'idle', 4: 'happy', 5: 'love' };
@@ -2365,26 +2361,4 @@ function updateModal(v) {
   if ($('#up-copy')) $('#up-copy').onclick = () => navigator.clipboard.writeText('uv tool upgrade datadojo').then(() => { $('#up-copy').textContent = 'Copied ✓'; });
   if ($('#up-go')) $('#up-go').onclick = () => { closeModal(); updateToast(v, null, true); };
 }
-// ---------- launch intro ----------
-// The intro's markup and critical CSS live in index.html so it is on screen from the very first paint (no flash of the
-// home page first). Here we only start it once the logo font is ready, and lift it: after ~2.9s, on click, or on a key.
-function intro() {
-  const el = document.getElementById('intro'); if (!el) return;
-  let done = false;
-  const finish = () => {
-    if (done) return; done = true; removeEventListener('keydown', finish);
-    const root = document.documentElement;  // one smooth handover: the intro dissolves while the app eases in as a whole
-    el.classList.add('out'); root.classList.add('intro-reveal'); root.classList.remove('intro-on');
-    setTimeout(() => { el.remove(); root.classList.remove('intro-reveal'); }, 1300);
-  };
-  el.onclick = finish; addEventListener('keydown', finish);
-  const css = document.getElementById('font-css');  // the font stylesheet loads without blocking; wait for it, then the font
-  const sheet = !css || css.dataset.ready ? Promise.resolve() : new Promise(r => { css.addEventListener('load', r); css.addEventListener('error', r); });
-  const font = sheet.then(() => document.fonts ? document.fonts.load('800 150px "JetBrains Mono"') : null);
-  Promise.race([font, new Promise(r => setTimeout(r, 450))]).then(() => {  // never wait long for the font
-    if (done) return;
-    el.classList.add('play'); setTimeout(finish, 2900);
-  });
-}
-intro();
 route();

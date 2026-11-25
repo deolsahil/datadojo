@@ -1,4 +1,26 @@
-## What's new in 0.3.6
+## What's new in 0.3.7
+
+**✨ A cleaner, calmer DataDojo**
+- New look throughout: a clean sans-serif for reading, a code font only where there's code, and neat small labels.
+- New logo, app icon and favicon.
+- Light mode now keeps DataDojo's blue and amber instead of switching to different colours.
+- No more glows or coloured boxes: streaks, progress and buttons are simpler and easier on the eyes.
+
+**🐾 Coaches have their own voice**
+- Everything Sensei, Duck, Pip and Sparky say is set in its own typeface, so you can always tell when a coach is talking.
+
+**🏠 A tidier home page**
+- Home opens straight on your welcome card, progress and today's review.
+- The streak moved out of the top bar and onto the welcome card; a small "built by" badge sits in its place.
+
+**⚡ Faster and smoother**
+- Switching between light and dark is instant (it used to stutter, especially over the code editor).
+- A new loading screen when DataDojo opens, and no more launch animation to sit through.
+
+**🎮 Brain games**
+- Join Size shows its SQL and answers in the code font again, so a 0 never looks like an O.
+
+## New in 0.3.6
 
 **🏞️ Lakehouse: Delta, Databricks & Iceberg**
 - 12 new PySpark problems: time travel by version and timestamp, which files VACUUM deletes, Z-order keys, data skipping with file statistics, OPTIMIZE compaction, liquid clustering layout, Change Data Feed, Iceberg hidden partitioning and partition evolution, plus salted skew joins and broadcast joins.
