@@ -262,16 +262,16 @@
   // hop timing along the strip: changes slowly enough that neighbouring columns differ by < 0.5 px (no tearing),
   // fast enough that people a body-width apart hop at clearly different moments; repeats every strip
   const phase = u => TAU * (4 * u / 3072 + .2 * Math.sin(TAU * 2 * u / 3072));
-  let W = 0, H = 0, COL = 3, src = null, flipped = null, on = false, t0 = performance.now();
+  let W = 0, H = 0, COL = 3, src = null, flipped = null, on = false, t0 = performance.now(), cost = 0, n = 0;
   function size() {
-    const r = band.getBoundingClientRect(), d = devicePixelRatio || 1;
+    const r = band.getBoundingClientRect(), d = Math.min(devicePixelRatio || 1, 2);   // 3x phones: 2x is plenty for line art, 2.25x fewer pixels
     W = Math.round(r.width * d); H = Math.round(r.height * d); COL = 3 * d;   // 3 CSS px columns: neighbours differ by < 1 px
     L.forEach(l => { l.cv.width = W; l.cv.height = H; });
   }
   function draw(now) {
     const t = still ? 0 : (now - t0) / 1000;
     for (const l of L) {
-      const c = l.cv.getContext('2d'), lh = l.h * H, s = lh / 726, tile = 3072 * s, y0 = l.top * H, im = l.flip ? flipped : src;
+      const c = l.c, lh = l.h * H, s = lh / 726, tile = 3072 * s, y0 = l.top * H, im = l.flip ? flipped : src;
       c.clearRect(0, 0, W, H);
       const off = ((t * l.speed * W) % tile + tile) % tile;
       for (let x = 0; x < W; x += COL) {
@@ -280,13 +280,22 @@
         c.drawImage(im, u, 0, Math.min(COL / s + .5, 3072 - u), 726, x, y0 - lift, COL + .5, lh);
       }
     }
-    if (on && !still) requestAnimationFrame(draw);
   }
-  img.decode().then(() => {
-    src = img; const f = document.createElement('canvas'); f.width = 3072; f.height = 726;
-    const g = f.getContext('2d'); g.translate(3072, 0); g.scale(-1, 1); g.drawImage(img, 0, 0); flipped = f;
+  // if drawing ever gets slow (older phones), draw every other frame (30 fps) instead of stuttering
+  function tick(now) {
+    if (!on || still) return;
+    requestAnimationFrame(tick);
+    if (cost > 6 && (n++ & 1)) return;
+    const s = performance.now(); draw(now); cost = cost * .9 + (performance.now() - s) * .1;
+  }
+  L.forEach(l => l.c = l.cv.getContext('2d'));
+  img.decode().then(async () => {
+    const f = document.createElement('canvas'); f.width = 3072; f.height = 726;
+    const g = f.getContext('2d'); g.translate(3072, 0); g.scale(-1, 1); g.drawImage(img, 0, 0);
+    // pre-decoded bitmaps: Safari is slow drawing hundreds of slices straight from an <img>
+    [src, flipped] = window.createImageBitmap ? await Promise.all([createImageBitmap(img), createImageBitmap(f)]) : [img, f];
     size(); new ResizeObserver(() => { size(); if (!on || still) draw(performance.now()); }).observe(band);
-    new IntersectionObserver(([e]) => { const was = on; on = e.isIntersecting; if (on && !was) requestAnimationFrame(draw); }).observe(band);
+    new IntersectionObserver(([e]) => { const was = on; on = e.isIntersecting; if (on && !was) requestAnimationFrame(tick); }).observe(band);
   }).catch(() => {});
 })();
 </script>
